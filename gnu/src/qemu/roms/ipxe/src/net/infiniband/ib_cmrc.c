@@ -92,7 +92,7 @@ struct ib_cmrc_connection {
 /**
  * Shut down CMRC connection gracefully
  *
- * @v process		Process
+ * @v cmrc		Communication-Managed Reliable Connection
  *
  * The Infiniband data structures are not reference-counted or
  * guarded.  It is therefore unsafe to shut them down while we may be
@@ -107,9 +107,7 @@ struct ib_cmrc_connection {
  * connection, ensuring that the structure is not freed before the
  * shutdown process has run.
  */
-static void ib_cmrc_shutdown ( struct process *process ) {
-	struct ib_cmrc_connection *cmrc =
-		container_of ( process, struct ib_cmrc_connection, shutdown );
+static void ib_cmrc_shutdown ( struct ib_cmrc_connection *cmrc ) {
 
 	DBGC ( cmrc, "CMRC %p shutting down\n", cmrc );
 
@@ -118,9 +116,6 @@ static void ib_cmrc_shutdown ( struct process *process ) {
 	ib_destroy_qp ( cmrc->ibdev, cmrc->qp );
 	ib_destroy_cq ( cmrc->ibdev, cmrc->cq );
 	ib_close ( cmrc->ibdev );
-
-	/* Remove process from run queue */
-	process_del ( &cmrc->shutdown );
 
 	/* Drop the remaining reference */
 	ref_put ( &cmrc->refcnt );
@@ -180,6 +175,9 @@ static void ib_cmrc_changed ( struct ib_device *ibdev __unused,
 		return;
 	}
 
+	/* Notify upper connection of window change */
+	xfer_window_changed ( &cmrc->xfer );
+
 	/* If we are disconnected, close the upper connection */
 	if ( rc_cm != 0 ) {
 		ib_cmrc_close ( cmrc, rc_cm );
@@ -222,13 +220,15 @@ static void ib_cmrc_complete_send ( struct ib_device *ibdev __unused,
  *
  * @v ibdev		Infiniband device
  * @v qp		Queue pair
- * @v av		Address vector, or NULL
+ * @v dest		Destination address vector, or NULL
+ * @v source		Source address vector, or NULL
  * @v iobuf		I/O buffer
  * @v rc		Completion status code
  */
 static void ib_cmrc_complete_recv ( struct ib_device *ibdev __unused,
 				    struct ib_queue_pair *qp,
-				    struct ib_address_vector *av __unused,
+				    struct ib_address_vector *dest __unused,
+				    struct ib_address_vector *source __unused,
 				    struct io_buffer *iobuf, int rc ) {
 	struct ib_cmrc_connection *cmrc = ib_qp_get_ownerdata ( qp );
 
@@ -257,6 +257,11 @@ static void ib_cmrc_complete_recv ( struct ib_device *ibdev __unused,
 static struct ib_completion_queue_operations ib_cmrc_completion_ops = {
 	.complete_send = ib_cmrc_complete_send,
 	.complete_recv = ib_cmrc_complete_recv,
+};
+
+/** Infiniband CMRC queue pair operations */
+static struct ib_queue_pair_operations ib_cmrc_queue_pair_ops = {
+	.alloc_iob = alloc_iob,
 };
 
 /**
@@ -360,6 +365,11 @@ static struct interface_operation ib_cmrc_xfer_operations[] = {
 static struct interface_descriptor ib_cmrc_xfer_desc =
 	INTF_DESC ( struct ib_cmrc_connection, xfer, ib_cmrc_xfer_operations );
 
+/** CMRC shutdown process descriptor */
+static struct process_descriptor ib_cmrc_shutdown_desc =
+	PROC_DESC_ONCE ( struct ib_cmrc_connection, shutdown,
+			 ib_cmrc_shutdown );
+
 /**
  * Open CMRC connection
  *
@@ -385,7 +395,7 @@ int ib_cmrc_open ( struct interface *xfer, struct ib_device *ibdev,
 	cmrc->ibdev = ibdev;
 	memcpy ( &cmrc->dgid, dgid, sizeof ( cmrc->dgid ) );
 	memcpy ( &cmrc->service_id, service_id, sizeof ( cmrc->service_id ) );
-	process_init_stopped ( &cmrc->shutdown, ib_cmrc_shutdown,
+	process_init_stopped ( &cmrc->shutdown, &ib_cmrc_shutdown_desc,
 			       &cmrc->refcnt );
 
 	/* Open Infiniband device */
@@ -407,7 +417,8 @@ int ib_cmrc_open ( struct interface *xfer, struct ib_device *ibdev,
 
 	/* Create queue pair */
 	cmrc->qp = ib_create_qp ( ibdev, IB_QPT_RC, IB_CMRC_NUM_SEND_WQES,
-				  cmrc->cq, IB_CMRC_NUM_RECV_WQES, cmrc->cq );
+				  cmrc->cq, IB_CMRC_NUM_RECV_WQES, cmrc->cq,
+				  &ib_cmrc_queue_pair_ops );
 	if ( ! cmrc->qp ) {
 		DBGC ( cmrc, "CMRC %p could not create queue pair\n", cmrc );
 		rc = -ENOMEM;

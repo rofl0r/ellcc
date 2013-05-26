@@ -13,7 +13,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  *
  * March-19-2009 @ 02:44: Added sleep command.
  * Shao Miller <shao.miller@yrdsb.edu.on.ca>.
@@ -27,7 +28,6 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #include <unistd.h>
 #include <ipxe/command.h>
 #include <ipxe/parseopt.h>
-#include <ipxe/nap.h>
 #include <ipxe/timer.h>
 
 /** @file
@@ -57,7 +57,8 @@ static struct command_descriptor time_cmd =
 static int time_exec ( int argc, char **argv ) {
 	struct time_options opts;
 	unsigned long start;
-	int secs;
+	unsigned long elapsed;
+	int decisecs;
 	int rc;
 
 	/* Parse options */
@@ -66,9 +67,11 @@ static int time_exec ( int argc, char **argv ) {
 
 	start = currticks();
 	rc = execv ( argv[1], argv + 1 );
-	secs = (currticks() - start) / ticks_per_sec();
+	elapsed = ( currticks() - start );
+	decisecs = ( 10 * elapsed / ticks_per_sec() );
 
-	printf ( "%s: %ds\n", argv[0], secs );
+	printf ( "%s: %d.%ds\n", argv[0],
+		 ( decisecs / 10 ), ( decisecs % 10 ) );
 
 	return rc;
 }
@@ -77,43 +80,4 @@ static int time_exec ( int argc, char **argv ) {
 struct command time_command __command = {
 	.name = "time",
 	.exec = time_exec,
-};
-
-/** "sleep" options */
-struct sleep_options {};
-
-/** "sleep" option list */
-static struct option_descriptor sleep_opts[] = {};
-
-/** "sleep" command descriptor */
-static struct command_descriptor sleep_cmd =
-	COMMAND_DESC ( struct sleep_options, sleep_opts, 1, 1, "<seconds>" );
-
-/**
- * "sleep" command
- *
- * @v argc		Argument count
- * @v argv		Argument list
- * @ret rc		Return status code
- */
-static int sleep_exec ( int argc, char **argv ) {
-	struct sleep_options opts;
-	unsigned long start, delay;
-	int rc;
-
-	/* Parse options */
-	if ( ( rc = parse_options ( argc, argv, &sleep_cmd, &opts ) ) != 0 )
-		return rc;
-
-	start = currticks();
-	delay = strtoul ( argv[1], NULL, 0 ) * ticks_per_sec();
-	while ( ( currticks() - start ) <= delay )
-		cpu_nap();
-	return 0;
-}
-
-/** "sleep" command */
-struct command sleep_command __command = {
-	.name = "sleep",
-	.exec = sleep_exec,
 };

@@ -269,6 +269,8 @@ char *obp_memalloc(char *va, unsigned int size, unsigned int align)
     phys_addr_t phys;
     ucell virt;
 
+    DPRINTF("obp_memalloc: virta 0x%x, sz %d, align %d\n", (unsigned int)va, size, align);    
+    
     /* Claim physical memory */
     phys = ofmem_claim_phys(-1, size, align);
 
@@ -283,26 +285,14 @@ char *obp_memalloc(char *va, unsigned int size, unsigned int align)
 
 char *obp_dumb_memalloc(char *va, unsigned int size)
 {
-    unsigned long align;
-    int i;
+    unsigned long align = size;
     
-    /* Solaris seems to assume that the returned value is physically aligned to size. For
-       example, not having this here causes the Solaris 8 kernel to fault because the 
-       IOMMU page table base address is calculated incorrectly. */
-
-    /* Enforce a minimum alignment of CONFIG_OFMEM_MALLOC_ALIGN, and choose an alignment 
-       which is the next power of 2 higher than the specified size */
-    align = size;
-    if (align <= CONFIG_OFMEM_MALLOC_ALIGN) {
-        align = CONFIG_OFMEM_MALLOC_ALIGN;
-    } else {
-        align--;
-        for (i = 1; i < sizeof(unsigned long) * 8; i<<=1) {
-            align |= align >> i;
-        }
-        align++;
-    }
-
+    DPRINTF("obp_dumb_memalloc: virta 0x%x, sz %d\n", (unsigned int)va, size);    
+    
+    /* Solaris seems to assume that the returned value is physically aligned to size.
+       e.g. it is used for setting up page tables. Fortunately this is now handled by 
+       ofmem_claim_phys() above. */
+    
     return obp_memalloc(va, size, align);
 }
 
@@ -401,9 +391,11 @@ init_mmu_swift(void)
     size = (unsigned long)&_end - (unsigned long)&_start;
     pa = va2pa(va);
     ofmem_arch_map_pages(pa, va, size, ofmem_arch_default_translation_mode(pa));
+    ofmem_map_page_range(pa, va, size, ofmem_arch_default_translation_mode(pa));
 
-    // 1:1 mapping for RAM
-    ofmem_arch_map_pages(0, 0, LOWMEMSZ, ofmem_arch_default_translation_mode(0));
+    // 1:1 mapping for RAM (don't map page 0 to allow catching of NULL dereferences)                                                                                                                                            
+    ofmem_arch_map_pages(PAGE_SIZE, PAGE_SIZE, LOWMEMSZ - PAGE_SIZE, ofmem_arch_default_translation_mode(0));                                                                                                                   
+    ofmem_map_page_range(PAGE_SIZE, PAGE_SIZE, LOWMEMSZ - PAGE_SIZE, ofmem_arch_default_translation_mode(0));
 
     /*
      * Flush cache

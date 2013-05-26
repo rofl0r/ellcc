@@ -311,10 +311,32 @@ ea_to_phys(unsigned long ea, ucell *mode)
     return phys;
 }
 
+/* Converts a global variable (from .data or .bss) into a pointer that
+   can be accessed from real mode */
+static void *
+global_ptr_real(void *p)
+{
+    return (void*)((uintptr_t)p - OF_CODE_START + get_rom_base());
+}
+
+/* Return the next slot to evict, in the range of [0..7] */
+static int
+next_evicted_slot(void)
+{
+    static int next_grab_slot;
+    int *next_grab_slot_va;
+    int r;
+
+    next_grab_slot_va = global_ptr_real(&next_grab_slot);
+    r = *next_grab_slot_va;
+    *next_grab_slot_va = (r + 1) % 8;
+
+    return r;
+}
+
 static void
 hash_page_64(unsigned long ea, phys_addr_t phys, ucell mode)
 {
-    static int next_grab_slot = 0;
     uint64_t vsid_mask, page_mask, pgidx, hash;
     uint64_t htab_mask, mask, avpn;
     unsigned long pgaddr;
@@ -349,10 +371,8 @@ hash_page_64(unsigned long ea, phys_addr_t phys, ucell mode)
             found = 1;
 
     /* out of slots, just evict one */
-    if (!found) {
-        i = next_grab_slot + 1;
-        next_grab_slot = (next_grab_slot + 1) % 8;
-    }
+    if (!found)
+        i = next_evicted_slot() + 1;
     i--;
     {
     mPTE_64_t p = {
@@ -381,7 +401,6 @@ static void
 hash_page_32(unsigned long ea, phys_addr_t phys, ucell mode)
 {
 #ifndef __powerpc64__
-    static int next_grab_slot = 0;
     unsigned long *upte, cmp, hash1;
     int i, vsid, found;
     mPTE_t *pp;
@@ -407,10 +426,8 @@ hash_page_32(unsigned long ea, phys_addr_t phys, ucell mode)
             found = 1;
 
     /* out of slots, just evict one */
-    if (!found) {
-        i = next_grab_slot + 1;
-        next_grab_slot = (next_grab_slot + 1) % 8;
-    }
+    if (!found)
+        i = next_evicted_slot() + 1;
     i--;
     upte[i * 2] = cmp;
     upte[i * 2 + 1] = (phys & ~0xfff) | mode;
@@ -532,11 +549,22 @@ ofmem_init(void)
 {
     ofmem_t *ofmem = ofmem_arch_get_private();
 
-    ofmem_claim_phys(0, get_ram_bottom(), 0);
-    ofmem_claim_virt(0, get_ram_bottom(), 0);
-    ofmem_map(0, 0, get_ram_bottom(), 0);
+    /* Map the memory (don't map page 0 to allow catching of NULL dereferences) */
+    ofmem_claim_phys(PAGE_SIZE, get_ram_bottom() - PAGE_SIZE, 0);
+    ofmem_claim_virt(PAGE_SIZE, get_ram_bottom() - PAGE_SIZE, 0);
+    ofmem_map(PAGE_SIZE, PAGE_SIZE, get_ram_bottom() - PAGE_SIZE, 0);
 
-    ofmem_claim_phys(get_ram_top(), ofmem->ramsize - get_ram_top(), 0);
-    ofmem_claim_virt(get_ram_top(), ofmem->ramsize - get_ram_top(), 0);
-    ofmem_map(get_ram_top(), get_ram_top(), ofmem->ramsize - get_ram_top(), 0);
+    /* Mark the first page as non-free */
+    ofmem_claim_phys(0, PAGE_SIZE, 0);
+    ofmem_claim_virt(0, PAGE_SIZE, 0);
+
+    /* Map everything at the top of physical RAM 1:1, minus the OpenBIOS ROM in RAM copy */
+    ofmem_claim_phys(get_ram_top(), get_hash_base() + HASH_SIZE - get_ram_top(), 0);
+    ofmem_claim_virt(get_ram_top(), get_hash_base() + HASH_SIZE - get_ram_top(), 0);
+    ofmem_map(get_ram_top(), get_ram_top(), get_hash_base() + HASH_SIZE - get_ram_top(), 0);
+    
+    /* Map the OpenBIOS ROM in RAM copy */
+    ofmem_claim_phys(ofmem->ramsize - OF_CODE_SIZE, OF_CODE_SIZE, 0);
+    ofmem_claim_virt(OF_CODE_START, OF_CODE_SIZE, 0);
+    ofmem_map(ofmem->ramsize - OF_CODE_SIZE, OF_CODE_START, OF_CODE_SIZE, 0);
 }

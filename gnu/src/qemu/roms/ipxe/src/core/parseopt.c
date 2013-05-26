@@ -13,7 +13,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  */
 
 FILE_LICENCE ( GPL2_OR_LATER );
@@ -26,7 +27,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #include <errno.h>
 #include <getopt.h>
 #include <ipxe/netdevice.h>
-#include <ipxe/image.h>
+#include <ipxe/menu.h>
 #include <ipxe/parseopt.h>
 
 /** @file
@@ -39,6 +40,17 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #define ECANCELED_NO_OP __einfo_error ( EINFO_ECANCELED_NO_OP )
 #define EINFO_ECANCELED_NO_OP \
 	__einfo_uniqify ( EINFO_ECANCELED, 0x01, "Nothing to do" )
+
+/* Disambiguate the various error codes */
+#define EINVAL_INTEGER __einfo_error ( EINFO_EINVAL_INTEGER )
+#define EINFO_EINVAL_INTEGER \
+	__einfo_uniqify ( EINFO_EINVAL, 0x01, "Invalid integer value" )
+#define EINVAL_UNKNOWN_OPTION __einfo_error ( EINFO_EINVAL_UNKNOWN_OPTION )
+#define EINFO_EINVAL_UNKNOWN_OPTION \
+	__einfo_uniqify ( EINFO_EINVAL, 0x02, "Unrecognised option" )
+#define EINVAL_MISSING_ARGUMENT __einfo_error ( EINFO_EINVAL_MISSING_ARGUMENT )
+#define EINFO_EINVAL_MISSING_ARGUMENT \
+	__einfo_uniqify ( EINFO_EINVAL, 0x03, "Missing argument" )
 
 /**
 * Parse string value
@@ -75,7 +87,7 @@ int parse_integer ( const char *text, unsigned int *value ) {
 	*value = strtoul ( text, &endp, 0 );
 	if ( *endp ) {
 		printf ( "\"%s\": invalid integer value\n", text );
-		return -EINVAL;
+		return -EINVAL_INTEGER;
 	}
 
 	return 0;
@@ -104,21 +116,22 @@ int parse_netdev ( const char *text, struct net_device **netdev ) {
 }
 
 /**
- * Parse image name
+ * Parse menu name
  *
  * @v text		Text
- * @ret image		Image
+ * @ret menu		Menu
  * @ret rc		Return status code
  */
-int parse_image ( const char *text, struct image **image ) {
+int parse_menu ( const char *text, struct menu **menu ) {
 
-	/* Sanity check */
-	assert ( text != NULL );
-
-	/* Find network device */
-	*image = find_image ( text );
-	if ( ! *image ) {
-		printf ( "\"%s\": no such image\n", text );
+	/* Find menu */
+	*menu = find_menu ( text );
+	if ( ! *menu ) {
+		if ( text ) {
+			printf ( "\"%s\": no such menu\n", text );
+		} else {
+			printf ( "No default menu\n" );
+		}
 		return -ENOENT;
 	}
 
@@ -141,6 +154,25 @@ int parse_flag ( const char *text __unused, int *flag ) {
 }
 
 /**
+ * Parse key
+ *
+ * @v text		Text
+ * @ret key		Key
+ * @ret rc		Return status code
+ */
+int parse_key ( const char *text, unsigned int *key ) {
+
+	/* Interpret single characters as being a literal key character */
+	if ( text[0] && ! text[1] ) {
+		*key = text[0];
+		return 0;
+	}
+
+	/* Otherwise, interpret as an integer */
+	return parse_integer ( text, key );
+}
+
+/**
  * Print command usage message
  *
  * @v cmd		Command descriptor
@@ -152,16 +184,16 @@ void print_usage ( struct command_descriptor *cmd, char **argv ) {
 }
 
 /**
- * Parse command-line options
+ * Reparse command-line options
  *
  * @v argc		Argument count
  * @v argv		Argument list
  * @v cmd		Command descriptor
- * @v opts		Options
+ * @v opts		Options (already initialised with default values)
  * @ret rc		Return status code
  */
-int parse_options ( int argc, char **argv, struct command_descriptor *cmd,
-		    void *opts ) {
+int reparse_options ( int argc, char **argv, struct command_descriptor *cmd,
+		      void *opts ) {
 	struct option longopts[ cmd->num_options + 1 /* help */ + 1 /* end */ ];
 	char shortopts[ cmd->num_options * 3 /* possible "::" */ + 1 /* "h" */
 			+ 1 /* NUL */ ];
@@ -193,9 +225,6 @@ int parse_options ( int argc, char **argv, struct command_descriptor *cmd,
 	DBGC ( cmd,  "Command \"%s\" has options \"%s\", %d-%d args, len %d\n",
 	       argv[0], shortopts, cmd->min_args, cmd->max_args, cmd->len );
 
-	/* Clear options */
-	memset ( opts, 0, cmd->len );
-
 	/* Parse options */
 	while ( ( c = getopt_long ( argc, argv, shortopts, longopts,
 				    NULL ) ) >= 0 ) {
@@ -205,10 +234,13 @@ int parse_options ( int argc, char **argv, struct command_descriptor *cmd,
 			print_usage ( cmd, argv );
 			return -ECANCELED_NO_OP;
 		case '?' :
+			/* Print usage message */
+			print_usage ( cmd, argv );
+			return -EINVAL_UNKNOWN_OPTION;
 		case ':' :
 			/* Print usage message */
 			print_usage ( cmd, argv );
-			return -EINVAL;
+			return -EINVAL_MISSING_ARGUMENT;
 		default:
 			/* Search for an option to parse */
 			for ( i = 0 ; i < cmd->num_options ; i++ ) {
@@ -232,4 +264,22 @@ int parse_options ( int argc, char **argv, struct command_descriptor *cmd,
 	}
 
 	return 0;
+}
+
+/**
+ * Parse command-line options
+ *
+ * @v argc		Argument count
+ * @v argv		Argument list
+ * @v cmd		Command descriptor
+ * @v opts		Options (may be uninitialised)
+ * @ret rc		Return status code
+ */
+int parse_options ( int argc, char **argv, struct command_descriptor *cmd,
+		    void *opts ) {
+
+	/* Clear options */
+	memset ( opts, 0, cmd->len );
+
+	return reparse_options ( argc, argv, cmd, opts );
 }

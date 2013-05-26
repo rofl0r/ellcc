@@ -13,7 +13,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  */
 
 FILE_LICENCE ( GPL2_OR_LATER );
@@ -1213,14 +1214,6 @@ struct uri_opener mtftp_uri_opener __uri_opener = {
  *
  ******************************************************************************
  */
-
-/** TFTP server setting */
-struct setting next_server_setting __setting ( SETTING_BOOT ) = {
-	.name = "next-server",
-	.description = "TFTP server",
-	.tag = DHCP_EB_SIADDR,
-	.type = &setting_type_ipv4,
-};
 
 /**
  * Apply TFTP configuration settings

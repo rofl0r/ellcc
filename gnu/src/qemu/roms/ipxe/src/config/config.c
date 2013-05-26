@@ -71,20 +71,26 @@ REQUIRE_OBJECT ( serial_console );
 #ifdef CONSOLE_DIRECT_VGA
 REQUIRE_OBJECT ( video_subr );
 #endif
-#ifdef CONSOLE_BTEXT
-REQUIRE_OBJECT ( btext );
-#endif
 #ifdef CONSOLE_PC_KBD
 REQUIRE_OBJECT ( pc_kbd );
 #endif
 #ifdef CONSOLE_SYSLOG
 REQUIRE_OBJECT ( syslog );
 #endif
+#ifdef CONSOLE_SYSLOGS
+REQUIRE_OBJECT ( syslogs );
+#endif
 #ifdef CONSOLE_EFI
 REQUIRE_OBJECT ( efi_console );
 #endif
 #ifdef CONSOLE_LINUX
 REQUIRE_OBJECT ( linux_console );
+#endif
+#ifdef CONSOLE_VMWARE
+REQUIRE_OBJECT ( vmconsole );
+#endif
+#ifdef CONSOLE_DEBUGCON
+REQUIRE_OBJECT ( debugcon );
 #endif
 
 /*
@@ -122,9 +128,6 @@ REQUIRE_OBJECT ( https );
 #ifdef DOWNLOAD_PROTO_FTP
 REQUIRE_OBJECT ( ftp );
 #endif
-#ifdef DOWNLOAD_PROTO_TFTM
-REQUIRE_OBJECT ( tftm );
-#endif
 #ifdef DOWNLOAD_PROTO_SLAM
 REQUIRE_OBJECT ( slam );
 #endif
@@ -155,17 +158,8 @@ REQUIRE_OBJECT ( nbi );
 #ifdef IMAGE_ELF
 REQUIRE_OBJECT ( elfboot );
 #endif
-#ifdef IMAGE_FREEBSD
-REQUIRE_OBJECT ( freebsd );
-#endif
 #ifdef IMAGE_MULTIBOOT
 REQUIRE_OBJECT ( multiboot );
-#endif
-#ifdef IMAGE_AOUT
-REQUIRE_OBJECT ( aout );
-#endif
-#ifdef IMAGE_WINCE
-REQUIRE_OBJECT ( wince );
 #endif
 #ifdef IMAGE_PXE
 REQUIRE_OBJECT ( pxe_image );
@@ -189,6 +183,9 @@ REQUIRE_OBJECT ( comboot_resolv );
 #endif
 #ifdef IMAGE_EFI
 REQUIRE_OBJECT ( efi_image );
+#endif
+#ifdef IMAGE_SDI
+REQUIRE_OBJECT ( sdi );
 #endif
 
 /*
@@ -214,11 +211,17 @@ REQUIRE_OBJECT ( route_cmd );
 #ifdef IMAGE_CMD
 REQUIRE_OBJECT ( image_cmd );
 #endif
+#ifdef IMAGE_TRUST_CMD
+REQUIRE_OBJECT ( image_trust_cmd );
+#endif
 #ifdef DHCP_CMD
 REQUIRE_OBJECT ( dhcp_cmd );
 #endif
 #ifdef SANBOOT_CMD
 REQUIRE_OBJECT ( sanboot_cmd );
+#endif
+#ifdef MENU_CMD
+REQUIRE_OBJECT ( menu_cmd );
 #endif
 #ifdef LOGIN_CMD
 REQUIRE_OBJECT ( login_cmd );
@@ -240,6 +243,15 @@ REQUIRE_OBJECT ( vlan_cmd );
 #endif
 #ifdef REBOOT_CMD
 REQUIRE_OBJECT ( reboot_cmd );
+#endif
+#ifdef CPUID_CMD
+REQUIRE_OBJECT ( cpuid_cmd );
+#endif
+#ifdef SYNC_CMD
+REQUIRE_OBJECT ( sync_cmd );
+#endif
+#ifdef NSLOOKUP_CMD
+REQUIRE_OBJECT ( nslookup_cmd );
 #endif
 
 /*
@@ -274,13 +286,16 @@ REQUIRE_OBJECT ( tap );
 #endif
 
 /*
- * Drag in relevant BOFM entry points
+ * Drag in relevant sideband entry points
  */
 #ifdef CONFIG_BOFM
 #ifdef BOFM_EFI
 REQUIRE_OBJECT ( efi_bofm );
 #endif /* BOFM_EFI */
 #endif /* CONFIG_BOFM */
+#ifdef VMWARE_SETTINGS
+REQUIRE_OBJECT ( guestinfo );
+#endif /* VMWARE_SETTINGS */
 
 /*
  * Drag in selected keyboard map

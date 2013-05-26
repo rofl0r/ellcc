@@ -18,13 +18,14 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #define UMALLOC_MEMTOP
 #define SMBIOS_PCBIOS
 #define SANBOOT_PCBIOS
+#define ENTROPY_RTC
+#define TIME_RTC
 
 #define	IMAGE_ELF		/* ELF image support */
 #define	IMAGE_MULTIBOOT		/* MultiBoot image support */
 #define	IMAGE_PXE		/* PXE image support */
 #define IMAGE_SCRIPT		/* iPXE script image support */
 #define IMAGE_BZIMAGE		/* Linux bzImage image support */
-#define IMAGE_COMBOOT		/* SYSLINUX COMBOOT image support */
 
 #define PXE_STACK		/* PXE stack in iPXE - required for PXELINUX */
 #define PXE_MENU		/* PXE menu booting */
@@ -33,5 +34,8 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #define	SANBOOT_PROTO_AOE	/* AoE protocol */
 #define	SANBOOT_PROTO_IB_SRP	/* Infiniband SCSI RDMA protocol */
 #define	SANBOOT_PROTO_FCP	/* Fibre Channel protocol */
+
+#define	REBOOT_CMD		/* Reboot command */
+#define	CPUID_CMD		/* x86 CPU feature detection command */
 
 #endif /* CONFIG_DEFAULTS_PCBIOS_H */

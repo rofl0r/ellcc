@@ -91,8 +91,18 @@ const u8 pci_irqs[4] = {
     10, 10, 11, 11
 };
 
+static int dummy_pci_slot_get_irq(struct pci_device *pci, int pin)
+{
+    dprintf(1, "pci_slot_get_irq called with unknown routing\n");
+
+    return 0xff; /* PCI defined "unknown" or "no connection" for x86 */
+}
+
+static int (*pci_slot_get_irq)(struct pci_device *pci, int pin) =
+    dummy_pci_slot_get_irq;
+
 // Return the global irq number corresponding to a host bus device irq pin.
-static int pci_slot_get_irq(struct pci_device *pci, int pin)
+static int piix_pci_slot_get_irq(struct pci_device *pci, int pin)
 {
     int slot_addend = 0;
 
@@ -102,6 +112,31 @@ static int pci_slot_get_irq(struct pci_device *pci, int pin)
     }
     slot_addend += pci_bdf_to_dev(pci->bdf) - 1;
     return pci_irqs[(pin - 1 + slot_addend) & 3];
+}
+
+static int mch_pci_slot_get_irq(struct pci_device *pci, int pin)
+{
+    int irq, slot, pin_addend = 0;
+
+    while (pci->parent != NULL) {
+        pin_addend += pci_bdf_to_dev(pci->bdf);
+        pci = pci->parent;
+    }
+    slot = pci_bdf_to_dev(pci->bdf);
+
+    switch (slot) {
+    /* Slots 0-24 rotate slot:pin mapping similar to piix above, but
+       with a different starting index - see q35-acpi-dsdt.dsl */
+    case 0 ... 24:
+        irq = pci_irqs[(pin - 1 + pin_addend + slot) & 3];
+        break;
+    /* Slots 25-31 all use LNKA mapping (or LNKE, but A:D = E:H) */
+    case 25 ... 31:
+        irq = pci_irqs[(pin - 1 + pin_addend) & 3];
+        break;
+    }
+
+    return irq;
 }
 
 /* PIIX3/PIIX4 PCI to ISA bridge */
@@ -143,11 +178,9 @@ void mch_isa_bridge_init(struct pci_device *dev, void *arg)
         /* activate irq remapping in LPC */
 
         /* PIRQ[A-D] routing */
-        pci_config_writeb(bdf, ICH9_LPC_PIRQA_ROUT + i,
-                          irq | ICH9_LPC_PIRQ_ROUT_IRQEN);
+        pci_config_writeb(bdf, ICH9_LPC_PIRQA_ROUT + i, irq);
         /* PIRQ[E-H] routing */
-        pci_config_writeb(bdf, ICH9_LPC_PIRQE_ROUT + i,
-                          irq | ICH9_LPC_PIRQ_ROUT_IRQEN);
+        pci_config_writeb(bdf, ICH9_LPC_PIRQE_ROUT + i, irq);
     }
     outb(elcr[0], ICH9_LPC_PORT_ELCR1);
     outb(elcr[1], ICH9_LPC_PORT_ELCR2);
@@ -294,6 +327,8 @@ void i440fx_mem_addr_init(struct pci_device *dev, void *arg)
         pcimem_start = 0x80000000;
     else if (RamSize <= 0xc0000000)
         pcimem_start = 0xc0000000;
+
+    pci_slot_get_irq = piix_pci_slot_get_irq;
 }
 
 void mch_mem_addr_init(struct pci_device *dev, void *arg)
@@ -312,6 +347,8 @@ void mch_mem_addr_init(struct pci_device *dev, void *arg)
 
     /* setup pci i/o window (above mmconfig) */
     pcimem_start = addr + size;
+
+    pci_slot_get_irq = mch_pci_slot_get_irq;
 }
 
 static const struct pci_device_id pci_platform_tbl[] = {

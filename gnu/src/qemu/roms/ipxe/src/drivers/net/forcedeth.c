@@ -14,7 +14,8 @@
  *
  *    You should have received a copy of the GNU General Public License
  *    along with this program; if not, write to the Free Software
- *    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ *    Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ *    02110-1301, USA.
  *
  * Portions of this code are taken from the Linux forcedeth driver that was
  * based on a cleanroom reimplementation which was based on reverse engineered
@@ -61,6 +62,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
 static inline void pci_push ( void *ioaddr )
 {
 	/* force out pending posted writes */
+	wmb();
 	readl ( ioaddr );
 }
 
@@ -334,6 +336,7 @@ nv_disable_hw_interrupts ( struct forcedeth_private *priv )
 	void *ioaddr = priv->mmio_addr;
 
 	writel ( 0, ioaddr + NvRegIrqMask );
+	pci_push ( ioaddr );
 }
 
 static void
@@ -738,8 +741,7 @@ forcedeth_open ( struct net_device *netdev )
 		 ioaddr + NvRegReceiverStatus );
 
 	/* Set up slot time */
-	get_random_bytes ( &low, sizeof(low) );
-	low &= NVREG_SLOTTIME_MASK;
+	low = ( random() & NVREG_SLOTTIME_MASK );
 	writel ( low | NVREG_SLOTTIME_DEFAULT, ioaddr + NvRegSlotTime );
 
 	writel ( NVREG_TX_DEFERRAL_DEFAULT , ioaddr + NvRegTxDeferral );
@@ -764,7 +766,6 @@ forcedeth_open ( struct net_device *netdev )
 		 ioaddr + NvRegPowerState );
 
 	nv_disable_hw_interrupts ( priv );
-	pci_push ( ioaddr );
 	writel ( NVREG_MIISTAT_MASK_ALL, ioaddr + NvRegMIIStatus );
 	writel ( NVREG_IRQSTAT_MASK, ioaddr + NvRegIrqStatus );
 	pci_push ( ioaddr );
@@ -997,7 +998,7 @@ forcedeth_poll ( struct net_device *netdev )
 
 	DBG ( "forcedeth_poll: status = %#04x\n", status );
 
-	/* Link change interrupt occured. Call always if link is down,
+	/* Link change interrupt occurred. Call always if link is down,
 	 * to give auto-neg a chance to finish */
 	if ( ( status & NVREG_IRQ_LINK ) || ! ( netdev_link_ok ( netdev ) ) )
 		forcedeth_link_status ( netdev );
@@ -1018,7 +1019,6 @@ static void
 forcedeth_close ( struct net_device *netdev )
 {
 	struct forcedeth_private *priv = netdev_priv ( netdev );
-	void *ioaddr = priv->mmio_addr;
 
 	DBGP ( "forcedeth_close\n" );
 
@@ -1028,7 +1028,6 @@ forcedeth_close ( struct net_device *netdev )
 
 	/* Disable interrupts on the nic or we will lock up */
 	nv_disable_hw_interrupts ( priv );
-	pci_push ( ioaddr );
 
 	nv_free_rxtx_resources ( priv );
 

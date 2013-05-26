@@ -20,11 +20,11 @@ FILE_LICENCE ( GPL_ANY );
 
 #include <stdint.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <unistd.h>
 #include <errno.h>
 #include <assert.h>
 #include <byteswap.h>
-#include <ipxe/console.h>
 #include <ipxe/io.h>
 #include <ipxe/pci.h>
 #include <ipxe/malloc.h>
@@ -93,7 +93,6 @@ static int falcon_mdio_read ( struct efab_nic *efab, int device, int location );
 #define LPA_EF_10000FULL		0x00040000
 #define LPA_EF_10000HALF		0x00080000
 
-#define LPA_100			(LPA_100FULL | LPA_100HALF | LPA_100BASE4)
 #define LPA_EF_1000		( LPA_EF_1000FULL | LPA_EF_1000HALF )
 #define LPA_EF_10000               ( LPA_EF_10000FULL | LPA_EF_10000HALF )
 #define LPA_EF_DUPLEX		( LPA_10FULL | LPA_100FULL | LPA_EF_1000FULL | \
@@ -1567,7 +1566,7 @@ falcon_gmii_wait ( struct efab_nic *efab )
 	efab_dword_t md_stat;
 	int count;
 
-	/* wait upto 10ms */
+	/* wait up to 10ms */
 	for (count = 0; count < 1000; count++) {
 		falcon_readl ( efab, &md_stat, FCN_MD_STAT_REG_KER );
 		if ( EFAB_DWORD_FIELD ( md_stat, FCN_MD_BSY ) == 0 ) {
@@ -2196,7 +2195,7 @@ falcon_reset_xaui ( struct efab_nic *efab )
 	falcon_xmac_writel ( efab, &reg, FCN_XX_PWR_RST_REG_MAC );
 
 	/* Give some time for the link to establish */
-	for (count = 0; count < 1000; count++) { /* wait upto 10ms */
+	for (count = 0; count < 1000; count++) { /* wait up to 10ms */
 		falcon_xmac_readl ( efab, &reg, FCN_XX_PWR_RST_REG_MAC );
 		if ( EFAB_DWORD_FIELD ( reg, FCN_XX_RST_XX_EN ) == 0 ) {
 			falcon_setup_xaui ( efab );
@@ -3396,7 +3395,7 @@ falcon_init_sram ( struct efab_nic *efab )
 		falcon_read ( efab, &reg, FCN_SRM_CFG_REG_KER );
 		if ( !EFAB_OWORD_FIELD ( reg, FCN_SRAM_OOB_BT_INIT_EN ) )
 			return 0;
-	} while (++count < 20);	/* wait upto 0.4 sec */
+	} while (++count < 20);	/* wait up to 0.4 sec */
 
 	EFAB_ERR ( "timed out waiting for SRAM reset\n");
 	return -ETIMEDOUT;
@@ -3427,7 +3426,7 @@ falcon_setup_nic ( struct efab_nic *efab )
 	falcon_write ( efab, &reg, FCN_RX_DC_CFG_REG_KER );
 	
 	/* Set number of RSS CPUs
-	 * bug7244: Increase filter depth to reduce RX_RESET likelyhood
+	 * bug7244: Increase filter depth to reduce RX_RESET likelihood
 	 */
 	EFAB_POPULATE_OWORD_5 ( reg,
 				FCN_NUM_KER, 0,

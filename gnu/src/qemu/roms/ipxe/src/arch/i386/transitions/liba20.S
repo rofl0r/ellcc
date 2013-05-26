@@ -13,7 +13,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  *
  */
 
@@ -96,8 +97,11 @@ test_a20_long:
 	.section ".text16.early", "awx", @progbits
 	.code16
 enable_a20_bios:
-	/* Preserve registers */
-	pushw	%ax
+
+	/* Preserve registers.  Be very paranoid, since some BIOSes
+	 * are reported to clobber %ebx
+	 */
+	pushal
 
 	/* Attempt INT 15,2401 */
 	movw	$0x2401, %ax
@@ -108,7 +112,7 @@ enable_a20_bios:
 	call	test_a20_short
 
 99:	/* Restore registers and return */
-	popw	%ax
+	popal
 	ret
 	.size	enable_a20_bios, . - enable_a20_bios
 

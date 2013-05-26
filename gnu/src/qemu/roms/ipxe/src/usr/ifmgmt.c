@@ -13,7 +13,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  */
 
 FILE_LICENCE ( GPL2_OR_LATER );
@@ -112,6 +113,9 @@ void ifstat ( struct net_device *netdev ) {
 int iflinkwait ( struct net_device *netdev, unsigned int max_wait_ms ) {
 	int key;
 	int rc;
+
+	/* Allow link state to be updated */
+	netdev_poll ( netdev );
 
 	if ( netdev_link_ok ( netdev ) )
 		return 0;

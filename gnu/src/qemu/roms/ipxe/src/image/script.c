@@ -13,7 +13,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  */
 
 FILE_LICENCE ( GPL2_OR_LATER );
@@ -58,6 +59,7 @@ static int process_script ( struct image *image,
 			    int ( * terminate ) ( int rc ) ) {
 	off_t eol;
 	size_t len;
+	char *line;
 	int rc;
 
 	script_offset = 0;
@@ -71,23 +73,23 @@ static int process_script ( struct image *image,
 			eol = image->len;
 		len = ( eol - script_offset );
 
-		/* Copy line, terminate with NUL, and execute command */
-		{
-			char cmdbuf[ len + 1 ];
+		/* Allocate buffer for line */
+		line = zalloc ( len + 1 /* NUL */ );
+		if ( ! line )
+			return -ENOMEM;
 
-			copy_from_user ( cmdbuf, image->data,
-					 script_offset, len );
-			cmdbuf[len] = '\0';
-			DBG ( "$ %s\n", cmdbuf );
+		/* Copy line */
+		copy_from_user ( line, image->data, script_offset, len );
+		DBG ( "$ %s\n", line );
 
-			/* Move to next line */
-			script_offset += ( len + 1 );
+		/* Move to next line */
+		script_offset += ( len + 1 );
 
-			/* Process line */
-			rc = process_line ( cmdbuf );
-			if ( terminate ( rc ) )
-				return rc;
-		}
+		/* Process and free line */
+		rc = process_line ( line );
+		free ( line );
+		if ( terminate ( rc ) )
+			return rc;
 
 	} while ( script_offset < image->len );
 
@@ -221,11 +223,17 @@ static const char *goto_label;
  * @ret rc		Return status code
  */
 static int goto_find_label ( const char *line ) {
+	size_t len = strlen ( goto_label );
 
 	if ( line[0] != ':' )
 		return -ENOENT;
-	if ( strcmp ( goto_label, &line[1] ) != 0 )
+
+	if ( strncmp ( goto_label, &line[1], len ) != 0 )
 		return -ENOENT;
+
+	if ( line[ 1 + len ] && ! isspace ( line[ 1 + len ] ) )
+		return -ENOENT;
+
 	return 0;
 }
 
@@ -296,7 +304,7 @@ struct prompt_options {
 /** "prompt" option list */
 static struct option_descriptor prompt_opts[] = {
 	OPTION_DESC ( "key", 'k', required_argument,
-		      struct prompt_options, key, parse_integer ),
+		      struct prompt_options, key, parse_key ),
 	OPTION_DESC ( "timeout", 't', required_argument,
 		      struct prompt_options, timeout, parse_integer ),
 };

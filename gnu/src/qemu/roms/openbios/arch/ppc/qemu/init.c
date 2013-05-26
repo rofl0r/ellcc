@@ -59,6 +59,14 @@ unexpected_excep(int vector)
     }
 }
 
+extern void __divide_error(void);
+
+void
+__divide_error(void)
+{
+    return;
+}
+
 enum {
     ARCH_PREP = 0,
     ARCH_MAC99,
@@ -68,7 +76,7 @@ enum {
 
 int is_apple(void)
 {
-    return 1;
+    return is_oldworld() || is_newworld();
 }
 
 int is_oldworld(void)
@@ -613,6 +621,22 @@ static void kvm_of_init(void)
     fword("finish-device");
 }
 
+/*
+ *  filll        ( addr bytes quad -- )
+ */
+
+static void ffilll(void)
+{
+    const u32 longval = POP();
+    u32 bytes = POP();
+    u32 *laddr = (u32 *)cell2pointer(POP());
+    u32 len;
+    
+    for (len = 0; len < bytes / sizeof(u32); len++) {
+        *laddr++ = longval;
+    }   
+}
+
 void
 arch_of_init(void)
 {
@@ -831,7 +855,7 @@ arch_of_init(void)
     }
 
     /* Setup default boot devices */
-    snprintf(buf, sizeof(buf), "%s:,\\\\:tbxi %s:,\\ppc\\bootinfo.txt", boot_path, boot_path);
+    snprintf(buf, sizeof(buf), "%s:,\\\\:tbxi %s:,\\ppc\\bootinfo.txt %s:,%%BOOT", boot_path, boot_path, boot_path);
     push_str(buf);
     fword("encode-string");
     push_str("boot-device");
@@ -877,6 +901,9 @@ arch_of_init(void)
 
     device_end();
 
+    /* Implementation of filll word (required by BootX) */
+    bind_func("filll", ffilll);
+    
     bind_func("platform-boot", boot);
     bind_func("(go)", go);
 }

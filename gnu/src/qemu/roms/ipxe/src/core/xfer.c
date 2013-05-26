@@ -13,12 +13,14 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  */
 
 FILE_LICENCE ( GPL2_OR_LATER );
 
 #include <string.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <errno.h>
 #include <ipxe/iobuf.h>
@@ -54,6 +56,7 @@ static struct xfer_metadata dummy_metadata;
  * @ret rc		Return status code
  */
 int xfer_vredirect ( struct interface *intf, int type, va_list args ) {
+	struct interface tmp = INTF_INIT ( null_intf_desc );
 	struct interface *dest;
 	xfer_vredirect_TYPE ( void * ) *op =
 		intf_get_dest_op_no_passthru ( intf, xfer_vredirect, &dest );
@@ -66,8 +69,22 @@ int xfer_vredirect ( struct interface *intf, int type, va_list args ) {
 	if ( op ) {
 		rc = op ( object, type, args );
 	} else {
-		/* Default is to reopen the interface as instructed */
+		/* Default is to reopen the interface as instructed,
+		 * then send xfer_window_changed() messages to both
+		 * new child and parent interfaces.  Since our
+		 * original child interface is likely to be closed and
+		 * unplugged as a result of the call to
+		 * xfer_vreopen(), we create a temporary interface in
+		 * order to be able to send xfer_window_changed() to
+		 * the parent.
+		 */
+		intf_plug ( &tmp, dest );
 		rc = xfer_vreopen ( dest, type, args );
+		if ( rc == 0 ) {
+			xfer_window_changed ( dest );
+			xfer_window_changed ( &tmp );
+		}
+		intf_unplug ( &tmp );
 	}
 
 	if ( rc != 0 ) {
@@ -282,17 +299,28 @@ int xfer_deliver_raw ( struct interface *intf, const void *data, size_t len ) {
  */
 int xfer_vprintf ( struct interface *intf, const char *format,
 		   va_list args ) {
-	size_t len;
 	va_list args_tmp;
+	char *buf;
+	int len;
+	int rc;
 
+	/* Create temporary string */
 	va_copy ( args_tmp, args );
-	len = vsnprintf ( NULL, 0, format, args );
-	{
-		char buf[len + 1];
-		vsnprintf ( buf, sizeof ( buf ), format, args_tmp );
-		va_end ( args_tmp );
-		return xfer_deliver_raw ( intf, buf, len );
+	len = vasprintf ( &buf, format, args );
+	if ( len < 0 ) {
+		rc = len;
+		goto err_asprintf;
 	}
+	va_end ( args_tmp );
+
+	/* Transmit string */
+	if ( ( rc = xfer_deliver_raw ( intf, buf, len ) ) != 0 )
+		goto err_deliver;
+
+ err_deliver:
+	free ( buf );
+ err_asprintf:
+	return rc;
 }
 
 /**

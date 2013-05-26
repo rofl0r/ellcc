@@ -21,6 +21,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #include <ipxe/shell.h>
 #include <ipxe/image.h>
 #include <ipxe/keys.h>
+#include <ipxe/version.h>
 #include <usr/prompt.h>
 #include <usr/autoboot.h>
 #include <config/general.h>
@@ -48,7 +49,9 @@ static int shell_banner ( void ) {
 	if ( BANNER_TIMEOUT <= 0 )
 		return 0;
 
-	return ( prompt ( "\nPress Ctrl-B for the iPXE command line...",
+	/* Prompt user */
+	printf ( "\n" );
+	return ( prompt ( "Press Ctrl-B for the iPXE command line...",
 			  ( BANNER_TIMEOUT * 100 ), CTRL_B ) == 0 );
 }
 
@@ -80,10 +83,10 @@ __asmcall int main ( void ) {
 	 * do so.
 	 *
 	 */
-	printf ( NORMAL "\n\n" PRODUCT_NAME "\n" BOLD "iPXE " VERSION
+	printf ( NORMAL "\n\n" PRODUCT_NAME "\n" BOLD "iPXE %s"
 		 NORMAL " -- Open Source Network Boot Firmware -- "
 		 CYAN "http://ipxe.org" NORMAL "\n"
-		 "Features:" );
+		 "Features:", product_version );
 	for_each_table_entry ( feature, FEATURES )
 		printf ( " %s", feature->name );
 	printf ( "\n" );

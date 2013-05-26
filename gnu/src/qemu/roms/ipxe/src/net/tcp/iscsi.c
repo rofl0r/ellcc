@@ -13,7 +13,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  */
 
 FILE_LICENCE ( GPL2_OR_LATER );
@@ -131,6 +132,14 @@ FEATURE ( FEATURE_PROTOCOL, "iSCSI", DHCP_EB_FEATURE_ISCSI, 1 );
 	__einfo_error ( EINFO_EPROTO_INVALID_CHAP_RESPONSE )
 #define EINFO_EPROTO_INVALID_CHAP_RESPONSE \
 	__einfo_uniqify ( EINFO_EPROTO, 0x04, "Invalid CHAP response" )
+#define EPROTO_INVALID_KEY_VALUE_PAIR \
+	__einfo_error ( EINFO_EPROTO_INVALID_KEY_VALUE_PAIR )
+#define EINFO_EPROTO_INVALID_KEY_VALUE_PAIR \
+	__einfo_uniqify ( EINFO_EPROTO, 0x05, "Invalid key/value pair" )
+#define EPROTO_VALUE_REJECTED \
+	__einfo_error ( EINFO_EPROTO_VALUE_REJECTED )
+#define EINFO_EPROTO_VALUE_REJECTED					\
+	__einfo_uniqify ( EINFO_EPROTO, 0x06, "Parameter rejected" )
 
 static void iscsi_start_tx ( struct iscsi_session *iscsi );
 static void iscsi_start_login ( struct iscsi_session *iscsi );
@@ -329,7 +338,8 @@ static void iscsi_scsi_done ( struct iscsi_session *iscsi, int rc,
 	iscsi->command = NULL;
 
 	/* Send SCSI response, if any */
-	scsi_response ( &iscsi->data, rsp );
+	if ( rsp )
+		scsi_response ( &iscsi->data, rsp );
 
 	/* Close SCSI command, if this is still the same command.  (It
 	 * is possible that the command interface has already been
@@ -562,20 +572,23 @@ static int iscsi_tx_data_out ( struct iscsi_session *iscsi ) {
 	struct io_buffer *iobuf;
 	unsigned long offset;
 	size_t len;
+	size_t pad_len;
 
 	offset = ntohl ( data_out->offset );
 	len = ISCSI_DATA_LEN ( data_out->lengths );
+	pad_len = ISCSI_DATA_PAD_LEN ( data_out->lengths );
 
 	assert ( iscsi->command != NULL );
 	assert ( iscsi->command->data_out );
 	assert ( ( offset + len ) <= iscsi->command->data_out_len );
 
-	iobuf = xfer_alloc_iob ( &iscsi->socket, len );
+	iobuf = xfer_alloc_iob ( &iscsi->socket, ( len + pad_len ) );
 	if ( ! iobuf )
 		return -ENOMEM;
 	
 	copy_from_user ( iob_put ( iobuf, len ),
 			 iscsi->command->data_out, offset, len );
+	memset ( iob_put ( iobuf, pad_len ), 0, pad_len );
 
 	return xfer_deliver_iob ( &iscsi->socket, iobuf );
 }
@@ -793,13 +806,17 @@ static int iscsi_tx_login_request ( struct iscsi_session *iscsi ) {
 	struct iscsi_bhs_login_request *request = &iscsi->tx_bhs.login_request;
 	struct io_buffer *iobuf;
 	size_t len;
+	size_t pad_len;
 
 	len = ISCSI_DATA_LEN ( request->lengths );
-	iobuf = xfer_alloc_iob ( &iscsi->socket, len );
+	pad_len = ISCSI_DATA_PAD_LEN ( request->lengths );
+	iobuf = xfer_alloc_iob ( &iscsi->socket, ( len + pad_len ) );
 	if ( ! iobuf )
 		return -ENOMEM;
 	iob_put ( iobuf, len );
 	iscsi_build_login_request_strings ( iscsi, iobuf->data, len );
+	memset ( iob_put ( iobuf, pad_len ), 0, pad_len );
+
 	return xfer_deliver_iob ( &iscsi->socket, iobuf );
 }
 
@@ -1083,8 +1100,8 @@ static int iscsi_handle_chap_r_value ( struct iscsi_session *iscsi,
 struct iscsi_string_type {
 	/** String key
 	 *
-	 * This is the portion up to and including the "=" sign,
-	 * e.g. "InitiatorName=", "CHAP_A=", etc.
+	 * This is the portion preceding the "=" sign,
+	 * e.g. "InitiatorName", "CHAP_A", etc.
 	 */
 	const char *key;
 	/** Handle iSCSI string value
@@ -1098,13 +1115,13 @@ struct iscsi_string_type {
 
 /** iSCSI text strings that we want to handle */
 static struct iscsi_string_type iscsi_string_types[] = {
-	{ "TargetAddress=", iscsi_handle_targetaddress_value },
-	{ "AuthMethod=", iscsi_handle_authmethod_value },
-	{ "CHAP_A=", iscsi_handle_chap_a_value },
-	{ "CHAP_I=", iscsi_handle_chap_i_value },
-	{ "CHAP_C=", iscsi_handle_chap_c_value },
-	{ "CHAP_N=", iscsi_handle_chap_n_value },
-	{ "CHAP_R=", iscsi_handle_chap_r_value },
+	{ "TargetAddress", iscsi_handle_targetaddress_value },
+	{ "AuthMethod", iscsi_handle_authmethod_value },
+	{ "CHAP_A", iscsi_handle_chap_a_value },
+	{ "CHAP_I", iscsi_handle_chap_i_value },
+	{ "CHAP_C", iscsi_handle_chap_c_value },
+	{ "CHAP_N", iscsi_handle_chap_n_value },
+	{ "CHAP_R", iscsi_handle_chap_r_value },
 	{ NULL, NULL }
 };
 
@@ -1118,16 +1135,35 @@ static struct iscsi_string_type iscsi_string_types[] = {
 static int iscsi_handle_string ( struct iscsi_session *iscsi,
 				 const char *string ) {
 	struct iscsi_string_type *type;
+	const char *separator;
+	const char *value;
 	size_t key_len;
 	int rc;
 
+	/* Find separator */
+	separator = strchr ( string, '=' );
+	if ( ! separator ) {
+		DBGC ( iscsi, "iSCSI %p malformed string %s\n",
+		       iscsi, string );
+		return -EPROTO_INVALID_KEY_VALUE_PAIR;
+	}
+	key_len = ( separator - string );
+	value = ( separator + 1 );
+
+	/* Check for rejections.  Since we send only non-rejectable
+	 * values, any rejection is a fatal protocol error.
+	 */
+	if ( strcmp ( value, "Reject" ) == 0 ) {
+		DBGC ( iscsi, "iSCSI %p rejection: %s\n", iscsi, string );
+		return -EPROTO_VALUE_REJECTED;
+	}
+
+	/* Handle key/value pair */
 	for ( type = iscsi_string_types ; type->key ; type++ ) {
-		key_len = strlen ( type->key );
 		if ( strncmp ( string, type->key, key_len ) != 0 )
 			continue;
 		DBGC ( iscsi, "iSCSI %p handling %s\n", iscsi, string );
-		if ( ( rc = type->handle ( iscsi,
-					   ( string + key_len ) ) ) != 0 ) {
+		if ( ( rc = type->handle ( iscsi, value ) ) != 0 ) {
 			DBGC ( iscsi, "iSCSI %p could not handle %s: %s\n",
 			       iscsi, string, strerror ( rc ) );
 			return rc;
@@ -1305,6 +1341,24 @@ static int iscsi_rx_login_response ( struct iscsi_session *iscsi,
  */
 
 /**
+ * Pause TX engine
+ *
+ * @v iscsi		iSCSI session
+ */
+static void iscsi_tx_pause ( struct iscsi_session *iscsi ) {
+	process_del ( &iscsi->process );
+}
+
+/**
+ * Resume TX engine
+ *
+ * @v iscsi		iSCSI session
+ */
+static void iscsi_tx_resume ( struct iscsi_session *iscsi ) {
+	process_add ( &iscsi->process );
+}
+
+/**
  * Start up a new TX PDU
  *
  * @v iscsi		iSCSI session
@@ -1315,8 +1369,7 @@ static int iscsi_rx_login_response ( struct iscsi_session *iscsi,
 static void iscsi_start_tx ( struct iscsi_session *iscsi ) {
 
 	assert ( iscsi->tx_state == ISCSI_TX_IDLE );
-	assert ( ! process_running ( &iscsi->process ) );
-	
+
 	/* Initialise TX BHS */
 	memset ( &iscsi->tx_bhs, 0, sizeof ( iscsi->tx_bhs ) );
 
@@ -1324,7 +1377,7 @@ static void iscsi_start_tx ( struct iscsi_session *iscsi ) {
 	iscsi->tx_state = ISCSI_TX_BHS;
 
 	/* Start transmission process */
-	process_add ( &iscsi->process );
+	iscsi_tx_resume ( iscsi );
 }
 
 /**
@@ -1372,27 +1425,6 @@ static int iscsi_tx_data ( struct iscsi_session *iscsi ) {
 }
 
 /**
- * Transmit data padding of an iSCSI PDU
- *
- * @v iscsi		iSCSI session
- * @ret rc		Return status code
- * 
- * Handle transmission of any data padding in a PDU data segment.
- * iscsi::tx_bhs will be valid when this is called.
- */
-static int iscsi_tx_data_padding ( struct iscsi_session *iscsi ) {
-	static const char pad[] = { '\0', '\0', '\0' };
-	struct iscsi_bhs_common *common = &iscsi->tx_bhs.common;
-	size_t pad_len;
-	
-	pad_len = ISCSI_DATA_PAD_LEN ( common->lengths );
-	if ( ! pad_len )
-		return 0;
-
-	return xfer_deliver_raw ( &iscsi->socket, pad, pad_len );
-}
-
-/**
  * Complete iSCSI PDU transmission
  *
  * @v iscsi		iSCSI session
@@ -1405,7 +1437,7 @@ static void iscsi_tx_done ( struct iscsi_session *iscsi ) {
 	struct iscsi_bhs_common *common = &iscsi->tx_bhs.common;
 
 	/* Stop transmission process */
-	process_del ( &iscsi->process );
+	iscsi_tx_pause ( iscsi );
 
 	switch ( common->opcode & ISCSI_OPCODE_MASK ) {
 	case ISCSI_OPCODE_DATA_OUT:
@@ -1427,9 +1459,7 @@ static void iscsi_tx_done ( struct iscsi_session *iscsi ) {
  * 
  * Constructs data to be sent for the current TX state
  */
-static void iscsi_tx_step ( struct process *process ) {
-	struct iscsi_session *iscsi =
-		container_of ( process, struct iscsi_session, process );
+static void iscsi_tx_step ( struct iscsi_session *iscsi ) {
 	struct iscsi_bhs_common *common = &iscsi->tx_bhs.common;
 	int ( * tx ) ( struct iscsi_session *iscsi );
 	enum iscsi_tx_state next_state;
@@ -1452,16 +1482,11 @@ static void iscsi_tx_step ( struct process *process ) {
 		case ISCSI_TX_DATA:
 			tx = iscsi_tx_data;
 			tx_len = ISCSI_DATA_LEN ( common->lengths );
-			next_state = ISCSI_TX_DATA_PADDING;
-			break;
-		case ISCSI_TX_DATA_PADDING:
-			tx = iscsi_tx_data_padding;
-			tx_len = ISCSI_DATA_PAD_LEN ( common->lengths );
 			next_state = ISCSI_TX_IDLE;
 			break;
 		case ISCSI_TX_IDLE:
-			/* Stop processing */
-			iscsi_tx_done ( iscsi );
+			/* Nothing to do; pause processing */
+			iscsi_tx_pause ( iscsi );
 			return;
 		default:
 			assert ( 0 );
@@ -1470,7 +1495,10 @@ static void iscsi_tx_step ( struct process *process ) {
 
 		/* Check for window availability, if needed */
 		if ( tx_len && ( xfer_window ( &iscsi->socket ) == 0 ) ) {
-			/* Cannot transmit at this point; stop processing */
+			/* Cannot transmit at this point; pause
+			 * processing and wait for window to reopen
+			 */
+			iscsi_tx_pause ( iscsi );
 			return;
 		}
 
@@ -1485,8 +1513,18 @@ static void iscsi_tx_step ( struct process *process ) {
 
 		/* Move to next state */
 		iscsi->tx_state = next_state;
+
+		/* If we have moved to the idle state, mark
+		 * transmission as complete
+		 */
+		if ( iscsi->tx_state == ISCSI_TX_IDLE )
+			iscsi_tx_done ( iscsi );
 	}
 }
+
+/** iSCSI TX process descriptor */
+static struct process_descriptor iscsi_process_desc =
+	PROC_DESC ( struct iscsi_session, process, iscsi_tx_step );
 
 /**
  * Receive basic header segment of an iSCSI PDU
@@ -1694,6 +1732,8 @@ static int iscsi_vredirect ( struct iscsi_session *iscsi, int type,
 /** iSCSI socket interface operations */
 static struct interface_operation iscsi_socket_operations[] = {
 	INTF_OP ( xfer_deliver, struct iscsi_session *, iscsi_socket_deliver ),
+	INTF_OP ( xfer_window_changed, struct iscsi_session *,
+		  iscsi_tx_resume ),
 	INTF_OP ( xfer_vredirect, struct iscsi_session *, iscsi_vredirect ),
 	INTF_OP ( intf_close, struct iscsi_session *, iscsi_close ),
 };
@@ -2034,7 +2074,7 @@ static int iscsi_open ( struct interface *parent, struct uri *uri ) {
 	intf_init ( &iscsi->control, &iscsi_control_desc, &iscsi->refcnt );
 	intf_init ( &iscsi->data, &iscsi_data_desc, &iscsi->refcnt );
 	intf_init ( &iscsi->socket, &iscsi_socket_desc, &iscsi->refcnt );
-	process_init_stopped ( &iscsi->process, iscsi_tx_step,
+	process_init_stopped ( &iscsi->process, &iscsi_process_desc,
 			       &iscsi->refcnt );
 
 	/* Parse root path */

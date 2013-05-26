@@ -8,7 +8,7 @@
  */
 
 #define UACCESS_EFI
-#define IOAPI_EFI
+#define IOAPI_X86
 #define PCIAPI_EFI
 #define CONSOLE_EFI
 #define TIMER_EFI
@@ -17,6 +17,8 @@
 #define SMBIOS_EFI
 #define SANBOOT_NULL
 #define BOFM_EFI
+#define ENTROPY_NULL
+#define TIME_NULL
 
 #define	IMAGE_EFI		/* EFI image support */
 #define	IMAGE_SCRIPT		/* iPXE script image support */

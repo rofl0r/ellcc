@@ -25,9 +25,9 @@
 #include "packages/video.h"
 #define NO_QEMU_PROTOS
 #include "arch/common/fw_cfg.h"
-#include "libopenbios/ofmem.h"
+#include "arch/sparc32/ofmem_sparc32.h"
 
-#define MEMORY_SIZE     (512*1024)       /* 512K ram for hosted system */
+#define MEMORY_SIZE     (128*1024)       /* 128K ram for hosted system */
 #define UUID_FMT "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x"
 #define FW_CFG_SUN4M_DEPTH   (FW_CFG_ARCH_LOCAL + 0x00)
 
@@ -244,9 +244,9 @@ static const struct cpudef sparc_defs[] = {
         .iu_version = 0x04 << 24, /* Impl 0, ver 4 */
         .name = "FMI,MB86904",
         .psr_impl = 0,
-        .psr_vers = 5,
+        .psr_vers = 4,
         .impl = 0,
-        .vers = 5,
+        .vers = 4,
         .dcache_line_size = 0x10,
         .dcache_lines = 0x200,
         .dcache_assoc = 1,
@@ -813,7 +813,7 @@ static void init_memory(void)
     if (!phys)
         printk("panic: not enough physical memory on host system.\n");
     
-    virt = ofmem_claim_virt(-1, MEMORY_SIZE, PAGE_SIZE);
+    virt = ofmem_claim_virt(OF_CODE_START - MEMORY_SIZE, MEMORY_SIZE, 0);
     if (!virt)
         printk("panic: not enough virtual memory on host system.\n");
 
@@ -832,8 +832,7 @@ static void init_memory(void)
 static void
 arch_init( void )
 {
-	static char cmdline[128];
-        int size = 0;
+	char *cmdline;
         const char *kernel_cmdline;
         uint32_t temp;
         uint16_t machine_id;
@@ -894,11 +893,11 @@ arch_init( void )
 
         kernel_cmdline = (const char *) fw_cfg_read_i32(FW_CFG_KERNEL_CMDLINE);
         if (kernel_cmdline) {
-            size = strlen(kernel_cmdline);
-            memcpy(cmdline, kernel_cmdline, size);
+            cmdline = strdup(kernel_cmdline);
             obp_arg.argv[1] = cmdline;
-        }
-	cmdline[size] = '\0';
+        } else {
+	    cmdline = strdup("");
+	}
 	qemu_cmdline = (uint32_t)cmdline;
 
         /* Setup nvram variables */

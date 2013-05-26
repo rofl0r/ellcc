@@ -13,7 +13,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  */
 
 FILE_LICENCE ( GPL2_OR_LATER );
@@ -21,6 +22,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #include <stdlib.h>
 #include <stdarg.h>
 #include <errno.h>
+#include <syslog.h>
 #include <ipxe/iobuf.h>
 #include <ipxe/xfer.h>
 #include <ipxe/open.h>
@@ -73,6 +75,15 @@ static void downloader_free ( struct refcnt *refcnt ) {
  */
 static void downloader_finished ( struct downloader *downloader, int rc ) {
 
+	/* Log download status */
+	if ( rc == 0 ) {
+		syslog ( LOG_NOTICE, "Downloaded \"%s\"\n",
+			 downloader->image->name );
+	} else {
+		syslog ( LOG_ERR, "Download of \"%s\" failed: %s\n",
+			 downloader->image->name, strerror ( rc ) );
+	}
+
 	/* Shut down interfaces */
 	intf_shutdown ( &downloader->xfer, rc );
 	intf_shutdown ( &downloader->job, rc );
@@ -101,7 +112,7 @@ static int downloader_ensure_size ( struct downloader *downloader,
 	if ( ! new_buffer ) {
 		DBGC ( downloader, "Downloader %p could not extend buffer to "
 		       "%zd bytes\n", downloader, len );
-		return -ENOBUFS;
+		return -ENOSPC;
 	}
 	downloader->image->data = new_buffer;
 	downloader->image->len = len;
@@ -173,6 +184,8 @@ static int downloader_xfer_deliver ( struct downloader *downloader,
 
  done:
 	free_iob ( iobuf );
+	if ( rc != 0 )
+		downloader_finished ( downloader, rc );
 	return rc;
 }
 

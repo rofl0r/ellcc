@@ -83,7 +83,8 @@ struct setting {
 #define SETTING_HOST_EXTRA	10 /**< Host identity additional settings */
 #define SETTING_AUTH		11 /**< Authentication settings */
 #define SETTING_AUTH_EXTRA	12 /**< Authentication additional settings */
-#define SETTING_MISC		13 /**< Miscellaneous settings */
+#define SETTING_CRYPTO		13 /**< Cryptography settings */
+#define SETTING_MISC		14 /**< Miscellaneous settings */
 
 /** @} */
 
@@ -161,25 +162,24 @@ struct setting_type {
 	 * This is the name exposed to the user (e.g. "string").
 	 */
 	const char *name;
-	/** Parse and set value of setting
+	/** Parse formatted setting value
 	 *
-	 * @v settings		Settings block
-	 * @v setting		Setting to store
-	 * @v value		Formatted setting data
-	 * @ret rc		Return status code
+	 * @v value		Formatted setting value
+	 * @v buf		Buffer to contain raw value
+	 * @v len		Length of buffer
+	 * @ret len		Length of raw value, or negative error
 	 */
-	int ( * storef ) ( struct settings *settings, struct setting *setting,
-			   const char *value );
-	/** Fetch and format value of setting
+	int ( * parse ) ( const char *value, void *buf, size_t len );
+	/** Format setting value
 	 *
-	 * @v settings		Settings block
-	 * @v setting		Setting to fetch
+	 * @v raw		Raw setting value
+	 * @v raw_len		Length of raw setting value
 	 * @v buf		Buffer to contain formatted value
 	 * @v len		Length of buffer
 	 * @ret len		Length of formatted value, or negative error
 	 */
-	int ( * fetchf ) ( struct settings *settings, struct setting *setting,
-			   char *buf, size_t len );
+	int ( * format ) ( const void *raw, size_t raw_len, char *buf,
+			   size_t len );
 };
 
 /** Configuration setting type table */
@@ -241,6 +241,8 @@ extern struct settings * fetch_setting_origin ( struct settings *settings,
 						struct setting *setting );
 extern int fetch_setting_len ( struct settings *settings,
 			       struct setting *setting );
+extern int fetch_setting_copy ( struct settings *settings,
+				struct setting *setting, void **data );
 extern int fetch_string_setting ( struct settings *settings,
 				  struct setting *setting,
 				  char *data, size_t len );
@@ -267,22 +269,33 @@ extern int fetch_uuid_setting ( struct settings *settings,
 extern void clear_settings ( struct settings *settings );
 extern int setting_cmp ( struct setting *a, struct setting *b );
 
+extern struct settings * find_child_settings ( struct settings *parent,
+					       const char *name );
 extern const char * settings_name ( struct settings *settings );
 extern struct settings * find_settings ( const char *name );
 extern struct setting * find_setting ( const char *name );
 
 extern int setting_name ( struct settings *settings, struct setting *setting,
 			  char *buf, size_t len );
+extern int fetchf_setting ( struct settings *settings, struct setting *setting,
+			    char *buf, size_t len );
 extern int storef_setting ( struct settings *settings,
 			    struct setting *setting,
 			    const char *value );
-extern int storef_named_setting ( const char *name, const char *value );
+extern int store_named_setting ( const char *name,
+				 struct setting_type *default_type,
+				 const void *data, size_t len );
+extern int storef_named_setting ( const char *name,
+				  struct setting_type *default_type,
+				  const char *value );
 extern int fetchf_named_setting ( const char *name, char *name_buf,
 				  size_t name_len, char *value_buf,
 				  size_t value_len );
+extern int fetchf_named_setting_copy ( const char *name, char **data );
 extern char * expand_settings ( const char *string );
 
 extern struct setting_type setting_type_string __setting_type;
+extern struct setting_type setting_type_uristring __setting_type;
 extern struct setting_type setting_type_ipv4 __setting_type;
 extern struct setting_type setting_type_int8 __setting_type;
 extern struct setting_type setting_type_int16 __setting_type;
@@ -291,6 +304,7 @@ extern struct setting_type setting_type_uint8 __setting_type;
 extern struct setting_type setting_type_uint16 __setting_type;
 extern struct setting_type setting_type_uint32 __setting_type;
 extern struct setting_type setting_type_hex __setting_type;
+extern struct setting_type setting_type_hexhyp __setting_type;
 extern struct setting_type setting_type_uuid __setting_type;
 
 extern struct setting ip_setting __setting ( SETTING_IPv4 );
@@ -298,6 +312,7 @@ extern struct setting netmask_setting __setting ( SETTING_IPv4 );
 extern struct setting gateway_setting __setting ( SETTING_IPv4 );
 extern struct setting dns_setting __setting ( SETTING_IPv4_EXTRA );
 extern struct setting hostname_setting __setting ( SETTING_HOST );
+extern struct setting domain_setting __setting ( SETTING_IPv4_EXTRA );
 extern struct setting filename_setting __setting ( SETTING_BOOT );
 extern struct setting root_path_setting __setting ( SETTING_SANBOOT );
 extern struct setting username_setting __setting ( SETTING_AUTH );
@@ -353,29 +368,13 @@ static inline int delete_setting ( struct settings *settings,
 }
 
 /**
- * Fetch and format value of setting
- *
- * @v settings		Settings block, or NULL to search all blocks
- * @v setting		Setting to fetch
- * @v type		Settings type
- * @v buf		Buffer to contain formatted value
- * @v len		Length of buffer
- * @ret len		Length of formatted value, or negative error
- */
-static inline int fetchf_setting ( struct settings *settings,
-				   struct setting *setting,
-				   char *buf, size_t len ) {
-	return setting->type->fetchf ( settings, setting, buf, len );
-}
-
-/**
  * Delete named setting
  *
  * @v name		Name of setting
  * @ret rc		Return status code
  */
 static inline int delete_named_setting ( const char *name ) {
-	return storef_named_setting ( name, NULL );
+	return store_named_setting ( name, NULL, NULL, 0 );
 }
 
 /**

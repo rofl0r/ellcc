@@ -13,7 +13,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  */
 
 FILE_LICENCE ( GPL2_OR_LATER );
@@ -36,132 +37,24 @@ FILE_LICENCE ( GPL2_OR_LATER );
  */
 
 /**
- * Register an image and leave it registered
- *
- * @v image		Executable image
- * @ret rc		Return status code
- *
- * This function assumes an ownership of the passed image.
- */
-int register_and_put_image ( struct image *image ) {
-	int rc;
-
-	rc = register_image ( image );
-	image_put ( image );
-	return rc;
-}
-
-/**
- * Register and probe an image
- *
- * @v image		Executable image
- * @ret rc		Return status code
- *
- * This function assumes an ownership of the passed image.
- */
-int register_and_probe_image ( struct image *image ) {
-	int rc;
-
-	if ( ( rc = register_and_put_image ( image ) ) != 0 )
-		return rc;
-
-	if ( ( rc = image_probe ( image ) ) != 0 )
-		return rc;
-
-	return 0;
-}
-
-/**
- * Register and select an image
- *
- * @v image		Executable image
- * @ret rc		Return status code
- *
- * This function assumes an ownership of the passed image.
- */
-int register_and_select_image ( struct image *image ) {
-	int rc;
-
-	if ( ( rc = register_and_probe_image ( image ) ) != 0 )
-		return rc;
-
-	if ( ( rc = image_select ( image ) ) != 0 )
-		return rc;
-
-	return 0;
-}
-
-/**
- * Register and boot an image
- *
- * @v image		Image
- * @ret rc		Return status code
- *
- * This function assumes an ownership of the passed image.
- */
-int register_and_boot_image ( struct image *image ) {
-	int rc;
-
-	if ( ( rc = register_and_select_image ( image ) ) != 0 )
-		return rc;
-
-	if ( ( rc = image_exec ( image ) ) != 0 )
-		return rc;
-
-	return 0;
-}
-
-/**
- * Register and replace image
- *
- * @v image		Image
- * @ret rc		Return status code
- *
- * This function assumes an ownership of the passed image.
- */
-int register_and_replace_image ( struct image *image ) {
-	int rc;
-
-	if ( ( rc = register_and_probe_image ( image ) ) != 0 )
-		return rc;
-
-	if ( ( rc = image_replace ( image ) ) != 0 )
-		return rc;
-
-	return 0;
-}
-
-/**
- * Download an image
+ * Download a new image
  *
  * @v uri		URI
- * @v name		Image name, or NULL to use default
- * @v cmdline		Command line, or NULL for no command line
- * @v action		Action to take upon a successful download
+ * @v image		Image to fill in
  * @ret rc		Return status code
  */
-int imgdownload ( struct uri *uri, const char *name, const char *cmdline,
-		  int ( * action ) ( struct image *image ) ) {
-	struct image *image;
+int imgdownload ( struct uri *uri, struct image **image ) {
 	size_t len = ( unparse_uri ( NULL, 0, uri, URI_ALL ) + 1 );
 	char uri_string_redacted[len];
 	const char *password;
 	int rc;
 
 	/* Allocate image */
-	image = alloc_image();
-	if ( ! image )
-		return -ENOMEM;
-
-	/* Set image name */
-	if ( name )
-		image_set_name ( image, name );
-
-	/* Set image URI */
-	image_set_uri ( image, uri );
-
-	/* Set image command line */
-	image_set_cmdline ( image, cmdline );
+	*image = alloc_image ( uri );
+	if ( ! *image ) {
+		rc = -ENOMEM;
+		goto err_alloc_image;
+	}
 
 	/* Redact password portion of URI, if necessary */
 	password = uri->password;
@@ -172,49 +65,73 @@ int imgdownload ( struct uri *uri, const char *name, const char *cmdline,
 	uri->password = password;
 
 	/* Create downloader */
-	if ( ( rc = create_downloader ( &monojob, image, LOCATION_URI,
+	if ( ( rc = create_downloader ( &monojob, *image, LOCATION_URI,
 					uri ) ) != 0 ) {
-		image_put ( image );
-		return rc;
+		printf ( "Could not start download: %s\n", strerror ( rc ) );
+		goto err_create_downloader;
 	}
 
 	/* Wait for download to complete */
-	if ( ( rc = monojob_wait ( uri_string_redacted ) ) != 0 ) {
-		image_put ( image );
-		return rc;
+	if ( ( rc = monojob_wait ( uri_string_redacted ) ) != 0 )
+		goto err_monojob_wait;
+
+	/* Register image */
+	if ( ( rc = register_image ( *image ) ) != 0 ) {
+		printf ( "Could not register image: %s\n", strerror ( rc ) );
+		goto err_register_image;
 	}
 
-	/* Act upon downloaded image.  This action assumes our
-	 * ownership of the image.
+	/* Drop local reference to image.  Image is guaranteed to
+	 * remain in scope since it is registered.
 	 */
-	if ( ( rc = action ( image ) ) != 0 )
-		return rc;
+	image_put ( *image );
 
 	return 0;
+
+ err_register_image:
+ err_monojob_wait:
+ err_create_downloader:
+	image_put ( *image );
+ err_alloc_image:
+	return rc;
 }
 
 /**
- * Download an image
+ * Download a new image
  *
- * @v uri_string	URI as a string (e.g. "http://www.nowhere.com/vmlinuz")
- * @v name		Image name, or NULL to use default
- * @v cmdline		Command line, or NULL for no command line
- * @v action		Action to take upon a successful download
+ * @v uri_string	URI string
+ * @v image		Image to fill in
  * @ret rc		Return status code
  */
-int imgdownload_string ( const char *uri_string, const char *name,
-			 const char *cmdline,
-			 int ( * action ) ( struct image *image ) ) {
+int imgdownload_string ( const char *uri_string, struct image **image ) {
 	struct uri *uri;
 	int rc;
 
 	if ( ! ( uri = parse_uri ( uri_string ) ) )
 		return -ENOMEM;
 
-	rc = imgdownload ( uri, name, cmdline, action );
+	rc = imgdownload ( uri, image );
 
 	uri_put ( uri );
 	return rc;
+}
+
+/**
+ * Acquire an image
+ *
+ * @v name_uri		Name or URI string
+ * @v image		Image to fill in
+ * @ret rc		Return status code
+ */
+int imgacquire ( const char *name_uri, struct image **image ) {
+
+	/* If we already have an image with the specified name, use it */
+	*image = find_image ( name_uri );
+	if ( *image )
+		return 0;
+
+	/* Otherwise, download a new image */
+	return imgdownload_string ( name_uri, image );
 }
 
 /**
@@ -226,18 +143,13 @@ void imgstat ( struct image *image ) {
 	printf ( "%s : %zd bytes", image->name, image->len );
 	if ( image->type )
 		printf ( " [%s]", image->type->name );
+	if ( image->flags & IMAGE_TRUSTED )
+		printf ( " [TRUSTED]" );
 	if ( image->flags & IMAGE_SELECTED )
 		printf ( " [SELECTED]" );
+	if ( image->flags & IMAGE_AUTO_UNREGISTER )
+		printf ( " [AUTOFREE]" );
 	if ( image->cmdline )
 		printf ( " \"%s\"", image->cmdline );
 	printf ( "\n" );
-}
-
-/**
- * Free an image
- *
- * @v image		Executable/loadable image
- */
-void imgfree ( struct image *image ) {
-	unregister_image ( image );
 }

@@ -7,6 +7,7 @@ CLEANUP		:=
 CFLAGS		:=
 ASFLAGS		:=
 LDFLAGS		:=
+HOST_CFLAGS	:=
 MAKEDEPS	:= Makefile
 
 ###############################################################################
@@ -32,6 +33,7 @@ RANLIB		:= $(CROSS_COMPILE)ranlib
 OBJCOPY		:= $(CROSS_COMPILE)objcopy
 NM		:= $(CROSS_COMPILE)nm
 OBJDUMP		:= $(CROSS_COMPILE)objdump
+OPENSSL		:= openssl
 PARSEROM	:= ./util/parserom.pl
 FIXROM		:= ./util/fixrom.pl
 SYMCHECK	:= ./util/symcheck.pl
@@ -68,9 +70,12 @@ SRCDIRS		+= drivers/net/igb
 SRCDIRS		+= drivers/net/igbvf
 SRCDIRS		+= drivers/net/phantom
 SRCDIRS		+= drivers/net/rtl818x
-SRCDIRS		+= drivers/net/ath5k
+SRCDIRS		+= drivers/net/ath
+SRCDIRS		+= drivers/net/ath/ath5k
+SRCDIRS		+= drivers/net/ath/ath9k
 SRCDIRS		+= drivers/net/vxge
 SRCDIRS		+= drivers/net/efi
+SRCDIRS		+= drivers/net/tg3
 SRCDIRS		+= drivers/block
 SRCDIRS		+= drivers/nvs
 SRCDIRS		+= drivers/bitbash
@@ -138,7 +143,8 @@ everything :
 		bin-i386-efi/ipxe.efirom \
 		bin-x86_64-efi/ipxe.efi bin-x86_64-efi/ipxe.efidrv \
 		bin-x86_64-efi/ipxe.efirom \
-		bin-i386-linux/tap.linux bin-x86_64-linux/tap.linux
+		bin-i386-linux/tap.linux bin-x86_64-linux/tap.linux \
+		bin-i386-linux/tests.linux bin-x86_64-linux/tests.linux
 
 ###############################################################################
 #
@@ -160,13 +166,12 @@ VERSION_PATCH	= 0
 EXTRAVERSION	= +
 MM_VERSION	= $(VERSION_MAJOR).$(VERSION_MINOR)
 VERSION		= $(MM_VERSION).$(VERSION_PATCH)$(EXTRAVERSION)
-CFLAGS		+= -DVERSION_MAJOR=$(VERSION_MAJOR) \
-		   -DVERSION_MINOR=$(VERSION_MINOR) \
-		   -DVERSION_PATCH=$(VERSION_PATCH) \
-		   -DVERSION=\"$(VERSION)\"
-IDENT		= '$(@F) $(VERSION) (GPL) ipxe.org'
+GITVERSION := $(shell git describe --always --abbrev=1 --match "" 2>/dev/null)
+ifneq ($(GITVERSION),)
+VERSION		+= ($(GITVERSION))
+endif
 version :
-	@$(ECHO) $(VERSION)
+	@$(ECHO) "$(VERSION)"
 
 ###############################################################################
 #

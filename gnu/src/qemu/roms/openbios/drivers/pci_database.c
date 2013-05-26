@@ -49,10 +49,10 @@ static const pci_dev_t scsi_devices[] = {
     {
         /* Virtio-block controller */
         PCI_VENDOR_ID_REDHAT_QUMRANET, PCI_DEVICE_ID_VIRTIO_BLOCK,
-        NULL, "virtio-scsi", NULL,
+        NULL, "virtio-blk", NULL,
         "pci1af4,1001\0pci1af4,1001\0pciclass,01018f\0",
         0, 0, 0,
-        virtio_config_cb, NULL,
+        NULL, NULL,
     },
     {
         0xFFFF, 0xFFFF,
@@ -134,7 +134,7 @@ static const pci_dev_t eth_devices[] = {
         NULL, "virtio-net", NULL,
         "pci1af4,1000\0pci1af4,1000\0pciclass,020000\0",
         0, 0, 0,
-        virtio_config_cb, NULL,
+        NULL, NULL,
     },
     {
         0xFFFF, 0xFFFF,

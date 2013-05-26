@@ -84,7 +84,7 @@ vpath %.S src vgasrc
 ################ Common build rules
 
 # Verify the build environment works.
-TESTGCC:=$(shell CC="$(CC)" LD="$(LD)" IASL="$(IASL)" tools/test-build.sh)
+TESTGCC:=$(shell OUT="$(OUT)" CC="$(CC)" LD="$(LD)" IASL="$(IASL)" tools/test-build.sh)
 ifeq "$(TESTGCC)" "-1"
 $(error "Please upgrade the build environment")
 endif
@@ -97,7 +97,7 @@ endif
 # Do a whole file compile by textually including all C code.
 define whole-compile
 @echo "  Compiling whole program $3"
-$(Q)printf '$(foreach i,$2,#include "../$i"\n)' > $3.tmp.c
+$(Q)printf '$(foreach i,$2,#include "$(CURDIR)/$i"\n)' > $3.tmp.c
 $(Q)$(CC) $1 $(CFLAGSWHOLE) -c $3.tmp.c -o $3
 endef
 
@@ -126,11 +126,11 @@ $(OUT)asm-offsets.h: $(OUT)asm-offsets.s
 	@echo "  Generating offset file $@"
 	$(Q)./tools/gen-offsets.sh $< $@
 
-$(OUT)ccode16.o: $(OUT)autoconf.h $(patsubst %.c, out/%.o,$(SRC16)) ; $(call whole-compile, $(CFLAGS16), $(addprefix src/, $(SRC16)),$@)
+$(OUT)ccode16.o: $(OUT)autoconf.h $(patsubst %.c, $(OUT)%.o,$(SRC16)) ; $(call whole-compile, $(CFLAGS16), $(addprefix src/, $(SRC16)),$@)
 
-$(OUT)code32seg.o: $(OUT)autoconf.h $(patsubst %.c, out/%.o,$(SRC32SEG)) ; $(call whole-compile, $(CFLAGS32SEG), $(addprefix src/, $(SRC32SEG)),$@)
+$(OUT)code32seg.o: $(OUT)autoconf.h $(patsubst %.c, $(OUT)%.o,$(SRC32SEG)) ; $(call whole-compile, $(CFLAGS32SEG), $(addprefix src/, $(SRC32SEG)),$@)
 
-$(OUT)ccode32flat.o: $(OUT)autoconf.h $(patsubst %.c, out/%.o,$(SRC32FLAT)) ; $(call whole-compile, $(CFLAGS32FLAT), $(addprefix src/, $(SRC32FLAT)),$@)
+$(OUT)ccode32flat.o: $(OUT)autoconf.h $(patsubst %.c, $(OUT)%.o,$(SRC32FLAT)) ; $(call whole-compile, $(CFLAGS32FLAT), $(addprefix src/, $(SRC32FLAT)),$@)
 
 $(OUT)romlayout.o: romlayout.S $(OUT)asm-offsets.h
 	@echo "  Compiling (16bit) $@"

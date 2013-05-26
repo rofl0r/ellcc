@@ -13,7 +13,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  */
 
 FILE_LICENCE ( GPL2_OR_LATER );
@@ -91,12 +92,13 @@ static int vlan_transmit ( struct net_device *netdev,
 	const void *ll_dest;
 	const void *ll_source;
 	uint16_t net_proto;
+	unsigned int flags;
 	int rc;
 
 	/* Strip link-layer header and preserve link-layer header fields */
 	ll_protocol = netdev->ll_protocol;
 	if ( ( rc = ll_protocol->pull ( netdev, iobuf, &ll_dest, &ll_source,
-					&net_proto ) ) != 0 ) {
+					&net_proto, &flags ) ) != 0 ) {
 		DBGC ( netdev, "VLAN %s could not parse link-layer header: "
 		       "%s\n", netdev->name, strerror ( rc ) );
 		return rc;
@@ -214,10 +216,12 @@ struct net_device * vlan_find ( struct net_device *trunk, unsigned int tag ) {
  * @v trunk		Trunk network device
  * @v ll_dest		Link-layer destination address
  * @v ll_source		Link-layer source address
+ * @v flags		Packet flags
  * @ret rc		Return status code
  */
 static int vlan_rx ( struct io_buffer *iobuf, struct net_device *trunk,
-		     const void *ll_dest, const void *ll_source ) {
+		     const void *ll_dest, const void *ll_source,
+		     unsigned int flags __unused ) {
 	struct vlan_header *vlanhdr = iobuf->data;
 	struct net_device *netdev;
 	struct ll_protocol *ll_protocol;

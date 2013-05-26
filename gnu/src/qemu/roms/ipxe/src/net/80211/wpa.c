@@ -13,7 +13,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  */
 
 FILE_LICENCE ( GPL2_OR_LATER );
@@ -29,9 +30,11 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #include <ipxe/hmac.h>
 #include <ipxe/list.h>
 #include <ipxe/ethernet.h>
+#include <ipxe/rbg.h>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <byteswap.h>
 
 /** @file
  *
@@ -514,7 +517,8 @@ static int wpa_handle_1_of_4 ( struct wpa_common_ctx *ctx,
 	ctx->state = WPA_WORKING;
 	memcpy ( ctx->Anonce, pkt->nonce, sizeof ( ctx->Anonce ) );
 	if ( ! ctx->have_Snonce ) {
-		get_random_bytes ( ctx->Snonce, sizeof ( ctx->Snonce ) );
+		rbg_generate ( NULL, 0, 0, ctx->Snonce,
+			       sizeof ( ctx->Snonce ) );
 		ctx->have_Snonce = 1;
 	}
 

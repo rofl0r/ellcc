@@ -28,7 +28,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  */
 
 FILE_LICENCE ( GPL2_OR_LATER );
@@ -159,7 +160,7 @@ static struct pxe_udp_connection pxe_udp = {
  * parameter.
  *
  */
-PXENV_EXIT_t pxenv_udp_open ( struct s_PXENV_UDP_OPEN *pxenv_udp_open ) {
+static PXENV_EXIT_t pxenv_udp_open ( struct s_PXENV_UDP_OPEN *pxenv_udp_open ) {
 	int rc;
 
 	DBG ( "PXENV_UDP_OPEN" );
@@ -202,7 +203,8 @@ PXENV_EXIT_t pxenv_udp_open ( struct s_PXENV_UDP_OPEN *pxenv_udp_open ) {
  * @ref pxe_x86_pmode16 "implementation note" for more details.)
  *
  */
-PXENV_EXIT_t pxenv_udp_close ( struct s_PXENV_UDP_CLOSE *pxenv_udp_close ) {
+static PXENV_EXIT_t
+pxenv_udp_close ( struct s_PXENV_UDP_CLOSE *pxenv_udp_close ) {
 	DBG ( "PXENV_UDP_CLOSE\n" );
 
 	/* Close UDP connection */
@@ -253,7 +255,8 @@ PXENV_EXIT_t pxenv_udp_close ( struct s_PXENV_UDP_CLOSE *pxenv_udp_close ) {
  * parameter.
  *
  */
-PXENV_EXIT_t pxenv_udp_write ( struct s_PXENV_UDP_WRITE *pxenv_udp_write ) {
+static PXENV_EXIT_t
+pxenv_udp_write ( struct s_PXENV_UDP_WRITE *pxenv_udp_write ) {
 	struct sockaddr_in dest;
 	struct xfer_metadata meta = {
 		.src = ( struct sockaddr * ) &pxe_udp.local,
@@ -359,7 +362,7 @@ PXENV_EXIT_t pxenv_udp_write ( struct s_PXENV_UDP_WRITE *pxenv_udp_write ) {
  * expects us to do so, and will fail if we don't.
  *
  */
-PXENV_EXIT_t pxenv_udp_read ( struct s_PXENV_UDP_READ *pxenv_udp_read ) {
+static PXENV_EXIT_t pxenv_udp_read ( struct s_PXENV_UDP_READ *pxenv_udp_read ) {
 	struct in_addr dest_ip_wanted = { .s_addr = pxenv_udp_read->dest_ip };
 	struct in_addr dest_ip;
 	uint16_t d_port_wanted = pxenv_udp_read->d_port;
@@ -405,3 +408,15 @@ PXENV_EXIT_t pxenv_udp_read ( struct s_PXENV_UDP_READ *pxenv_udp_read ) {
 	pxenv_udp_read->Status = PXENV_STATUS_FAILURE;
 	return PXENV_EXIT_FAILURE;
 }
+
+/** PXE UDP API */
+struct pxe_api_call pxe_udp_api[] __pxe_api_call = {
+	PXE_API_CALL ( PXENV_UDP_OPEN, pxenv_udp_open,
+		       struct s_PXENV_UDP_OPEN ),
+	PXE_API_CALL ( PXENV_UDP_CLOSE, pxenv_udp_close,
+		       struct s_PXENV_UDP_CLOSE ),
+	PXE_API_CALL ( PXENV_UDP_WRITE, pxenv_udp_write,
+		       struct s_PXENV_UDP_WRITE ),
+	PXE_API_CALL ( PXENV_UDP_READ, pxenv_udp_read,
+		       struct s_PXENV_UDP_READ ),
+};

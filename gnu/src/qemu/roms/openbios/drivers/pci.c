@@ -375,7 +375,7 @@ static void pci_host_set_interrupt_map(const pci_config_t *config)
  */
 #if defined(CONFIG_PPC)
 	phandle_t dev = get_cur_dev();
-	u32 props[7 * 4];
+	u32 props[7 * 8];
 	int i;
 
 #if defined(CONFIG_PPC)
@@ -384,7 +384,7 @@ static void pci_host_set_interrupt_map(const pci_config_t *config)
 		return;
 #endif
 
-	for (i = 0; i < (7*4); i+=7) {
+	for (i = 0; i < (7*8); i+=7) {
 		props[i+PCI_INT_MAP_PCI0] = 0;
 		props[i+PCI_INT_MAP_PCI1] = 0;
 		props[i+PCI_INT_MAP_PCI2] = 0;
@@ -393,7 +393,7 @@ static void pci_host_set_interrupt_map(const pci_config_t *config)
 		props[i+PCI_INT_MAP_PIC_INT] = arch->irqs[i / 7];
 		props[i+PCI_INT_MAP_PIC_POL] = 3;
 	}
-	set_property(dev, "interrupt-map", (char *)props, 7 * 4 * sizeof(props[0]));
+	set_property(dev, "interrupt-map", (char *)props, 7 * 8 * sizeof(props[0]));
 
 	props[PCI_INT_MAP_PCI0] = 0;
 	props[PCI_INT_MAP_PCI1] = 0;
@@ -535,14 +535,6 @@ int bridge_config_cb(const pci_config_t *config)
 	set_property(aliases, "bridge", config->path, strlen(config->path) + 1);
 
 	return 0;
-}
-
-int virtio_config_cb(const pci_config_t *config)
-{
-#if defined(CONFIG_SPARC64)
-    set_int_property(get_cur_dev(), "interrupts", 0);
-#endif
-    return 0;
 }
 
 int ide_config_cb2 (const pci_config_t *config)
@@ -854,7 +846,14 @@ static void ob_pci_add_properties(phandle_t phandle,
 	if (config->irq_pin) {
 		OLDWORLD(set_int_property(dev, "AAPL,interrupts",
 					  config->irq_line));
-		set_int_property(dev, "interrupts", config->irq_pin);
+#if defined(CONFIG_SPARC64)
+                /* direct mapping bssnn (Bus, Slot, interrupt Number */
+                set_int_property(get_cur_dev(), "interrupts",
+                                 ((((config->dev >> 11) << 2)
+                                   + config->irq_pin - 1) & 0x1f));
+#else
+		NEWWORLD(set_int_property(dev, "interrupts", config->irq_pin));
+#endif
 	}
 
 	set_int_property(dev, "min-grant", pci_config_read8(addr, PCI_MIN_GNT));

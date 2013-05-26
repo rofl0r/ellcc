@@ -13,7 +13,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  */
 
 FILE_LICENCE ( GPL2_OR_LATER );
@@ -119,14 +120,21 @@ static int smbios_fetch ( struct settings *settings __unused,
 
 		if ( tag_len == 0 ) {
 			/* String */
-			return read_smbios_string ( &structure,
-						    buf[tag_offset],
-						    data, len );
+			if ( ( rc = read_smbios_string ( &structure,
+							 buf[tag_offset],
+							 data, len ) ) < 0 ) {
+				return rc;
+			}
+			if ( ! setting->type )
+				setting->type = &setting_type_string;
+			return rc;
 		} else {
 			/* Raw data */
 			if ( len > tag_len )
 				len = tag_len;
 			memcpy ( data, &buf[tag_offset], len );
+			if ( ! setting->type )
+				setting->type = &setting_type_hex;
 			return tag_len;
 		}
 	}

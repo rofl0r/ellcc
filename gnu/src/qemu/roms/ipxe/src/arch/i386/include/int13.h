@@ -45,6 +45,8 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #define INT13_GET_EXTENDED_PARAMETERS	0x48
 /** Get CD-ROM status / terminate emulation */
 #define INT13_CDROM_STATUS_TERMINATE	0x4b
+/** Read CD-ROM boot catalog */
+#define INT13_CDROM_READ_BOOT_CATALOG	0x4d
 
 /** @} */
 
@@ -68,6 +70,19 @@ FILE_LICENCE ( GPL2_OR_LATER );
 
 /** Block size for non-extended INT 13 calls */
 #define INT13_BLKSIZE 512
+
+/** @defgroup int13fddtype INT 13 floppy disk drive types
+ * @{
+ */
+
+/** 360K */
+#define INT13_FDD_TYPE_360K		0x01
+/** 1.2M */
+#define INT13_FDD_TYPE_1M2		0x02
+/** 720K */
+#define INT13_FDD_TYPE_720K		0x03
+/** 1.44M */
+#define INT13_FDD_TYPE_1M44		0x04
 
 /** An INT 13 disk address packet */
 struct int13_disk_address {
@@ -217,6 +232,18 @@ struct int13_cdrom_specification {
 	uint8_t head;
 } __attribute__ (( packed ));
 
+/** Bootable CD-ROM boot catalog command packet */
+struct int13_cdrom_boot_catalog_command {
+	/** Size of packet in bytes */
+	uint8_t size;
+	/** Number of sectors of boot catalog to read */
+	uint8_t count;
+	/** Buffer for boot catalog */
+	uint32_t buffer;
+	/** First sector in boot catalog to transfer */
+	uint16_t start;
+} __attribute__ (( packed ));
+
 /** A C/H/S address within a partition table entry */
 struct partition_chs {
 	/** Head number */
@@ -261,7 +288,162 @@ struct master_boot_record {
 	uint16_t magic;
 } __attribute__ (( packed ));
 
-/** Use natural BIOS drive number */
-#define INT13_USE_NATURAL_DRIVE 0xff
+/** MBR magic signature */
+#define INT13_MBR_MAGIC 0xaa55
+
+/** ISO9660 block size */
+#define ISO9660_BLKSIZE 2048
+
+/** An ISO9660 Primary Volume Descriptor (fixed portion) */
+struct iso9660_primary_descriptor_fixed {
+	/** Descriptor type */
+	uint8_t type;
+	/** Identifier ("CD001") */
+	uint8_t id[5];
+} __attribute__ (( packed ));
+
+/** An ISO9660 Primary Volume Descriptor */
+struct iso9660_primary_descriptor {
+	/** Fixed portion */
+	struct iso9660_primary_descriptor_fixed fixed;
+} __attribute__ (( packed ));
+
+/** ISO9660 Primary Volume Descriptor type */
+#define ISO9660_TYPE_PRIMARY 0x01
+
+/** ISO9660 identifier */
+#define ISO9660_ID "CD001"
+
+/** ISO9660 Primary Volume Descriptor block address */
+#define ISO9660_PRIMARY_LBA 16
+
+/** An El Torito Boot Record Volume Descriptor (fixed portion) */
+struct eltorito_descriptor_fixed {
+	/** Descriptor type */
+	uint8_t type;
+	/** Identifier ("CD001") */
+	uint8_t id[5];
+	/** Version, must be 1 */
+	uint8_t version;
+	/** Boot system indicator; must be "EL TORITO SPECIFICATION" */
+	uint8_t system_id[32];
+} __attribute__ (( packed ));
+
+/** An El Torito Boot Record Volume Descriptor */
+struct eltorito_descriptor {
+	/** Fixed portion */
+	struct eltorito_descriptor_fixed fixed;
+	/** Unused */
+	uint8_t unused[32];
+	/** Boot catalog sector */
+	uint32_t sector;
+} __attribute__ (( packed ));
+
+/** ISO9660 Boot Volume Descriptor type */
+#define ISO9660_TYPE_BOOT 0x00
+
+/** El Torito Boot Record Volume Descriptor block address */
+#define ELTORITO_LBA 17
+
+/** An El Torito Boot Catalog Validation Entry */
+struct eltorito_validation_entry {
+	/** Header ID; must be 1 */
+	uint8_t header_id;
+	/** Platform ID
+	 *
+	 * 0 = 80x86
+	 * 1 = PowerPC
+	 * 2 = Mac
+	 */
+	uint8_t platform_id;
+	/** Reserved */
+	uint16_t reserved;
+	/** ID string */
+	uint8_t id_string[24];
+	/** Checksum word */
+	uint16_t checksum;
+	/** Signature; must be 0xaa55 */
+	uint16_t signature;
+} __attribute__ (( packed ));
+
+/** El Torito platform IDs */
+enum eltorito_platform_id {
+	ELTORITO_PLATFORM_X86 = 0x00,
+	ELTORITO_PLATFORM_POWERPC = 0x01,
+	ELTORITO_PLATFORM_MAC = 0x02,
+};
+
+/** A bootable entry in the El Torito Boot Catalog */
+struct eltorito_boot_entry {
+	/** Boot indicator
+	 *
+	 * Must be @c ELTORITO_BOOTABLE for a bootable ISO image
+	 */
+	uint8_t indicator;
+	/** Media type
+	 *
+	 */
+	uint8_t media_type;
+	/** Load segment */
+	uint16_t load_segment;
+	/** System type */
+	uint8_t filesystem;
+	/** Unused */
+	uint8_t reserved_a;
+	/** Sector count */
+	uint16_t length;
+	/** Starting sector */
+	uint32_t start;
+	/** Unused */
+	uint8_t reserved_b[20];
+} __attribute__ (( packed ));
+
+/** Boot indicator for a bootable ISO image */
+#define ELTORITO_BOOTABLE 0x88
+
+/** El Torito media types */
+enum eltorito_media_type {
+	/** No emulation */
+	ELTORITO_NO_EMULATION = 0,
+};
+
+/** A floppy disk geometry */
+struct int13_fdd_geometry {
+	/** Number of tracks */
+	uint8_t tracks;
+	/** Number of heads and sectors per track */
+	uint8_t heads_spt;
+};
+
+/** Define a floppy disk geometry */
+#define INT13_FDD_GEOMETRY( cylinders, heads, sectors )			\
+	{								\
+		.tracks = (cylinders),					\
+		.heads_spt = ( ( (heads) << 6 ) | (sectors) ),		\
+	}
+
+/** Get floppy disk number of cylinders */
+#define INT13_FDD_CYLINDERS( geometry ) ( (geometry)->tracks )
+
+/** Get floppy disk number of heads */
+#define INT13_FDD_HEADS( geometry ) ( (geometry)->heads_spt >> 6 )
+
+/** Get floppy disk number of sectors per track */
+#define INT13_FDD_SECTORS( geometry ) ( (geometry)->heads_spt & 0x3f )
+
+/** A floppy drive parameter table */
+struct int13_fdd_parameters {
+	uint8_t step_rate__head_unload;
+	uint8_t head_load__ndma;
+	uint8_t motor_off_delay;
+	uint8_t bytes_per_sector;
+	uint8_t sectors_per_track;
+	uint8_t gap_length;
+	uint8_t data_length;
+	uint8_t format_gap_length;
+	uint8_t format_filler;
+	uint8_t head_settle_time;
+	uint8_t motor_start_time;
+} __attribute__ (( packed ));
 
 #endif /* INT13_H */

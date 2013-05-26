@@ -13,7 +13,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  */
 
 FILE_LICENCE ( GPL2_OR_LATER );
@@ -148,6 +149,7 @@ void stop_timer ( struct retry_timer *timer ) {
  * @v timer		Retry timer
  */
 static void timer_expired ( struct retry_timer *timer ) {
+	struct refcnt *refcnt = timer->refcnt;
 	int fail;
 
 	/* Stop timer without performing RTT calculations */
@@ -169,16 +171,16 @@ static void timer_expired ( struct retry_timer *timer ) {
 
 	/* Call expiry callback */
 	timer->expired ( timer, fail );
+	/* If refcnt is NULL, then timer may already have been freed */
 
-	ref_put ( timer->refcnt );
+	ref_put ( refcnt );
 }
 
 /**
- * Single-step the retry timer list
+ * Poll the retry timer list
  *
- * @v process		Retry timer process
  */
-static void retry_step ( struct process *process __unused ) {
+void retry_poll ( void ) {
 	struct retry_timer *timer;
 	unsigned long now = currticks();
 	unsigned long used;
@@ -197,8 +199,14 @@ static void retry_step ( struct process *process __unused ) {
 	}
 }
 
+/**
+ * Single-step the retry timer list
+ *
+ * @v process		Retry timer process
+ */
+static void retry_step ( struct process *process __unused ) {
+	retry_poll();
+}
+
 /** Retry timer process */
-struct process retry_process __permanent_process = {
-	.list = LIST_HEAD_INIT ( retry_process.list ),
-	.step = retry_step,
-};
+PERMANENT_PROCESS ( retry_process, retry_step );

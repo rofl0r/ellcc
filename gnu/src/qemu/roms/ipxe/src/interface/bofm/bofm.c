@@ -13,7 +13,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  */
 
 FILE_LICENCE ( GPL2_OR_LATER );
@@ -181,14 +182,14 @@ static int bofm_en ( struct bofm_device *bofm, struct bofm_en *en ) {
 
 	/* Retrieve current MAC address */
 	if ( ( rc = bofm->op->harvest ( bofm, en->mport, mac ) ) != 0 ) {
-		DBG ( "BOFM: " PCI_FMT " port %d could not harvest: %s\n",
+		DBG ( "BOFM: " PCI_FMT " mport %d could not harvest: %s\n",
 		      PCI_ARGS ( bofm->pci ), en->mport, strerror ( rc ) );
 		return rc;
 	}
 
 	/* Harvest MAC address if necessary */
 	if ( en->options & BOFM_EN_RQ_HVST_MASK ) {
-		DBG ( "BOFM: " PCI_FMT " port %d harvested MAC %s\n",
+		DBG ( "BOFM: " PCI_FMT " mport %d harvested MAC %s\n",
 		      PCI_ARGS ( bofm->pci ), en->mport, eth_ntoa ( mac ) );
 		memcpy ( en->mac_a, mac, sizeof ( en->mac_a ) );
 		en->options |= ( BOFM_EN_EN_A | BOFM_EN_HVST );
@@ -197,7 +198,7 @@ static int bofm_en ( struct bofm_device *bofm, struct bofm_en *en ) {
 	/* Mark as changed if necessary */
 	if ( ( en->options & BOFM_EN_EN_A ) &&
 	     ( memcmp ( en->mac_a, mac, sizeof ( en->mac_a ) ) != 0 ) ) {
-		DBG ( "BOFM: " PCI_FMT " port %d MAC %s",
+		DBG ( "BOFM: " PCI_FMT " mport %d MAC %s",
 		      PCI_ARGS ( bofm->pci ), en->mport, eth_ntoa ( mac ) );
 		DBG ( " changed to %s\n", eth_ntoa ( en->mac_a ) );
 		en->options |= BOFM_EN_CHG_CHANGED;
@@ -207,7 +208,7 @@ static int bofm_en ( struct bofm_device *bofm, struct bofm_en *en ) {
 	if ( ( en->options & BOFM_EN_EN_A ) &&
 	     ( en->options & BOFM_EN_USAGE_ENTRY ) &&
 	     ( ! ( en->options & BOFM_EN_USAGE_HARVEST ) ) ) {
-		DBG ( "BOFM: " PCI_FMT " port %d applied MAC %s\n",
+		DBG ( "BOFM: " PCI_FMT " mport %d applied MAC %s\n",
 		      PCI_ARGS ( bofm->pci ), en->mport,
 		      eth_ntoa ( en->mac_a ) );
 		memcpy ( mac, en->mac_a, sizeof ( mac ) );
@@ -215,7 +216,7 @@ static int bofm_en ( struct bofm_device *bofm, struct bofm_en *en ) {
 
 	/* Store MAC address */
 	if ( ( rc = bofm->op->update ( bofm, en->mport, mac ) ) != 0 ) {
-		DBG ( "BOFM: " PCI_FMT " port %d could not update: %s\n",
+		DBG ( "BOFM: " PCI_FMT " mport %d could not update: %s\n",
 		      PCI_ARGS ( bofm->pci ), en->mport, strerror ( rc ) );
 		return rc;
 	}
@@ -303,14 +304,19 @@ int bofm ( userptr_t bofmtab, struct pci_device *pci ) {
 		DBG2_HDA ( en_offset, &en, sizeof ( en ) );
 		if ( ( en.options & BOFM_EN_MAP_MASK ) != BOFM_EN_MAP_PFA ) {
 			DBG ( "BOFM: slot %d port %d has no PCI mapping\n",
-			      en.slot, en.port );
+			      en.slot, ( en.port + 1 ) );
 			continue;
 		}
+		DBG ( "BOFM: slot %d port %d%s is " PCI_FMT " mport %d\n",
+		      en.slot, ( en.port + 1 ),
+		      ( ( en.slot || en.port ) ? "" : "(?)" ),
+		      PCI_BUS ( en.busdevfn ), PCI_SLOT ( en.busdevfn ),
+		      PCI_FUNC ( en.busdevfn ), en.mport );
 		bofm = bofm_find_busdevfn ( en.busdevfn );
 		if ( ! bofm ) {
-			DBG ( "BOFM: " PCI_FMT " ignored\n",
+			DBG ( "BOFM: " PCI_FMT " mport %d ignored\n",
 			      PCI_BUS ( en.busdevfn ), PCI_SLOT ( en.busdevfn ),
-			      PCI_FUNC ( en.busdevfn ) );
+			      PCI_FUNC ( en.busdevfn ), en.mport );
 			continue;
 		}
 		if ( ( rc = bofm_en ( bofm, &en ) ) == 0 ) {

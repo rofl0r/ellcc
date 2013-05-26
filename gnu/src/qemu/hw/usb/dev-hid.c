@@ -27,7 +27,7 @@
 #include "hw/usb.h"
 #include "hw/usb/desc.h"
 #include "qemu/timer.h"
-#include "hw/hid.h"
+#include "hw/input/hid.h"
 
 /* HID interface requests */
 #define GET_REPORT   0xa101
@@ -236,7 +236,7 @@ static const USBDescDevice desc_device_tablet2 = {
             .bNumInterfaces        = 1,
             .bConfigurationValue   = 1,
             .iConfiguration        = STR_CONFIG_TABLET,
-            .bmAttributes          = 0xa0,
+            .bmAttributes          = 0x80,
             .bMaxPower             = 50,
             .nif = 1,
             .ifs = &desc_iface_tablet2,
@@ -423,7 +423,7 @@ static void usb_hid_changed(HIDState *hs)
 {
     USBHIDState *us = container_of(hs, USBHIDState, hid);
 
-    usb_wakeup(us->intr);
+    usb_wakeup(us->intr, 0);
 }
 
 static void usb_hid_handle_reset(USBDevice *dev)

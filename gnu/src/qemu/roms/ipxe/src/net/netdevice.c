@@ -13,7 +13,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  */
 
 FILE_LICENCE ( GPL2_OR_LATER );
@@ -61,6 +62,23 @@ struct errortab netdev_errors[] __errortab = {
 	__einfo_errortab ( EINFO_EUNKNOWN_LINK_STATUS ),
 	__einfo_errortab ( EINFO_ENOTCONN_LINK_DOWN ),
 };
+
+/**
+ * Check whether or not network device has a link-layer address
+ *
+ * @v netdev		Network device
+ * @ret has_ll_addr	Network device has a link-layer address
+ */
+static int netdev_has_ll_addr ( struct net_device *netdev ) {
+	uint8_t *ll_addr = netdev->ll_addr;
+	size_t remaining = sizeof ( netdev->ll_addr );
+
+	while ( remaining-- ) {
+		if ( *(ll_addr++) != 0 )
+			return 1;
+	}
+	return 0;
+}
 
 /**
  * Notify drivers of network device or link state change
@@ -163,8 +181,8 @@ static void netdev_record_stat ( struct net_device_stats *stats, int rc ) {
 int netdev_tx ( struct net_device *netdev, struct io_buffer *iobuf ) {
 	int rc;
 
-	DBGC ( netdev, "NETDEV %s transmitting %p (%p+%zx)\n",
-	       netdev->name, iobuf, iobuf->data, iob_len ( iobuf ) );
+	DBGC2 ( netdev, "NETDEV %s transmitting %p (%p+%zx)\n",
+		netdev->name, iobuf, iobuf->data, iob_len ( iobuf ) );
 
 	/* Enqueue packet */
 	list_add_tail ( &iobuf->list, &netdev->tx_queue );
@@ -194,6 +212,33 @@ int netdev_tx ( struct net_device *netdev, struct io_buffer *iobuf ) {
 }
 
 /**
+ * Discard transmitted packet
+ *
+ * @v netdev		Network device
+ * @v iobuf		I/O buffer, or NULL
+ * @v rc		Packet status code
+ *
+ * The packet is discarded and a TX error is recorded.  This function
+ * takes ownership of the I/O buffer.
+ */
+void netdev_tx_err ( struct net_device *netdev,
+		     struct io_buffer *iobuf, int rc ) {
+
+	/* Update statistics counter */
+	netdev_record_stat ( &netdev->tx_stats, rc );
+	if ( rc == 0 ) {
+		DBGC2 ( netdev, "NETDEV %s transmission %p complete\n",
+			netdev->name, iobuf );
+	} else {
+		DBGC ( netdev, "NETDEV %s transmission %p failed: %s\n",
+		       netdev->name, iobuf, strerror ( rc ) );
+	}
+
+	/* Discard packet */
+	free_iob ( iobuf );
+}
+
+/**
  * Complete network transmission
  *
  * @v netdev		Network device
@@ -205,23 +250,12 @@ int netdev_tx ( struct net_device *netdev, struct io_buffer *iobuf ) {
 void netdev_tx_complete_err ( struct net_device *netdev,
 			      struct io_buffer *iobuf, int rc ) {
 
-	/* Update statistics counter */
-	netdev_record_stat ( &netdev->tx_stats, rc );
-	if ( rc == 0 ) {
-		DBGC ( netdev, "NETDEV %s transmission %p complete\n",
-		       netdev->name, iobuf );
-	} else {
-		DBGC ( netdev, "NETDEV %s transmission %p failed: %s\n",
-		       netdev->name, iobuf, strerror ( rc ) );
-	}
-
 	/* Catch data corruption as early as possible */
-	assert ( iobuf->list.next != NULL );
-	assert ( iobuf->list.prev != NULL );
+	list_check_contains_entry ( iobuf, &netdev->tx_queue, list );
 
 	/* Dequeue and free I/O buffer */
 	list_del ( &iobuf->list );
-	free_iob ( iobuf );
+	netdev_tx_err ( netdev, iobuf, rc );
 }
 
 /**
@@ -265,8 +299,8 @@ static void netdev_tx_flush ( struct net_device *netdev ) {
  */
 void netdev_rx ( struct net_device *netdev, struct io_buffer *iobuf ) {
 
-	DBGC ( netdev, "NETDEV %s received %p (%p+%zx)\n",
-	       netdev->name, iobuf, iobuf->data, iob_len ( iobuf ) );
+	DBGC2 ( netdev, "NETDEV %s received %p (%p+%zx)\n",
+		netdev->name, iobuf, iobuf->data, iob_len ( iobuf ) );
 
 	/* Discard packet (for test purposes) if applicable */
 	if ( ( NETDEV_DISCARD_RATE > 0 ) &&
@@ -416,8 +450,11 @@ int register_netdev ( struct net_device *netdev ) {
 			   ifindex++ );
 	}
 
-	/* Set initial link-layer address */
-	netdev->ll_protocol->init_addr ( netdev->hw_addr, netdev->ll_addr );
+	/* Set initial link-layer address, if not already set */
+	if ( ! netdev_has_ll_addr ( netdev ) ) {
+		netdev->ll_protocol->init_addr ( netdev->hw_addr,
+						 netdev->ll_addr );
+	}
 
 	/* Add to device list */
 	netdev_get ( netdev );
@@ -449,6 +486,7 @@ int register_netdev ( struct net_device *netdev ) {
  err_probe:
 	for_each_table_entry_continue_reverse ( driver, NET_DRIVERS )
 		driver->remove ( netdev );
+	clear_settings ( netdev_settings ( netdev ) );
 	unregister_settings ( netdev_settings ( netdev ) );
  err_register_settings:
 	return rc;
@@ -533,6 +571,7 @@ void unregister_netdev ( struct net_device *netdev ) {
 		driver->remove ( netdev );
 
 	/* Unregister per-netdev configuration settings */
+	clear_settings ( netdev_settings ( netdev ) );
 	unregister_settings ( netdev_settings ( netdev ) );
 
 	/* Remove from device list */
@@ -635,17 +674,11 @@ int net_tx ( struct io_buffer *iobuf, struct net_device *netdev,
 	struct ll_protocol *ll_protocol = netdev->ll_protocol;
 	int rc;
 
-	/* Force a poll on the netdevice to (potentially) clear any
-	 * backed-up TX completions.  This is needed on some network
-	 * devices to avoid excessive losses due to small TX ring
-	 * sizes.
-	 */
-	netdev_poll ( netdev );
-
 	/* Add link-layer header */
 	if ( ( rc = ll_protocol->push ( netdev, iobuf, ll_dest, ll_source,
 					net_protocol->net_proto ) ) != 0 ) {
-		free_iob ( iobuf );
+		/* Record error for diagnosis */
+		netdev_tx_err ( netdev, iobuf, rc );
 		return rc;
 	}
 
@@ -661,17 +694,19 @@ int net_tx ( struct io_buffer *iobuf, struct net_device *netdev,
  * @v net_proto		Network-layer protocol, in network-byte order
  * @v ll_dest		Destination link-layer address
  * @v ll_source		Source link-layer address
+ * @v flags		Packet flags
  * @ret rc		Return status code
  */
 int net_rx ( struct io_buffer *iobuf, struct net_device *netdev,
-	     uint16_t net_proto, const void *ll_dest, const void *ll_source ) {
+	     uint16_t net_proto, const void *ll_dest, const void *ll_source,
+	     unsigned int flags ) {
 	struct net_protocol *net_protocol;
 
 	/* Hand off to network-layer protocol, if any */
 	for_each_table_entry ( net_protocol, NET_PROTOCOLS ) {
 		if ( net_protocol->net_proto == net_proto )
 			return net_protocol->rx ( iobuf, netdev, ll_dest,
-						  ll_source );
+						  ll_source, flags );
 	}
 
 	DBGC ( netdev, "NETDEV %s unknown network protocol %04x\n",
@@ -693,6 +728,7 @@ void net_poll ( void ) {
 	const void *ll_dest;
 	const void *ll_source;
 	uint16_t net_proto;
+	unsigned int flags;
 	int rc;
 
 	/* Poll and process each network device */
@@ -710,23 +746,19 @@ void net_poll ( void ) {
 		if ( netdev_rx_frozen ( netdev ) )
 			continue;
 
-		/* Process at most one received packet.  Give priority
-		 * to getting packets out of the NIC over processing
-		 * the received packets, because we advertise a window
-		 * that assumes that we can receive packets from the
-		 * NIC faster than they arrive.
-		 */
-		if ( ( iobuf = netdev_rx_dequeue ( netdev ) ) ) {
+		/* Process all received packets */
+		while ( ( iobuf = netdev_rx_dequeue ( netdev ) ) ) {
 
-			DBGC ( netdev, "NETDEV %s processing %p (%p+%zx)\n",
-			       netdev->name, iobuf, iobuf->data,
-			       iob_len ( iobuf ) );
+			DBGC2 ( netdev, "NETDEV %s processing %p (%p+%zx)\n",
+				netdev->name, iobuf, iobuf->data,
+				iob_len ( iobuf ) );
 
 			/* Remove link-layer header */
 			ll_protocol = netdev->ll_protocol;
 			if ( ( rc = ll_protocol->pull ( netdev, iobuf,
 							&ll_dest, &ll_source,
-							&net_proto ) ) != 0 ) {
+							&net_proto,
+							&flags ) ) != 0 ) {
 				free_iob ( iobuf );
 				continue;
 			}
@@ -734,7 +766,7 @@ void net_poll ( void ) {
 			/* Hand packet to network layer */
 			if ( ( rc = net_rx ( iob_disown ( iobuf ), netdev,
 					     net_proto, ll_dest,
-					     ll_source ) ) != 0 ) {
+					     ll_source, flags ) ) != 0 ) {
 				/* Record error for diagnosis */
 				netdev_rx_err ( netdev, NULL, rc );
 			}
@@ -752,7 +784,4 @@ static void net_step ( struct process *process __unused ) {
 }
 
 /** Networking stack process */
-struct process net_process __permanent_process = {
-	.list = LIST_HEAD_INIT ( net_process.list ),
-	.step = net_step,
-};
+PERMANENT_PROCESS ( net_process, net_step );

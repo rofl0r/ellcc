@@ -13,7 +13,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  */
 
 FILE_LICENCE ( GPL2_OR_LATER );
@@ -36,6 +37,7 @@ static void insert_character ( struct edit_string *string,
                                unsigned int character ) __nonnull;
 static void delete_character ( struct edit_string *string ) __nonnull;
 static void backspace ( struct edit_string *string ) __nonnull;
+static void kill_sol ( struct edit_string *string ) __nonnull;
 static void kill_eol ( struct edit_string *string ) __nonnull;
 
 /**
@@ -109,6 +111,17 @@ static void backspace ( struct edit_string *string ) {
 }
 
 /**
+ * Delete to start of line
+ *
+ * @v string           Editable string
+ */
+static void kill_sol ( struct edit_string *string ) {
+	size_t old_cursor = string->cursor;
+	string->cursor = 0;
+	insert_delete ( string, old_cursor, NULL );
+}
+
+/**
  * Delete to end of line
  *
  * @v string		Editable string
@@ -167,6 +180,10 @@ int edit_string ( struct edit_string *string, int key ) {
 	case CTRL_D:
 		/* Delete character */
 		delete_character ( string );
+		break;
+	case CTRL_U:
+		/* Delete to start of line */
+		kill_sol ( string );
 		break;
 	case CTRL_K:
 		/* Delete to end of line */

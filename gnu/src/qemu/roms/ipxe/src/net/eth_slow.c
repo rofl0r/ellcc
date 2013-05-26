@@ -13,7 +13,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  */
 
 FILE_LICENCE ( GPL2_OR_LATER );
@@ -234,12 +235,14 @@ static int eth_slow_marker_rx ( struct io_buffer *iobuf,
  * @v netdev		Network device
  * @v ll_dest		Link-layer destination address
  * @v ll_source		Link-layer source address
+ * @v flags		Packet flags
  * @ret rc		Return status code
  */
 static int eth_slow_rx ( struct io_buffer *iobuf,
 			 struct net_device *netdev,
 			 const void *ll_dest __unused,
-			 const void *ll_source __unused ) {
+			 const void *ll_source __unused,
+			 unsigned int flags __unused ) {
 	union eth_slow_packet *eth_slow = iobuf->data;
 
 	/* Sanity checks */

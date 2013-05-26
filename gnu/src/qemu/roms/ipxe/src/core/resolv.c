@@ -13,7 +13,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  */
 
 FILE_LICENCE ( GPL2_OR_LATER );
@@ -86,15 +87,15 @@ struct numeric_resolv {
 	int rc;
 };
 
-static void numeric_step ( struct process *process ) {
-	struct numeric_resolv *numeric =
-		container_of ( process, struct numeric_resolv, process );
+static void numeric_step ( struct numeric_resolv *numeric ) {
 
-	process_del ( process );
 	if ( numeric->rc == 0 )
 		resolv_done ( &numeric->resolv, &numeric->sa );
 	intf_shutdown ( &numeric->resolv, numeric->rc );
 }
+
+static struct process_descriptor numeric_process_desc =
+	PROC_DESC_ONCE ( struct numeric_resolv, process, numeric_step );
 
 static int numeric_resolv ( struct interface *resolv,
 			    const char *name, struct sockaddr *sa ) {
@@ -107,7 +108,8 @@ static int numeric_resolv ( struct interface *resolv,
 		return -ENOMEM;
 	ref_init ( &numeric->refcnt, NULL );
 	intf_init ( &numeric->resolv, &null_intf_desc, &numeric->refcnt );
-	process_init ( &numeric->process, numeric_step, &numeric->refcnt );
+	process_init ( &numeric->process, &numeric_process_desc,
+		       &numeric->refcnt );
 	memcpy ( &numeric->sa, sa, sizeof ( numeric->sa ) );
 
 	DBGC ( numeric, "NUMERIC %p attempting to resolve \"%s\"\n",

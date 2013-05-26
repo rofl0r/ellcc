@@ -13,7 +13,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  */
 
 FILE_LICENCE ( GPL2_OR_LATER );
@@ -91,9 +92,9 @@ size_t freemem;
 /**
  * Heap size
  *
- * Currently fixed at 128kB.
+ * Currently fixed at 512kB.
  */
-#define HEAP_SIZE ( 128 * 1024 )
+#define HEAP_SIZE ( 512 * 1024 )
 
 /** The heap itself */
 static char heap[HEAP_SIZE] __attribute__ (( aligned ( __alignof__(void *) )));
@@ -105,11 +106,36 @@ static char heap[HEAP_SIZE] __attribute__ (( aligned ( __alignof__(void *) )));
 static inline void valgrind_make_blocks_defined ( void ) {
 	struct memory_block *block;
 
-	if ( RUNNING_ON_VALGRIND > 0 ) {
-		VALGRIND_MAKE_MEM_DEFINED ( &free_blocks,
-					    sizeof ( free_blocks ) );
-		list_for_each_entry ( block, &free_blocks, list )
-			VALGRIND_MAKE_MEM_DEFINED ( block, sizeof ( *block ) );
+	if ( RUNNING_ON_VALGRIND <= 0 )
+		return;
+
+	/* Traverse free block list, marking each block structure as
+	 * defined.  Some contortions are necessary to avoid errors
+	 * from list_check().
+	 */
+
+	/* Mark block list itself as defined */
+	VALGRIND_MAKE_MEM_DEFINED ( &free_blocks, sizeof ( free_blocks ) );
+
+	/* Mark areas accessed by list_check() as defined */
+	VALGRIND_MAKE_MEM_DEFINED ( &free_blocks.prev->next,
+				    sizeof ( free_blocks.prev->next ) );
+	VALGRIND_MAKE_MEM_DEFINED ( free_blocks.next,
+				    sizeof ( *free_blocks.next ) );
+	VALGRIND_MAKE_MEM_DEFINED ( &free_blocks.next->next->prev,
+				    sizeof ( free_blocks.next->next->prev ) );
+
+	/* Mark each block in list as defined */
+	list_for_each_entry ( block, &free_blocks, list ) {
+
+		/* Mark block as defined */
+		VALGRIND_MAKE_MEM_DEFINED ( block, sizeof ( *block ) );
+
+		/* Mark areas accessed by list_check() as defined */
+		VALGRIND_MAKE_MEM_DEFINED ( block->list.next,
+					    sizeof ( *block->list.next ) );
+		VALGRIND_MAKE_MEM_DEFINED ( &block->list.next->next->prev,
+				      sizeof ( block->list.next->next->prev ) );
 	}
 }
 
@@ -119,14 +145,45 @@ static inline void valgrind_make_blocks_defined ( void ) {
  */
 static inline void valgrind_make_blocks_noaccess ( void ) {
 	struct memory_block *block;
-	struct memory_block *tmp;
+	struct memory_block *prev = NULL;
 
-	if ( RUNNING_ON_VALGRIND > 0 ) {
-		list_for_each_entry_safe ( block, tmp, &free_blocks, list )
-			VALGRIND_MAKE_MEM_NOACCESS ( block, sizeof ( *block ) );
-		VALGRIND_MAKE_MEM_NOACCESS ( &free_blocks,
-					     sizeof ( free_blocks ) );
+	if ( RUNNING_ON_VALGRIND <= 0 )
+		return;
+
+	/* Traverse free block list, marking each block structure as
+	 * inaccessible.  Some contortions are necessary to avoid
+	 * errors from list_check().
+	 */
+
+	/* Mark each block in list as inaccessible */
+	list_for_each_entry ( block, &free_blocks, list ) {
+
+		/* Mark previous block (if any) as inaccessible. (Current
+		 * block will be accessed by list_check().)
+		 */
+		if ( prev )
+			VALGRIND_MAKE_MEM_NOACCESS ( prev, sizeof ( *prev ) );
+		prev = block;
+
+		/* At the end of the list, list_check() will end up
+		 * accessing the first list item.  Temporarily mark
+		 * this area as defined.
+		 */
+		VALGRIND_MAKE_MEM_DEFINED ( &free_blocks.next->prev,
+					    sizeof ( free_blocks.next->prev ) );
 	}
+	/* Mark last block (if any) as inaccessible */
+	if ( prev )
+		VALGRIND_MAKE_MEM_NOACCESS ( prev, sizeof ( *prev ) );
+
+	/* Mark as inaccessible the area that was temporarily marked
+	 * as defined to avoid errors from list_check().
+	 */
+	VALGRIND_MAKE_MEM_NOACCESS ( &free_blocks.next->prev,
+				     sizeof ( free_blocks.next->prev ) );
+
+	/* Mark block list itself as inaccessible */
+	VALGRIND_MAKE_MEM_NOACCESS ( &free_blocks, sizeof ( free_blocks ) );
 }
 
 /**
@@ -136,12 +193,26 @@ static inline void valgrind_make_blocks_noaccess ( void ) {
  */
 static unsigned int discard_cache ( void ) {
 	struct cache_discarder *discarder;
-	unsigned int discarded = 0;
+	unsigned int discarded;
 
 	for_each_table_entry ( discarder, CACHE_DISCARDERS ) {
-		discarded += discarder->discard();
+		discarded = discarder->discard();
+		if ( discarded )
+			return discarded;
 	}
-	return discarded;
+	return 0;
+}
+
+/**
+ * Discard all cached data
+ *
+ */
+static void discard_all_cache ( void ) {
+	unsigned int discarded;
+
+	do {
+		discarded = discard_cache();
+	} while ( discarded );
 }
 
 /**
@@ -149,6 +220,7 @@ static unsigned int discard_cache ( void ) {
  *
  * @v size		Requested size
  * @v align		Physical alignment
+ * @v offset		Offset from physical alignment
  * @ret ptr		Memory block, or NULL
  *
  * Allocates a memory block @b physically aligned as requested.  No
@@ -156,7 +228,7 @@ static unsigned int discard_cache ( void ) {
  *
  * @c align must be a power of two.  @c size may not be zero.
  */
-void * alloc_memblock ( size_t size, size_t align ) {
+void * alloc_memblock ( size_t size, size_t align, size_t offset ) {
 	struct memory_block *block;
 	size_t align_mask;
 	size_t pre_size;
@@ -173,12 +245,13 @@ void * alloc_memblock ( size_t size, size_t align ) {
 	size = ( size + MIN_MEMBLOCK_SIZE - 1 ) & ~( MIN_MEMBLOCK_SIZE - 1 );
 	align_mask = ( align - 1 ) | ( MIN_MEMBLOCK_SIZE - 1 );
 
-	DBG ( "Allocating %#zx (aligned %#zx)\n", size, align );
+	DBG ( "Allocating %#zx (aligned %#zx+%zx)\n", size, align, offset );
 	while ( 1 ) {
 		/* Search through blocks for the first one with enough space */
 		list_for_each_entry ( block, &free_blocks, list ) {
-			pre_size = ( - virt_to_phys ( block ) ) & align_mask;
-			post_size = block->size - pre_size - size;
+			pre_size = ( ( offset - virt_to_phys ( block ) )
+				     & align_mask );
+			post_size = ( block->size - pre_size - size );
 			if ( post_size >= 0 ) {
 				/* Split block into pre-block, block, and
 				 * post-block.  After this split, the "pre"
@@ -347,7 +420,7 @@ void * realloc ( void *old_ptr, size_t new_size ) {
 	if ( new_size ) {
 		new_total_size = ( new_size +
 				   offsetof ( struct autosized_block, data ) );
-		new_block = alloc_memblock ( new_total_size, 1 );
+		new_block = alloc_memblock ( new_total_size, 1, 0 );
 		if ( ! new_block )
 			return NULL;
 		VALGRIND_MAKE_MEM_UNDEFINED ( new_block, offsetof ( struct autosized_block, data ) );
@@ -456,6 +529,19 @@ static void init_heap ( void ) {
 /** Memory allocator initialisation function */
 struct init_fn heap_init_fn __init_fn ( INIT_EARLY ) = {
 	.initialise = init_heap,
+};
+
+/**
+ * Discard all cached data on shutdown
+ *
+ */
+static void shutdown_cache ( int booting __unused ) {
+	discard_all_cache();
+}
+
+/** Memory allocator shutdown function */
+struct startup_fn heap_startup_fn __startup_fn ( STARTUP_EARLY ) = {
+	.shutdown = shutdown_cache,
 };
 
 #if 0

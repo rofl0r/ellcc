@@ -41,6 +41,14 @@ FILE_LICENCE ( GPL2_OR_LATER )
 #define	ZINFO_TYPE_ADxW "ADDW"
 #endif
 
+/* Allow ROM to be marked as containing multiple images
+ */
+#if ROMPREFIX_MORE_IMAGES
+#define INDICATOR 0x00
+#else
+#define INDICATOR 0x80
+#endif
+
 	.text
 	.code16
 	.arch i386
@@ -55,6 +63,8 @@ romheader_size:	.byte 0			/* Size in 512-byte blocks */
 	jmp	init			/* Initialisation vector */
 checksum:
 	.byte	0
+	.org	0x10
+	.word	ipxeheader
 	.org	0x16
 	.word	undiheader
 	.org	0x18
@@ -70,9 +80,6 @@ checksum:
 	.long	0
 	.previous
 
-build_id:
-	.long	_build_id		/* Randomly-generated build ID */
-
 pciheader:
 	.ascii	"PCIR"			/* Signature */
 	.word	pci_vendor_id		/* Vendor identification */ 
@@ -85,7 +92,7 @@ pciheader_image_length:
 	.word	0			/* Image length */
 	.word	0x0001			/* Revision level */
 	.byte	0x00			/* Code type */
-	.byte	0x80			/* Last image indicator */
+	.byte	INDICATOR		/* Last image indicator */
 pciheader_runtime_length:
 	.word	0			/* Maximum run-time image length */
 	.word	0x0000			/* Configuration utility code header */
@@ -104,6 +111,11 @@ pciheader_runtime_length:
 	.long	0
 	.previous
 
+	/* PnP doesn't require any particular alignment, but IBM
+	 * BIOSes will scan on 16-byte boundaries rather than using
+	 * the offset stored at 0x1a
+	 */
+	.align	16
 pnpheader:
 	.ascii	"$PnP"			/* Signature */
 	.byte	0x01			/* Structure revision */
@@ -161,6 +173,25 @@ undiheader:
 	.ascii	"PCIR"			/* Bus type */
 	.equ undiheader_len, . - undiheader
 	.size undiheader, . - undiheader
+
+ipxeheader:
+	.ascii	"iPXE"			/* Signature */
+	.byte	ipxeheader_len		/* Length of structure */
+	.byte	0			/* Checksum */
+shrunk_rom_size:
+	.byte	0			/* Shrunk size (in 512-byte blocks) */
+	.byte	0			/* Reserved */
+build_id:
+	.long	_build_id		/* Randomly-generated build ID */
+	.equ ipxeheader_len, . - ipxeheader
+	.size ipxeheader, . - ipxeheader
+
+	.section ".zinfo.fixup", "a", @progbits	/* Compressor fixups */
+	.ascii	"ADHB"
+	.long	shrunk_rom_size
+	.long	512
+	.long	0
+	.previous
 
 /* Initialisation (called once during POST)
  *
@@ -286,6 +317,7 @@ pnp_scan:
 	call	print_message
 	jmp	pnp_done
 no_pnp:	/* Not PnP-compliant - hook INT 19 */
+#ifdef NONPNP_HOOK_INT19
 	movw	$init_message_int19, %si
 	xorw	%di, %di
 	call	print_message
@@ -296,6 +328,7 @@ no_pnp:	/* Not PnP-compliant - hook INT 19 */
 	pushw	%gs /* %gs contains runtime %cs */
 	pushw	$int19_entry
 	popl	%es:( 0x19 * 4 )
+#endif /* NONPNP_HOOK_INT19 */
 pnp_done:
 
 	/* Check for PMM */
@@ -319,14 +352,19 @@ pmm_scan:
 	call	print_message
 	/* We have PMM and so a 1kB stack: preserve whole registers */
 	pushal
-	/* Allocate image source PMM block */
-	movzwl	image_source_size, %ecx
+	/* Allocate image source PMM block.  Round up the size to the
+	 * nearest 4kB (8 512-byte sectors) to work around AMI BIOS bugs.
+	 */
+	movzbl	romheader_size, %ecx
+	addw	extra_size, %cx
+	addw	$0x0007, %cx	/* Round up to multiple of 8 512-byte sectors */
+	andw	$0xfff8, %cx
 	shll	$5, %ecx
 	movl	$PMM_HANDLE_BASE_IMAGE_SOURCE, %ebx
 	movw	$get_pmm_image_source, %bp
 	call	get_pmm
 	movl	%esi, image_source
-	jc	1f
+	jz	1f
 	/* Copy ROM to image source PMM block */
 	pushw	%es
 	xorw	%ax, %ax
@@ -334,8 +372,8 @@ pmm_scan:
 	movl	%esi, %edi
 	xorl	%esi, %esi
 	movzbl	romheader_size, %ecx
-	shll	$9, %ecx
-	addr32 rep movsb	/* PMM presence implies flat real mode */
+	shll	$7, %ecx
+	addr32 rep movsl	/* PMM presence implies flat real mode */
 	popw	%es
 	/* Shrink ROM */
 	movb	shrunk_rom_size, %al
@@ -407,7 +445,7 @@ no_pmm:
 	 * picked up by the initial shell prompt, and we will drop
 	 * into a shell.
 	 */
-	stc			/* Inhibit relocation */
+	movl	$0xa0000, %ebp	/* Inhibit relocation during POST */
 	pushw	%cs
 	call	exec
 2:
@@ -432,13 +470,13 @@ no_pmm:
  *  %es:0000 : PMM structure
  * Returns:
  *  %ebx : PMM handle
- *  %esi : allocated block address, or zero (with CF set) if allocation failed
+ *  %esi : allocated block address, or zero (with ZF set) if allocation failed
  */
 get_pmm:
 	/* Preserve registers */
 	pushl	%eax
 	pushw	%di
-	movw	$' ', %di
+	movw	$( ' ' ), %di
 get_pmm_find:
 	/* Try to find existing block */
 	pushl	%ebx		/* PMM handle */
@@ -448,7 +486,10 @@ get_pmm_find:
 	pushw	%dx
 	pushw	%ax
 	popl	%esi
-	testl	%esi, %esi
+	/* Treat 0xffffffff (not supported) as 0x00000000 (not found) */
+	incl	%esi
+	jz	get_pmm_allocate
+	decl	%esi
 	jz	get_pmm_allocate
 	/* Block found - check acceptability */
 	call	*%bp
@@ -467,20 +508,21 @@ get_pmm_allocate:
 	pushw	%dx
 	pushw	%ax
 	popl	%esi
-	movw	$'+', %di	/* Indicate allocation attempt */
-	testl	%esi, %esi
-	jnz	get_pmm_done
-	stc
+	movw	$( '+' ), %di	/* Indicate allocation attempt */
 get_pmm_done:
 	/* Print block address */
-	pushfw
 	movw	%di, %ax
 	xorw	%di, %di
 	call	print_character
 	movl	%esi, %eax
 	call	print_hex_dword
-	popfw
-	/* Restore registers and return */
+	/* Treat 0xffffffff (not supported) as 0x00000000 (allocation
+	 * failed), and set ZF to indicate a zero result.
+	 */
+	incl	%esi
+	jz	1f
+	decl	%esi
+1:	/* Restore registers and return */
 	popw	%di
 	popl	%eax
 	ret
@@ -566,31 +608,12 @@ image_source:
 	.long	0
 	.size	image_source, . - image_source
 
-/* Image source size (in 512-byte sectors)
+/* Additional image source size (in 512-byte sectors)
  *
  */
-image_source_size:
+extra_size:
 	.word	0
-	.size	image_source_size, . - image_source_size
-	.section ".zinfo.fixup", "a", @progbits	/* Compressor fixups */
-	.ascii	"ADDW"
-	.long	image_source_size
-	.long	512
-	.long	0
-	.previous
-
-/* Shrunk ROM size (in 512-byte sectors)
- *
- */
-shrunk_rom_size:
-	.byte	0
-	.size	shrunk_rom_size, . - shrunk_rom_size
-	.section ".zinfo.fixup", "a", @progbits	/* Compressor fixups */
-	.ascii	"ADHB"
-	.long	shrunk_rom_size
-	.long	512
-	.long	0
-	.previous
+	.size	extra_size, . - extra_size
 
 /* Temporary decompression area
  *
@@ -607,7 +630,7 @@ decompress_to:
  * Called by the PnP BIOS when it wants to boot us.
  */
 bev_entry:
-	clc			/* Allow relocation */
+	xorl	%ebp, %ebp	/* Allow relocation */
 	pushw	%cs
 	call	exec
 	lret
@@ -642,7 +665,7 @@ int19_entry:
 	/* Leave keypress in buffer and start iPXE.  The keypress will
 	 * cause the usual initial Ctrl-B prompt to be skipped.
 	 */
-	clc			/* Allow relocation */
+	xorl	%ebp, %ebp	/* Allow relocation */
 	pushw	%cs
 	call	exec
 1:	/* Try to call original INT 19 vector */
@@ -674,9 +697,6 @@ exec:	/* Set %ds = %cs */
 	pushw	%cs
 	popw	%ds
 
-	/* Preserve state of CF */
-	lahf
-
 	/* Print message as soon as possible */
 	movw	$prodstr, %si
 	xorw	%di, %di
@@ -686,8 +706,8 @@ exec:	/* Set %ds = %cs */
 
 	/* Store magic word on BIOS stack and remember BIOS %ss:sp */
 	pushl	$STACK_MAGIC
-	movw	%ss, %dx
-	movw	%sp, %bp
+	movw	%ss, %cx
+	movw	%sp, %dx
 
 	/* Obtain a reasonably-sized temporary stack */
 	xorw	%bx, %bx
@@ -695,10 +715,7 @@ exec:	/* Set %ds = %cs */
 	movw	$0x7c00, %sp
 
 	/* Install iPXE */
-	sahf
-	pushfw
 	call	alloc_basemem
-	popfw
 	movl	image_source, %esi
 	movl	decompress_to, %edi
 	call	install_prealloc
@@ -721,14 +738,14 @@ exec:	/* Set %ds = %cs */
 	pushl	$main
 	pushw	%cs
 	call	prot_call
-	popl	%ecx /* discard */
+	popl	%eax /* discard */
 
 	/* Uninstall iPXE */
 	call	uninstall
 
 	/* Restore BIOS stack */
-	movw	%dx, %ss
-	movw	%bp, %sp
+	movw	%cx, %ss
+	movw	%dx, %sp
 
 	/* Check magic word on BIOS stack */
 	popl	%eax

@@ -13,7 +13,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  */
 
 FILE_LICENCE ( GPL2_OR_LATER );
@@ -38,7 +39,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
  */
 
 /** Ethernet broadcast MAC address */
-static uint8_t eth_broadcast[ETH_ALEN] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+uint8_t eth_broadcast[ETH_ALEN] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
 
 /**
  * Add Ethernet link-layer header
@@ -50,9 +51,9 @@ static uint8_t eth_broadcast[ETH_ALEN] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
  * @v net_proto		Network-layer protocol, in network-byte order
  * @ret rc		Return status code
  */
-static int eth_push ( struct net_device *netdev __unused,
-		      struct io_buffer *iobuf, const void *ll_dest,
-		      const void *ll_source, uint16_t net_proto ) {
+int eth_push ( struct net_device *netdev __unused, struct io_buffer *iobuf,
+	       const void *ll_dest, const void *ll_source,
+	       uint16_t net_proto ) {
 	struct ethhdr *ethhdr = iob_push ( iobuf, sizeof ( *ethhdr ) );
 
 	/* Build Ethernet header */
@@ -71,11 +72,12 @@ static int eth_push ( struct net_device *netdev __unused,
  * @ret ll_dest		Link-layer destination address
  * @ret ll_source	Source link-layer address
  * @ret net_proto	Network-layer protocol, in network-byte order
+ * @ret flags		Packet flags
  * @ret rc		Return status code
  */
-static int eth_pull ( struct net_device *netdev __unused, 
-		      struct io_buffer *iobuf, const void **ll_dest,
-		      const void **ll_source, uint16_t *net_proto ) {
+int eth_pull ( struct net_device *netdev __unused, struct io_buffer *iobuf,
+	       const void **ll_dest, const void **ll_source,
+	       uint16_t *net_proto, unsigned int *flags ) {
 	struct ethhdr *ethhdr = iobuf->data;
 
 	/* Sanity check */
@@ -92,6 +94,10 @@ static int eth_pull ( struct net_device *netdev __unused,
 	*ll_dest = ethhdr->h_dest;
 	*ll_source = ethhdr->h_source;
 	*net_proto = ethhdr->h_protocol;
+	*flags = ( ( is_multicast_ether_addr ( ethhdr->h_dest ) ?
+		     LL_MULTICAST : 0 ) |
+		   ( is_broadcast_ether_addr ( ethhdr->h_dest ) ?
+		     LL_BROADCAST : 0 ) );
 
 	return 0;
 }

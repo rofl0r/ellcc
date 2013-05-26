@@ -54,6 +54,8 @@ CFLAGS		+= -m32
 ASFLAGS		+= --32
 ifeq ($(HOST_OS),FreeBSD)
 LDFLAGS		+= -m elf_i386_fbsd
+else ifeq ($(HOST_OS),OpenBSD)
+LDFLAGS		+= -m elf_i386_obsd
 else
 LDFLAGS		+= -m elf_i386
 endif
@@ -85,14 +87,8 @@ SRCDIRS		+= arch/i386/interface/pcbios
 SRCDIRS		+= arch/i386/interface/pxe
 SRCDIRS		+= arch/i386/interface/pxeparent
 SRCDIRS 	+= arch/i386/interface/syslinux
+SRCDIRS		+= arch/i386/interface/vmware
 SRCDIRS		+= arch/i386/hci/commands
-
-# The various xxx_loader.c files are #included into core/loader.c and
-# should not be compiled directly.
-#
-NON_AUTO_SRCS	+= arch/i386/core/aout_loader.c
-NON_AUTO_SRCS	+= arch/i386/core/freebsd_loader.c
-NON_AUTO_SRCS	+= arch/i386/core/wince_loader.c
 
 # Include common x86 Makefile
 #

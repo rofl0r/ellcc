@@ -13,12 +13,15 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  */
 
 FILE_LICENCE ( GPL2_OR_LATER );
 
 #include <string.h>
+#include <unistd.h>
+#include <byteswap.h>
 #include <pxe.h>
 #include <realmode.h>
 #include <pic8259.h>
@@ -33,7 +36,6 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #include <undi.h>
 #include <undinet.h>
 #include <pxeparent.h>
-
 
 /** @file
  *
@@ -62,6 +64,15 @@ struct undi_nic {
 #define UNDI_HACK_EB54		0x0001
 
 /** @} */
+
+/** Maximum number of times to retry PXENV_UNDI_INITIALIZE */
+#define UNDI_INITIALIZE_RETRY_MAX 10
+
+/** Delay between retries of PXENV_UNDI_INITIALIZE */
+#define UNDI_INITIALIZE_RETRY_DELAY_MS 200
+
+/** Alignment of received frame payload */
+#define UNDI_RX_ALIGN 16
 
 static void undinet_close ( struct net_device *netdev );
 
@@ -160,6 +171,10 @@ static int undinet_isr_triggered ( void ) {
 static struct s_PXENV_UNDI_TBD __data16 ( undinet_tbd );
 #define undinet_tbd __use_data16 ( undinet_tbd )
 
+/** UNDI transmit destination address */
+static uint8_t __data16_array ( undinet_destaddr, [ETH_ALEN] );
+#define undinet_destaddr __use_data16 ( undinet_destaddr )
+
 /**
  * Transmit packet
  *
@@ -169,8 +184,14 @@ static struct s_PXENV_UNDI_TBD __data16 ( undinet_tbd );
  */
 static int undinet_transmit ( struct net_device *netdev,
 			      struct io_buffer *iobuf ) {
+	struct undi_nic *undinic = netdev->priv;
 	struct s_PXENV_UNDI_TRANSMIT undi_transmit;
-	size_t len = iob_len ( iobuf );
+	const void *ll_dest;
+	const void *ll_source;
+	uint16_t net_proto;
+	unsigned int flags;
+	uint8_t protocol;
+	size_t len;
 	int rc;
 
 	/* Technically, we ought to make sure that the previous
@@ -183,15 +204,49 @@ static int undinet_transmit ( struct net_device *netdev,
 	 * transmit the next packet.
 	 */
 
+	/* Some PXE stacks are unable to cope with P_UNKNOWN, and will
+	 * always try to prepend a link-layer header.  Work around
+	 * these stacks by stripping the existing link-layer header
+	 * and allowing the PXE stack to (re)construct the link-layer
+	 * header itself.
+	 */
+	if ( ( rc = eth_pull ( netdev, iobuf, &ll_dest, &ll_source,
+			       &net_proto, &flags ) ) != 0 ) {
+		DBGC ( undinic, "UNDINIC %p could not strip Ethernet header: "
+		       "%s\n", undinic, strerror ( rc ) );
+		return rc;
+	}
+	memcpy ( undinet_destaddr, ll_dest, sizeof ( undinet_destaddr ) );
+	switch ( net_proto ) {
+	case htons ( ETH_P_IP ) :
+		protocol = P_IP;
+		break;
+	case htons ( ETH_P_ARP ) :
+		protocol = P_ARP;
+		break;
+	case htons ( ETH_P_RARP ) :
+		protocol = P_RARP;
+		break;
+	default:
+		/* Unknown protocol; restore the original link-layer header */
+		iob_push ( iobuf, sizeof ( struct ethhdr ) );
+		protocol = P_UNKNOWN;
+		break;
+	}
+
 	/* Copy packet to UNDI I/O buffer */
+	len = iob_len ( iobuf );
 	if ( len > sizeof ( basemem_packet ) )
 		len = sizeof ( basemem_packet );
 	memcpy ( &basemem_packet, iobuf->data, len );
 
 	/* Create PXENV_UNDI_TRANSMIT data structure */
 	memset ( &undi_transmit, 0, sizeof ( undi_transmit ) );
+	undi_transmit.Protocol = protocol;
+	undi_transmit.XmitFlag = ( ( flags & LL_BROADCAST ) ?
+				   XMT_BROADCAST : XMT_DESTADDR );
 	undi_transmit.DestAddr.segment = rm_ds;
-	undi_transmit.DestAddr.offset = __from_data16 ( &undinet_tbd );
+	undi_transmit.DestAddr.offset = __from_data16 ( &undinet_destaddr );
 	undi_transmit.TBD.segment = rm_ds;
 	undi_transmit.TBD.offset = __from_data16 ( &undinet_tbd );
 
@@ -248,6 +303,7 @@ static void undinet_poll ( struct net_device *netdev ) {
 	struct s_PXENV_UNDI_ISR undi_isr;
 	struct io_buffer *iobuf = NULL;
 	size_t len;
+	size_t reserve_len;
 	size_t frag_len;
 	size_t max_frag_len;
 	int rc;
@@ -295,6 +351,8 @@ static void undinet_poll ( struct net_device *netdev ) {
 			/* Packet fragment received */
 			len = undi_isr.FrameLength;
 			frag_len = undi_isr.BufferLength;
+			reserve_len = ( -undi_isr.FrameHeaderLength &
+					( UNDI_RX_ALIGN - 1 ) );
 			if ( ( len == 0 ) || ( len < frag_len ) ) {
 				/* Don't laugh.  VMWare does it. */
 				DBGC ( undinic, "UNDINIC %p reported insane "
@@ -303,15 +361,17 @@ static void undinet_poll ( struct net_device *netdev ) {
 				netdev_rx_err ( netdev, NULL, -EINVAL );
 				break;
 			}
-			if ( ! iobuf )
-				iobuf = alloc_iob ( len );
 			if ( ! iobuf ) {
-				DBGC ( undinic, "UNDINIC %p could not "
-				       "allocate %zd bytes for RX buffer\n",
-				       undinic, len );
-				/* Fragment will be dropped */
-				netdev_rx_err ( netdev, NULL, -ENOMEM );
-				goto done;
+				iobuf = alloc_iob ( reserve_len + len );
+				if ( ! iobuf ) {
+					DBGC ( undinic, "UNDINIC %p could not "
+					       "allocate %zd bytes for RX "
+					       "buffer\n", undinic, len );
+					/* Fragment will be dropped */
+					netdev_rx_err ( netdev, NULL, -ENOMEM );
+					goto done;
+				}
+				iob_reserve ( iobuf, reserve_len );
 			}
 			max_frag_len = iob_tailroom ( iobuf );
 			if ( frag_len > max_frag_len ) {
@@ -482,12 +542,13 @@ int undinet_probe ( struct undi_device *undi ) {
 	struct undi_nic *undinic;
 	struct s_PXENV_START_UNDI start_undi;
 	struct s_PXENV_UNDI_STARTUP undi_startup;
-	struct s_PXENV_UNDI_INITIALIZE undi_initialize;
+	struct s_PXENV_UNDI_INITIALIZE undi_init;
 	struct s_PXENV_UNDI_GET_INFORMATION undi_info;
 	struct s_PXENV_UNDI_GET_IFACE_INFO undi_iface;
 	struct s_PXENV_UNDI_SHUTDOWN undi_shutdown;
 	struct s_PXENV_UNDI_CLEANUP undi_cleanup;
 	struct s_PXENV_STOP_UNDI stop_undi;
+	unsigned int retry;
 	int rc;
 
 	/* Allocate net device */
@@ -524,12 +585,27 @@ int undinet_probe ( struct undi_device *undi ) {
 					     &undi_startup,
 					     sizeof ( undi_startup ) ) ) != 0 )
 			goto err_undi_startup;
-		memset ( &undi_initialize, 0, sizeof ( undi_initialize ) );
-		if ( ( rc = pxeparent_call ( undinet_entry,
-					     PXENV_UNDI_INITIALIZE,
-					     &undi_initialize,
-					     sizeof ( undi_initialize ))) != 0 )
-			goto err_undi_initialize;
+		/* On some PXE stacks, PXENV_UNDI_INITIALIZE may fail
+		 * due to a transient condition (e.g. media test
+		 * failing because the link has only just come out of
+		 * reset).  We may therefore need to retry this call
+		 * several times.
+		 */
+		for ( retry = 0 ; ; ) {
+			memset ( &undi_init, 0, sizeof ( undi_init ) );
+			if ( ( rc = pxeparent_call ( undinet_entry,
+						     PXENV_UNDI_INITIALIZE,
+						     &undi_init,
+						     sizeof ( undi_init ))) ==0)
+				break;
+			if ( ++retry > UNDI_INITIALIZE_RETRY_MAX )
+				goto err_undi_initialize;
+			DBGC ( undinic, "UNDINIC %p retrying "
+			       "PXENV_UNDI_INITIALIZE (retry %d)\n",
+			       undinic, retry );
+			/* Delay to allow link to settle if necessary */
+			mdelay ( UNDI_INITIALIZE_RETRY_DELAY_MS );
+		}
 	}
 	undi->flags |= UNDI_FL_INITIALIZED;
 
@@ -539,6 +615,7 @@ int undinet_probe ( struct undi_device *undi ) {
 				     &undi_info, sizeof ( undi_info ) ) ) != 0 )
 		goto err_undi_get_information;
 	memcpy ( netdev->hw_addr, undi_info.PermNodeAddress, ETH_ALEN );
+	memcpy ( netdev->ll_addr, undi_info.CurrentNodeAddress, ETH_ALEN );
 	undinic->irq = undi_info.IntNumber;
 	if ( undinic->irq > IRQ_MAX ) {
 		DBGC ( undinic, "UNDINIC %p has invalid IRQ %d\n",
@@ -558,8 +635,10 @@ int undinet_probe ( struct undi_device *undi ) {
 	DBGC ( undinic, "UNDINIC %p has type %s, speed %d, flags %08x\n",
 	       undinic, undi_iface.IfaceType, undi_iface.LinkSpeed,
 	       undi_iface.ServiceFlags );
-	if ( undi_iface.ServiceFlags & SUPPORTED_IRQ )
+	if ( ( undi_iface.ServiceFlags & SUPPORTED_IRQ ) &&
+	     ( undinic->irq != 0 ) ) {
 		undinic->irq_supported = 1;
+	}
 	DBGC ( undinic, "UNDINIC %p using %s mode\n", undinic,
 	       ( undinic->irq_supported ? "interrupt" : "polling" ) );
 	if ( strncmp ( ( ( char * ) undi_iface.IfaceType ), "Etherboot",

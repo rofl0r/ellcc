@@ -13,7 +13,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  */
 
 FILE_LICENCE ( GPL2_OR_LATER );
@@ -25,6 +26,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
  */
 
 #include <stdint.h>
+#include <stdlib.h>
 #include <byteswap.h>
 #include <ipxe/xfer.h>
 #include <ipxe/open.h>
@@ -32,11 +34,19 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #include <ipxe/dhcp.h>
 #include <ipxe/settings.h>
 #include <ipxe/console.h>
-#include <ipxe/ansiesc.h>
+#include <ipxe/lineconsole.h>
 #include <ipxe/syslog.h>
+#include <config/console.h>
+
+/* Set default console usage if applicable */
+#if ! ( defined ( CONSOLE_SYSLOG ) && CONSOLE_EXPLICIT ( CONSOLE_SYSLOG ) )
+#undef CONSOLE_SYSLOG
+#define CONSOLE_SYSLOG ( CONSOLE_USAGE_ALL & ~CONSOLE_USAGE_TUI )
+#endif
 
 /** The syslog server */
 static struct sockaddr_tcpip logserver = {
+	.st_family = AF_INET,
 	.st_port = htons ( SYSLOG_PORT ),
 };
 
@@ -57,24 +67,79 @@ static struct interface syslogger = INTF_INIT ( syslogger_desc );
  ******************************************************************************
  */
 
+/** Host name (for log messages) */
+static char *syslog_hostname;
+
+/** Domain name (for log messages) */
+static char *syslog_domain;
+
+/**
+ * Transmit formatted syslog message
+ *
+ * @v xfer		Data transfer interface
+ * @v severity		Severity
+ * @v message		Message
+ * @v terminator	Message terminator
+ * @ret rc		Return status code
+ */
+int syslog_send ( struct interface *xfer, unsigned int severity,
+		  const char *message, const char *terminator ) {
+
+	return xfer_printf ( xfer, "<%d>%s%s%s%sipxe: %s%s",
+			     SYSLOG_PRIORITY ( SYSLOG_DEFAULT_FACILITY,
+					       severity ),
+			     ( syslog_hostname ? syslog_hostname : "" ),
+			     ( syslog_domain ? "." : "" ),
+			     ( syslog_domain ? syslog_domain : "" ),
+			     ( ( syslog_hostname || syslog_domain ) ? " " : ""),
+			     message, terminator );
+}
+
+/******************************************************************************
+ *
+ * Console driver
+ *
+ ******************************************************************************
+ */
+
 /** Syslog line buffer */
 static char syslog_buffer[SYSLOG_BUFSIZE];
 
-/** Index into syslog line buffer */
-static unsigned int syslog_idx;
+/** Syslog severity */
+static unsigned int syslog_severity = SYSLOG_DEFAULT_SEVERITY;
 
-/** Syslog recursion marker */
-static int syslog_entered;
+/**
+ * Handle ANSI set syslog priority (private sequence)
+ *
+ * @v count		Parameter count
+ * @v params		List of graphic rendition aspects
+ */
+static void syslog_handle_priority ( unsigned int count __unused,
+				     int params[] ) {
+	if ( params[0] >= 0 ) {
+		syslog_severity = params[0];
+	} else {
+		syslog_severity = SYSLOG_DEFAULT_SEVERITY;
+	}
+}
 
 /** Syslog ANSI escape sequence handlers */
-static struct ansiesc_handler syslog_ansiesc_handlers[] = {
+static struct ansiesc_handler syslog_handlers[] = {
+	{ ANSIESC_LOG_PRIORITY, syslog_handle_priority },
 	{ 0, NULL }
 };
 
-/** Syslog ANSI escape sequence context */
-static struct ansiesc_context syslog_ansiesc_ctx = {
-	.handlers = syslog_ansiesc_handlers,
+/** Syslog line console */
+static struct line_console syslog_line = {
+	.buffer = syslog_buffer,
+	.len = sizeof ( syslog_buffer ),
+	.ctx = {
+		.handlers = syslog_handlers,
+	},
 };
+
+/** Syslog recursion marker */
+static int syslog_entered;
 
 /**
  * Print a character to syslog console
@@ -84,47 +149,20 @@ static struct ansiesc_context syslog_ansiesc_ctx = {
 static void syslog_putchar ( int character ) {
 	int rc;
 
-	/* Do nothing if we have no log server */
-	if ( ! logserver.st_family )
-		return;
-
 	/* Ignore if we are already mid-logging */
 	if ( syslog_entered )
 		return;
 
-	/* Strip ANSI escape sequences */
-	character = ansiesc_process ( &syslog_ansiesc_ctx, character );
-	if ( character < 0 )
+	/* Fill line buffer */
+	if ( line_putchar ( &syslog_line, character ) == 0 )
 		return;
-
-	/* Ignore carriage return */
-	if ( character == '\r' )
-		return;
-
-	/* Treat newline as a terminator */
-	if ( character == '\n' )
-		character = 0;
-
-	/* Add character to buffer */
-	syslog_buffer[syslog_idx++] = character;
-
-	/* Do nothing more unless we reach end-of-line (or end-of-buffer) */
-	if ( ( character != 0 ) &&
-	     ( syslog_idx < ( sizeof ( syslog_buffer ) - 1 /* NUL */ ) ) ) {
-		return;
-	}
-
-	/* Reset to start of buffer */
-	syslog_idx = 0;
 
 	/* Guard against re-entry */
 	syslog_entered = 1;
 
 	/* Send log message */
-	if ( ( rc = xfer_printf ( &syslogger, "<%d>ipxe: %s",
-				  SYSLOG_PRIORITY ( SYSLOG_FACILITY,
-						    SYSLOG_SEVERITY ),
-				  syslog_buffer ) ) != 0 ) {
+	if ( ( rc = syslog_send ( &syslogger, syslog_severity,
+				  syslog_buffer, "" ) ) != 0 ) {
 		DBG ( "SYSLOG could not send log message: %s\n",
 		      strerror ( rc ) );
 	}
@@ -136,6 +174,8 @@ static void syslog_putchar ( int character ) {
 /** Syslog console driver */
 struct console_driver syslog_console __console_driver = {
 	.putchar = syslog_putchar,
+	.disabled = 1,
+	.usage = CONSOLE_SYSLOG,
 };
 
 /******************************************************************************
@@ -165,12 +205,26 @@ static int apply_syslog_settings ( void ) {
 	int len;
 	int rc;
 
+	/* Fetch hostname and domain name */
+	free ( syslog_hostname );
+	if ( ( len = fetch_string_setting_copy ( NULL, &hostname_setting,
+						 &syslog_hostname ) ) < 0 ) {
+		rc = len;
+		DBG ( "SYSLOG could not fetch hostname: %s\n", strerror ( rc ));
+	}
+	free ( syslog_domain );
+	if ( ( len = fetch_string_setting_copy ( NULL, &domain_setting,
+						 &syslog_domain ) ) < 0 ) {
+		rc = len;
+		DBG ( "SYSLOG could not fetch domain: %s\n", strerror ( rc ) );
+	}
+
 	/* Fetch log server */
+	syslog_console.disabled = 1;
 	old_addr.s_addr = sin_logserver->sin_addr.s_addr;
-	logserver.st_family = 0;
 	if ( ( len = fetch_ipv4_setting ( NULL, &syslog_setting,
 					  &sin_logserver->sin_addr ) ) >= 0 ) {
-		sin_logserver->sin_family = AF_INET;
+		syslog_console.disabled = 0;
 	}
 
 	/* Do nothing unless log server has changed */
@@ -181,7 +235,7 @@ static int apply_syslog_settings ( void ) {
 	intf_restart ( &syslogger, 0 );
 
 	/* Do nothing unless we have a log server */
-	if ( ! logserver.st_family ) {
+	if ( syslog_console.disabled ) {
 		DBG ( "SYSLOG has no log server\n" );
 		return 0;
 	}

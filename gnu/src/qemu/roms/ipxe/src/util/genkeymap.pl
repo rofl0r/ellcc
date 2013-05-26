@@ -14,7 +14,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
-# Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+# 02110-1301, USA.
 
 =head1 NAME
 
@@ -124,8 +125,10 @@ sub keysym_to_ascii {
   return unless $keysym;
 
   # Sanity check
-  die "Unexpected keysym ".sprintf ( "0x%04x\n", $keysym )."\n"
-      if $keysym & 0xf000;
+  if ( $keysym & 0xf000 ) {
+    warn "Unexpected keysym ".sprintf ( "0x%04x", $keysym )."\n";
+    return;
+  }
 
   # Extract type and value
   my $type = ( $keysym >> 8 );

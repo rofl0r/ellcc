@@ -13,7 +13,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  */
 
 FILE_LICENCE ( GPL2_OR_LATER );
@@ -331,10 +332,12 @@ static struct io_buffer * fcoe_alloc_iob ( struct fcoe_port *fcoe __unused,
  * @v netdev		Network device
  * @v ll_dest		Link-layer destination address
  * @v ll_source		Link-layer source address
+ * @v flags		Packet flags
  * @ret rc		Return status code
  */
 static int fcoe_rx ( struct io_buffer *iobuf, struct net_device *netdev,
-		     const void *ll_dest, const void *ll_source ) {
+		     const void *ll_dest, const void *ll_source,
+		     unsigned int flags __unused ) {
 	struct fcoe_header *fcoehdr;
 	struct fcoe_footer *fcoeftr;
 	struct fcoe_port *fcoe;
@@ -924,12 +927,14 @@ static struct fip_handler fip_handlers[] = {
  * @v netdev		Network device
  * @v ll_dest		Link-layer destination address
  * @v ll_source		Link-layer source address
+ * @v flags		Packet flags
  * @ret rc		Return status code
  */
 static int fcoe_fip_rx ( struct io_buffer *iobuf,
 			 struct net_device *netdev,
 			 const void *ll_dest,
-			 const void *ll_source __unused ) {
+			 const void *ll_source __unused,
+			 unsigned int flags __unused ) {
 	struct fip_header *fiphdr = iobuf->data;
 	struct fip_descriptors descs;
 	struct fip_handler *handler;

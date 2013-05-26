@@ -49,14 +49,15 @@ static void
 macparts_open( macparts_info_t *di )
 {
 	char *str = my_args_copy();
-	char *argstr = strdup("");
-	char *parstr = strdup("");
-	int bs, parnum=-1;
+	char *parstr = NULL, *argstr = NULL;
+	char *tmpstr, *bootpath;
+	int bs, parnum=-1, apple_parnum=-1;
+	int parlist[2], parlist_size = 0;
 	desc_map_t dmap;
 	part_entry_t par;
-	int ret = 0;
+	int ret = 0, i = 0, j = 0;
 	int want_bootcode = 0;
-	phandle_t ph;
+	phandle_t ph, chosen_ph;
 	ducell offs = 0, size = -1;
 
 	DPRINTF("macparts_open '%s'\n", str );
@@ -66,44 +67,33 @@ macparts_open( macparts_info_t *di )
 		id: [0-7]
 		[(id)][,][filespec]
 	*/
+	
+	if ( str && strlen(str) ) {
+		/* Detect the arguments */
+		if ((*str >= '0' && *str <= '9') || (*str == ',')) {
+		    push_str(str);
+		    PUSH(',');
+		    fword("left-parse-string");
+		    parstr = pop_fstr_copy();
+		    argstr = pop_fstr_copy();
+		} else {
+		    argstr = str;
+		}
 
-	if( str ) {
-		if ( !strlen(str) )
-			parnum = -1;
-		else {
-			/* Detect the boot parameters */
-			char *ptr;
-			ptr = str;
-
-			/* <id>,<file> */
-			if (*ptr >= '0' && *ptr <= '9' && *(ptr + 1) == ',') {
-				parstr = ptr;
-				*(ptr + 1) = '\0';
-				argstr = ptr + 2;
-			}
-
-			/* <id> */
-			else if (*ptr >= '0' && *ptr <='9' && *(ptr + 1) == '\0') {
-				parstr = ptr;
-			}
-
-			/* ,<file> */
-			else if (*ptr == ',') {
-				argstr = ptr + 1;
-			}	
-
-			/* <file> */
-			else {
-				argstr = str;
-			}
+		/* Make sure argstr is not null */
+		if (argstr == NULL)
+		    argstr = strdup("");	
 		
-			/* Convert the id to a partition number */
-			if (strlen(parstr))
-				parnum = atol(parstr);
+		/* Convert the id to a partition number */
+		if (parstr && strlen(parstr))
+		    parnum = atol(parstr);
 
-			/* Detect if we are looking for the bootcode */
-			if (strcmp(argstr, "%BOOT") == 0)
-				want_bootcode = 1;
+		/* Detect if we are looking for the bootcode */
+		if (strcmp(argstr, "%BOOT") == 0) {
+		    want_bootcode = 1;
+		    feval("1 want-bootcode !");
+		} else {
+		    feval("0 want-bootcode !");
 		}
 	}
 
@@ -140,7 +130,7 @@ macparts_open( macparts_info_t *di )
 	 * Implement partition selection as per the PowerPC Microprocessor CHRP bindings
 	 */
 
-	if (str == NULL || parnum == 0) {
+	if (argstr == NULL || parnum == 0) {
 		/* According to the spec, partition 0 as well as no arguments means the whole disk */
 		offs = (long long)0;
 		size = (long long)__be32_to_cpu(dmap.sbBlkCount) * bs;
@@ -156,107 +146,164 @@ macparts_open( macparts_info_t *di )
 		ret = -1;
 		goto out;
 
-	} else if (parnum == -1 && strlen(argstr)) {
+	} else if (parnum == -1) {
 
 		DPRINTF("mac-parts: counted %d partitions\n", __be32_to_cpu(par.pmMapBlkCnt));
 
-		/* No partition was explicitly requested, but an argstr was passed in.
-		   So let's find a suitable partition... */
-		for (parnum = 1; parnum <= __be32_to_cpu(par.pmMapBlkCnt); parnum++) {
-			SEEK( bs * parnum );
+		/* No partition was explicitly requested so let's find a suitable partition... */
+		for (i = 1; i <= __be32_to_cpu(par.pmMapBlkCnt); i++) {
+			SEEK( bs * i );
 			READ( &par, sizeof(par) );
-			if( __be16_to_cpu(par.pmSig) != DESC_PART_SIGNATURE ||
+			if ( __be16_to_cpu(par.pmSig) != DESC_PART_SIGNATURE ||
                             !__be32_to_cpu(par.pmPartBlkCnt) )
-				break;
+				continue;
 
-			DPRINTF("found partition type: %s with status %x\n", par.pmPartType, __be32_to_cpu(par.pmPartStatus));
+			DPRINTF("found partition %d type: %s with status %x\n", i, par.pmPartType, __be32_to_cpu(par.pmPartStatus));
 
 			/* If we have a valid, allocated and readable partition... */
 			if( (__be32_to_cpu(par.pmPartStatus) & kPartitionAUXIsValid) &&
 			(__be32_to_cpu(par.pmPartStatus) & kPartitionAUXIsAllocated) &&
 			(__be32_to_cpu(par.pmPartStatus) & kPartitionAUXIsReadable) ) {
-				offs = (long long)__be32_to_cpu(par.pmPyPartStart) * bs;
-				size = (long long)__be32_to_cpu(par.pmPartBlkCnt) * bs;
 
-				/* If the filename was set to %BOOT, we actually want the bootcode */
-				if (want_bootcode && (__be32_to_cpu(par.pmPartStatus) & kPartitionAUXIsBootValid)) {
-					offs += (long long)__be32_to_cpu(par.pmLgBootStart) * bs;
-					size = (long long)__be32_to_cpu(par.pmBootSize);
-
-					goto found;
-				} else {
-					/* Otherwise we were passed a filename and path. So let's
-					   choose the first partition with a valid filesystem */
-					DPUSH( offs );
-					PUSH_ih( my_parent() );
-					parword("find-filesystem");
+				/* Unfortunately Apple's OF implementation doesn't follow the OF PowerPC CHRP bindings
+				 * and instead will brute-force boot the first valid partition it finds with a
+				 * type of either "Apple_Boot", "Apple_HFS" or "DOS_FAT_". Here we store the id
+				 * of the first partition that matches these criteria to use as a fallback later
+				 * if required. */
 				
-					ph = POP_ph();
-					if (ph)
-						goto found;
+				if (apple_parnum == -1 &&
+				    (strcmp(par.pmPartType, "Apple_Boot") == 0 || 
+				    strcmp(par.pmPartType, "Apple_Bootstrap") == 0 || 
+				    strcmp(par.pmPartType, "Apple_HFS") == 0 ||
+				    strcmp(par.pmPartType, "DOS_FAT_") == 0)) {
+					apple_parnum = i;
+					
+					DPRINTF("Located Apple OF fallback partition %d\n", apple_parnum);
+				}
+				
+				/* If the partition is also bootable and the pmProcessor field matches "PowerPC" (insensitive
+				 * match), then according to the CHRP bindings this is our chosen partition */
+				for (j = 0; j < strlen(par.pmProcessor); j++) {
+				    par.pmProcessor[j] = tolower(par.pmProcessor[j]);
+				}				
+				
+				if ((__be32_to_cpu(par.pmPartStatus) & kPartitionAUXIsBootValid) &&
+				    strcmp(par.pmProcessor, "powerpc") == 0) {
+				    parnum = i;
+				
+				    DPRINTF("Located CHRP-compliant boot partition %d\n", parnum);
 				}
 			}
 		}
+		
+		/* If we found a valid CHRP partition, add it to the list */
+		if (parnum > 0) {
+		    parlist[parlist_size++] = parnum;
+		}
 
+		/* If we found an Apple OF fallback partition, add it to the list */
+		if (apple_parnum > 0 && apple_parnum != parnum) {
+		    parlist[parlist_size++] = apple_parnum;
+		}
+		
 	} else {
 		/* Another partition was explicitly requested */
-		SEEK( bs * parnum );
-		READ( &par, sizeof(par) );
-
-		if( (__be32_to_cpu(par.pmPartStatus) & kPartitionAUXIsValid) &&
-			    (__be32_to_cpu(par.pmPartStatus) & kPartitionAUXIsAllocated) &&
-			    (__be32_to_cpu(par.pmPartStatus) & kPartitionAUXIsReadable) ) {
-
-			offs = (long long)__be32_to_cpu(par.pmPyPartStart) * bs;
-			size = (long long)__be32_to_cpu(par.pmPartBlkCnt) * bs;
-		}
+		parlist[parlist_size++] = parnum;
+		
+		DPRINTF("Partition %d explicitly requested\n", parnum);
 	}
 
-	/* If we couldn't find a partition, exit */
-	if (size == -1) {
-		DPRINTF("Unable to automatically find partition!\n");
+	/* Attempt to use our CHRP partition, optionally followed by our Apple OF fallback partition */
+	for (j = 0; j < parlist_size; j++) {
+	
+	    /* Make sure our partition is valid */
+	    parnum = parlist[j];
+	    
+	    DPRINTF("Selected partition %d\n", parnum);
+	    
+	    SEEK( bs * parnum );
+	    READ( &par, sizeof(par) );	
+
+	    if(! ((__be32_to_cpu(par.pmPartStatus) & kPartitionAUXIsValid) &&
+			(__be32_to_cpu(par.pmPartStatus) & kPartitionAUXIsAllocated) &&
+			(__be32_to_cpu(par.pmPartStatus) & kPartitionAUXIsReadable)) ) {
+		DPRINTF("Partition %d is not valid, allocated and readable\n", parnum);
 		goto out;
+	    }
+	    
+	    ret = -1;
+
+	    offs = (long long)__be32_to_cpu(par.pmPyPartStart) * bs;
+	    size = (long long)__be32_to_cpu(par.pmPartBlkCnt) * bs;	
+	    
+	    if (want_bootcode) {
+		offs += (long long)__be32_to_cpu(par.pmLgBootStart) * bs;
+		size = (long long)__be32_to_cpu(par.pmBootSize);
+	    }
+	    
+	    di->blocksize = (unsigned int)bs;	
+	    
+	    di->offs_hi = offs >> BITS;
+	    di->offs_lo = offs & (ucell) -1;
+
+	    di->size_hi = size >> BITS;
+	    di->size_lo = size & (ucell) -1;
+
+	    /* We have a valid partition - so probe for a filesystem at the current offset */
+	    DPRINTF("mac-parts: about to probe for fs\n");
+	    DPUSH( offs );
+	    PUSH_ih( my_parent() );
+	    parword("find-filesystem");
+	    DPRINTF("mac-parts: done fs probe\n");
+
+	    ph = POP_ph();
+	    if( ph ) {
+		    DPRINTF("mac-parts: filesystem found on partition %d with ph " FMT_ucellx " and args %s\n", parnum, ph, argstr);
+		    di->filesystem_ph = ph;
+
+		    /* Update bootpath to reflect where we booted from */
+		    chosen_ph = find_dev("/chosen");
+		    tmpstr = get_property(chosen_ph, "bootpath", &i);
+		    if (tmpstr == NULL) {
+			tmpstr = strdup("");
+		    }
+		    
+		    /* Find just the device */
+		    if (strlen(tmpstr)) {
+			for (i = 0; i < strlen(tmpstr); i++) {
+			    if (tmpstr[i] == ':' || tmpstr[i] == ',') {
+				tmpstr[i] = '\0';
+			    }
+			}
+			
+			/* Rebuild bootpath with the currently selected partition number */
+			bootpath = malloc(strlen(tmpstr) + strlen(str) + 4);
+			sprintf(bootpath, "%s:%d", tmpstr, parnum);
+			if (strlen(argstr)) {
+			    sprintf(bootpath, "%s:%d,%s", tmpstr, parnum, argstr);
+			} else {
+			    sprintf(bootpath, "%s:%d", tmpstr, parnum);
+			}
+			
+			DPRINTF("mac-parts: setting bootpath to %s\n", bootpath);
+			
+			set_property(chosen_ph, "bootpath", bootpath, strlen(bootpath) + 1);
+		    }
+		
+		    /* If we have been asked to open a particular file, interpose the filesystem package with 
+		    the passed filename as an argument */
+		    if (!want_bootcode && strlen(argstr)) {
+			    push_str( argstr );
+			    PUSH_ph( ph );
+			    fword("interpose");
+		    }
+		    
+		    goto out;
+	    } else {
+		    DPRINTF("mac-parts: no filesystem found on partition %d; bypassing misc-files interpose\n", parnum);
+	    }
 	}
-
-found:
-
-	ret = -1;
-	di->blocksize = (unsigned int)bs;
-
-	di->offs_hi = offs >> BITS;
-	di->offs_lo = offs & (ucell) -1;
-
-	di->size_hi = size >> BITS;
-	di->size_lo = size & (ucell) -1;
-
-	/* We have a valid partition - so probe for a filesystem at the current offset */
-	DPRINTF("mac-parts: about to probe for fs\n");
-	DPUSH( offs );
-	PUSH_ih( my_parent() );
-	parword("find-filesystem");
-	DPRINTF("mac-parts: done fs probe\n");
-
-	ph = POP_ph();
-	if( ph ) {
-		DPRINTF("mac-parts: filesystem found with ph " FMT_ucellx " and args %s\n", ph, argstr);
-		di->filesystem_ph = ph;
-
-		/* If the filename was %BOOT then it's not a real filename, so clear argstr before
-		   attempting interpose */
-		if (want_bootcode)
-			argstr = strdup("");
-
-		/* If we have been asked to open a particular file, interpose the filesystem package with 
-		   the passed filename as an argument */
-		if (strlen(argstr)) {
-			push_str( argstr );
-			PUSH_ph( ph );
-			fword("interpose");
-		}
-	} else {
-		DPRINTF("mac-parts: no filesystem found; bypassing misc-files interpose\n");
-	}
-
+	    
 	free( str );
 
 out:

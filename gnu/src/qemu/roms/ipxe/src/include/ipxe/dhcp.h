@@ -10,6 +10,7 @@
 FILE_LICENCE ( GPL2_OR_LATER );
 
 #include <stdint.h>
+#include <stdarg.h>
 #include <ipxe/in.h>
 #include <ipxe/list.h>
 #include <ipxe/refcnt.h>
@@ -240,6 +241,39 @@ struct dhcp_client_id {
 /** Client system architecture */
 #define DHCP_CLIENT_ARCHITECTURE 93
 
+/** DHCP client architecture */
+struct dhcp_client_architecture {
+	uint16_t arch;
+} __attribute__ (( packed ));
+
+/** DHCP client architecture values
+ *
+ * These are defined by the PXE specification and redefined by
+ * RFC4578.
+ */
+enum dhcp_client_architecture_values {
+	/** Intel x86 PC */
+	DHCP_CLIENT_ARCHITECTURE_X86 = 0x0000,
+	/** NEC/PC98 */
+	DHCP_CLIENT_ARCHITECTURE_PC98 = 0x0001,
+	/** EFI Itanium */
+	DHCP_CLIENT_ARCHITECTURE_IA64 = 0x0002,
+	/** DEC Alpha */
+	DHCP_CLIENT_ARCHITECTURE_ALPHA = 0x0003,
+	/** Arc x86 */
+	DHCP_CLIENT_ARCHITECTURE_ARCX86 = 0x0004,
+	/** Intel Lean Client */
+	DHCP_CLIENT_ARCHITECTURE_LC = 0x0005,
+	/** EFI IA32 */
+	DHCP_CLIENT_ARCHITECTURE_IA32 = 0x0006,
+	/** EFI BC */
+	DHCP_CLIENT_ARCHITECTURE_EFI = 0x0007,
+	/** EFI Xscale */
+	DHCP_CLIENT_ARCHITECTURE_XSCALE = 0x0008,
+	/** EFI x86-64 */
+	DHCP_CLIENT_ARCHITECTURE_X86_64 = 0x0009,
+};
+
 /** Client network device interface */
 #define DHCP_CLIENT_NDI 94
 
@@ -317,6 +351,21 @@ struct dhcp_client_uuid {
  * call to autoboot()
  */
 #define DHCP_EB_SCRIPTLET DHCP_ENCAP_OPT ( DHCP_EB_ENCAP, 0x51 )
+
+/** Encrypted syslog server */
+#define DHCP_EB_SYSLOGS_SERVER DHCP_ENCAP_OPT ( DHCP_EB_ENCAP, 0x55 )
+
+/** Trusted root certficate fingerprints */
+#define DHCP_EB_TRUST DHCP_ENCAP_OPT ( DHCP_EB_ENCAP, 0x5a )
+
+/** Client certficate */
+#define DHCP_EB_CERT DHCP_ENCAP_OPT ( DHCP_EB_ENCAP, 0x5b )
+
+/** Client private key */
+#define DHCP_EB_KEY DHCP_ENCAP_OPT ( DHCP_EB_ENCAP, 0x5c )
+
+/** Cross-signed certificate source */
+#define DHCP_EB_CROSS_CERT DHCP_ENCAP_OPT ( DHCP_EB_ENCAP, 0x5d )
 
 /** Skip PXE DHCP protocol extensions such as ProxyDHCP
  *
@@ -424,32 +473,6 @@ struct dhcp_netdev_desc {
 #define DHCP_END 255
 
 /** @} */
-
-/**
- * Count number of arguments to a variadic macro
- *
- * This rather neat, non-iterative solution is courtesy of Laurent
- * Deniau.
- *
- */
-#define _VA_ARG_COUNT(  _1,  _2,  _3,  _4,  _5,  _6,  _7,  _8,		\
-		        _9, _10, _11, _12, _13, _14, _15, _16,		\
-		       _17, _18, _19, _20, _21, _22, _23, _24,		\
-		       _25, _26, _27, _28, _29, _30, _31, _32,		\
-		       _33, _34, _35, _36, _37, _38, _39, _40,		\
-		       _41, _42, _43, _44, _45, _46, _47, _48,		\
-		       _49, _50, _51, _52, _53, _54, _55, _56,		\
-		       _57, _58, _59, _60, _61, _62, _63,   N, ... ) N
-#define VA_ARG_COUNT( ... )						\
-	_VA_ARG_COUNT ( __VA_ARGS__, 					\
-			63, 62, 61, 60, 59, 58, 57, 56,			\
-			55, 54, 53, 52, 51, 50, 49, 48,			\
-			47, 46, 45, 44, 43, 42, 41, 40,			\
-			39, 38, 37, 36, 35, 34, 33, 32,			\
-			31, 30, 29, 28, 27, 26, 25, 24,			\
-			23, 22, 21, 20, 19, 18, 17, 16,			\
-			15, 14, 13, 12, 11, 10,  9,  8,			\
-			 7,  6,  5,  4,  3,  2,  1,  0 )
 
 /** Construct a DHCP option from a list of bytes */
 #define DHCP_OPTION( ... ) VA_ARG_COUNT ( __VA_ARGS__ ), __VA_ARGS__
@@ -627,15 +650,16 @@ struct dhcphdr {
 /** Setting block name used for BootServerDHCP responses */
 #define PXEBS_SETTINGS_NAME "pxebs"
 
-extern unsigned int dhcp_chaddr ( struct net_device *netdev, void *chaddr,
-				  uint16_t *flags );
+extern uint32_t dhcp_last_xid;
 extern int dhcp_create_packet ( struct dhcp_packet *dhcppkt,
 				struct net_device *netdev, uint8_t msgtype,
-				const void *options, size_t options_len,
-				void *data, size_t max_len );
+				uint32_t xid, const void *options,
+				size_t options_len, void *data,
+				size_t max_len );
 extern int dhcp_create_request ( struct dhcp_packet *dhcppkt,
 				 struct net_device *netdev,
-				 unsigned int msgtype, struct in_addr ciaddr,
+				 unsigned int msgtype, uint32_t xid,
+				 struct in_addr ciaddr,
 				 void *data, size_t max_len );
 extern int start_dhcp ( struct interface *job, struct net_device *netdev );
 extern int start_pxebs ( struct interface *job, struct net_device *netdev,

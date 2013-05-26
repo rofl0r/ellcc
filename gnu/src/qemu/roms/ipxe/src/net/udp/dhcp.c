@@ -13,7 +13,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  */
 
 FILE_LICENCE ( GPL2_OR_LATER );
@@ -85,12 +86,10 @@ static uint8_t dhcp_request_options_data[] = {
 		      DHCP_LOG_SERVERS, DHCP_HOST_NAME, DHCP_DOMAIN_NAME,
 		      DHCP_ROOT_PATH, DHCP_VENDOR_ENCAP, DHCP_VENDOR_CLASS_ID,
 		      DHCP_TFTP_SERVER_NAME, DHCP_BOOTFILE_NAME,
+		      128, 129, 130, 131, 132, 133, 134, 135, /* for PXE */
 		      DHCP_EB_ENCAP, DHCP_ISCSI_INITIATOR_IQN ),
 	DHCP_END
 };
-
-/** Version number feature */
-FEATURE_VERSION ( VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH );
 
 /** DHCP server address setting */
 struct setting dhcp_server_setting __setting ( SETTING_MISC ) = {
@@ -117,6 +116,14 @@ struct setting use_cached_setting __setting ( SETTING_MISC ) = {
 };
 
 /**
+ * Most recent DHCP transaction ID
+ *
+ * This is exposed for use by the fakedhcp code when reconstructing
+ * DHCP packets for PXE NBPs.
+ */
+uint32_t dhcp_last_xid;
+
+/**
  * Name a DHCP packet type
  *
  * @v msgtype		DHCP message type
@@ -135,23 +142,6 @@ static inline const char * dhcp_msgtype_name ( unsigned int msgtype ) {
 	case DHCPINFORM:	return "DHCPINFORM";
 	default:		return "DHCP<invalid>";
 	}
-}
-
-/**
- * Calculate DHCP transaction ID for a network device
- *
- * @v netdev		Network device
- * @ret xid		DHCP XID
- *
- * Extract the least significant bits of the hardware address for use
- * as the transaction ID.
- */
-static uint32_t dhcp_xid ( struct net_device *netdev ) {
-	uint32_t xid;
-
-	memcpy ( &xid, ( netdev->ll_addr + netdev->ll_protocol->ll_addr_len
-			 - sizeof ( xid ) ), sizeof ( xid ) );
-	return xid;
 }
 
 /****************************************************************************
@@ -219,6 +209,8 @@ struct dhcp_session {
 	struct sockaddr_in local;
 	/** State of the session */
 	struct dhcp_session_state *state;
+	/** Transaction ID (in network-endian order) */
+	uint32_t xid;
 
 	/** Offered IP address */
 	struct in_addr offer;
@@ -916,6 +908,7 @@ unsigned int dhcp_chaddr ( struct net_device *netdev, void *chaddr,
  * @v dhcppkt		DHCP packet structure to fill in
  * @v netdev		Network device
  * @v msgtype		DHCP message type
+ * @v xid		Transaction ID (in network-endian order)
  * @v options		Initial options to include (or NULL)
  * @v options_len	Length of initial options
  * @v data		Buffer for DHCP packet
@@ -927,7 +920,7 @@ unsigned int dhcp_chaddr ( struct net_device *netdev, void *chaddr,
  */
 int dhcp_create_packet ( struct dhcp_packet *dhcppkt,
 			 struct net_device *netdev, uint8_t msgtype,
-			 const void *options, size_t options_len,
+			 uint32_t xid, const void *options, size_t options_len,
 			 void *data, size_t max_len ) {
 	struct dhcphdr *dhcphdr = data;
 	int rc;
@@ -938,13 +931,28 @@ int dhcp_create_packet ( struct dhcp_packet *dhcppkt,
 
 	/* Initialise DHCP packet content */
 	memset ( dhcphdr, 0, max_len );
-	dhcphdr->xid = dhcp_xid ( netdev );
+	dhcphdr->xid = xid;
 	dhcphdr->magic = htonl ( DHCP_MAGIC_COOKIE );
 	dhcphdr->htype = ntohs ( netdev->ll_protocol->ll_proto );
 	dhcphdr->op = dhcp_op[msgtype];
-	dhcphdr->hlen = dhcp_chaddr ( netdev, dhcphdr->chaddr,
-				      &dhcphdr->flags );
+	dhcphdr->hlen = netdev->ll_protocol->ll_addr_len;
+	memcpy ( dhcphdr->chaddr, netdev->ll_addr,
+		 netdev->ll_protocol->ll_addr_len );
 	memcpy ( dhcphdr->options, options, options_len );
+
+	/* If the local link-layer address functions only as a name
+	 * (i.e. cannot be used as a destination address), then
+	 * request broadcast responses.
+	 */
+	if ( netdev->ll_protocol->flags & LL_NAME_ONLY )
+		dhcphdr->flags |= htons ( BOOTP_FL_BROADCAST );
+
+	/* If the network device already has an IPv4 address then
+	 * unicast responses from the DHCP server may be rejected, so
+	 * request broadcast responses.
+	 */
+	if ( ipv4_has_any_addr ( netdev ) )
+		dhcphdr->flags |= htons ( BOOTP_FL_BROADCAST );
 
 	/* Initialise DHCP packet structure */
 	memset ( dhcppkt, 0, sizeof ( *dhcppkt ) );
@@ -964,6 +972,7 @@ int dhcp_create_packet ( struct dhcp_packet *dhcppkt,
  * @v dhcppkt		DHCP packet structure to fill in
  * @v netdev		Network device
  * @v msgtype		DHCP message type
+ * @v xid		Transaction ID (in network-endian order)
  * @v ciaddr		Client IP address
  * @v data		Buffer for DHCP packet
  * @v max_len		Size of DHCP packet buffer
@@ -974,7 +983,8 @@ int dhcp_create_packet ( struct dhcp_packet *dhcppkt,
  */
 int dhcp_create_request ( struct dhcp_packet *dhcppkt,
 			  struct net_device *netdev, unsigned int msgtype,
-			  struct in_addr ciaddr, void *data, size_t max_len ) {
+			  uint32_t xid, struct in_addr ciaddr,
+			  void *data, size_t max_len ) {
 	struct dhcp_netdev_desc dhcp_desc;
 	struct dhcp_client_id client_id;
 	struct dhcp_client_uuid client_uuid;
@@ -985,7 +995,7 @@ int dhcp_create_request ( struct dhcp_packet *dhcppkt,
 	int rc;
 
 	/* Create DHCP packet */
-	if ( ( rc = dhcp_create_packet ( dhcppkt, netdev, msgtype,
+	if ( ( rc = dhcp_create_packet ( dhcppkt, netdev, msgtype, xid,
 					 dhcp_request_options_data,
 					 sizeof ( dhcp_request_options_data ),
 					 data, max_len ) ) != 0 ) {
@@ -1099,7 +1109,8 @@ static int dhcp_tx ( struct dhcp_session *dhcp ) {
 
 	/* Create basic DHCP packet in temporary buffer */
 	if ( ( rc = dhcp_create_request ( &dhcppkt, dhcp->netdev, msgtype,
-					  dhcp->local.sin_addr, iobuf->data,
+					  dhcp->xid, dhcp->local.sin_addr,
+					  iobuf->data,
 					  iob_tailroom ( iobuf ) ) ) != 0 ) {
 		DBGC ( dhcp, "DHCP %p could not construct DHCP request: %s\n",
 		       dhcp, strerror ( rc ) );
@@ -1187,7 +1198,7 @@ static int dhcp_deliver ( struct dhcp_session *dhcp,
 			&server_id, sizeof ( server_id ) );
 
 	/* Check for matching transaction ID */
-	if ( dhcphdr->xid != dhcp_xid ( dhcp->netdev ) ) {
+	if ( dhcphdr->xid != dhcp->xid ) {
 		DBGC ( dhcp, "DHCP %p %s from %s:%d has bad transaction "
 		       "ID\n", dhcp, dhcp_msgtype_name ( msgtype ),
 		       inet_ntoa ( peer->sin_addr ),
@@ -1311,6 +1322,10 @@ int start_dhcp ( struct interface *job, struct net_device *netdev ) {
 	dhcp->netdev = netdev_get ( netdev );
 	dhcp->local.sin_family = AF_INET;
 	dhcp->local.sin_port = htons ( BOOTPC_PORT );
+	dhcp->xid = random();
+
+	/* Store DHCP transaction ID for fakedhcp code */
+	dhcp_last_xid = dhcp->xid;
 
 	/* Instantiate child objects and attach to our interfaces */
 	if ( ( rc = xfer_open_socket ( &dhcp->xfer, SOCK_DGRAM, &dhcp_peer,

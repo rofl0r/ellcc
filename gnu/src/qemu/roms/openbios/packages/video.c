@@ -159,7 +159,7 @@ fill_rect( int col_ind, int x, int y, int w, int h )
 			while( ww-- )
 				*p++ = col;
 		} else {
-                        char *p = (char *)((unsigned short*)pp + x);
+                        char *p = (char *)(pp + x);
 
 			while( ww-- )
 				*p++ = col;
@@ -187,12 +187,14 @@ set_color( int ind, unsigned long color )
 	if( video.fb.depth == 8 )
 		OSI_SetColor( ind, color );
 #elif defined(CONFIG_SPARC32)
+#if defined(CONFIG_DEBUG_CONSOLE_VIDEO)
 	if( video.fb.depth == 8 ) {
             dac[0] = ind << 24;
             dac[1] = ((color >> 16) & 0xff) << 24; // Red
             dac[1] = ((color >> 8) & 0xff) << 24; // Green
             dac[1] = (color & 0xff) << 24; // Blue
         }
+#endif
 #else
 	vga_set_color(ind, ((color >> 16) & 0xff),
 			   ((color >> 8) & 0xff),
@@ -339,6 +341,9 @@ init_video( unsigned long fb, int width, int height, int depth, int rb )
 	video.has_video = 1;
 	video.pal = malloc( 256 * sizeof(unsigned long) );
 
+	PUSH(video.fb.mvirt);
+	feval("to frame-buffer-adr");
+	
 #if defined(CONFIG_OFMEM) && defined(CONFIG_DRIVER_PCI)
         size = ((video.fb.h * video.fb.rb)  + 0xfff) & ~0xfff;
 

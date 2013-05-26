@@ -13,7 +13,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  */
 
 FILE_LICENCE ( GPL2_OR_LATER );
@@ -47,12 +48,14 @@ FILE_LICENCE ( GPL2_OR_LATER );
  * @v netdev		Network device
  * @v ll_dest		Link-layer destination address
  * @v ll_source		Link-layer source address
+ * @v flags		Packet flags
  * @ret rc		Return status code
  */
 static int lotest_rx ( struct io_buffer *iobuf,
 		       struct net_device *netdev __unused,
 		       const void *ll_dest __unused,
-		       const void *ll_source __unused ) {
+		       const void *ll_source __unused,
+		       unsigned int flags __unused ) {
 	free_iob ( iobuf );
 	return -ENOTSUP;
 }
@@ -83,6 +86,86 @@ static struct net_protocol lotest_protocol __net_protocol = {
 };
 
 /**
+ * Wait for packet to be received
+ *
+ * @v receiver		Receiving network device*
+ * @v data		Expected data
+ * @v len		Expected data length
+ * @ret rc		Return status code
+ */
+static int loopback_wait ( struct net_device *receiver, void *data,
+			   size_t len ) {
+	struct ll_protocol *ll_protocol = receiver->ll_protocol;
+	struct io_buffer *iobuf;
+	const void *ll_dest;
+	const void *ll_source;
+	uint16_t net_proto;
+	unsigned int flags;
+	int rc;
+
+	/* Poll until packet arrives */
+	while ( 1 ) {
+
+		/* Check for cancellation */
+		if ( iskey() && ( getchar() == CTRL_C ) )
+			return -ECANCELED;
+
+		/* Poll network devices */
+		net_poll();
+
+		/* Dequeue packet, if available */
+		iobuf = netdev_rx_dequeue ( receiver );
+		if ( ! iobuf )
+			continue;
+
+		/* Strip link-layer header */
+		if ( ( rc = ll_protocol->pull ( receiver, iobuf, &ll_dest,
+						&ll_source, &net_proto,
+						&flags ) ) != 0 ) {
+			printf ( "\nFailed to strip link-layer header: %s",
+				 strerror ( rc ) );
+			free_iob ( iob_disown ( iobuf ) );
+			return rc;
+		}
+
+		/* Ignore non-loopback packets */
+		if ( net_proto != lotest_protocol.net_proto ) {
+			printf ( "\nReceived spurious packet type %04x\n",
+				 ntohs ( net_proto ) );
+			free_iob ( iob_disown ( iobuf ) );
+			continue;
+		}
+
+		/* Check packet length */
+		if ( iob_len ( iobuf ) != len ) {
+			printf ( "\nLength mismatch: sent %zd, received %zd",
+				 len, iob_len ( iobuf ) );
+			DBG ( "\nSent:\n" );
+			DBG_HDA ( 0, data, len );
+			DBG ( "Received:\n" );
+			DBG_HDA ( 0, iobuf->data, iob_len ( iobuf ) );
+			free_iob ( iob_disown ( iobuf ) );
+			return -EINVAL;
+		}
+
+		/* Check packet content */
+		if ( memcmp ( iobuf->data, data, len ) != 0 ) {
+			printf ( "\nContent mismatch" );
+			DBG ( "\nSent:\n" );
+			DBG_HDA ( 0, data, len );
+			DBG ( "Received:\n" );
+			DBG_HDA ( 0, iobuf->data, iob_len ( iobuf ) );
+			free_iob ( iob_disown ( iobuf ) );
+			return -EINVAL;
+		}
+
+		/* Discard packet and return */
+		free_iob ( iob_disown ( iobuf ) );
+		return 0;
+	}
+}
+
+/**
  * Perform loopback test between two network devices
  *
  * @v sender		Sending network device
@@ -94,9 +177,6 @@ int loopback_test ( struct net_device *sender, struct net_device *receiver,
 		    size_t mtu ) {
 	uint8_t buf[mtu];
 	struct io_buffer *iobuf;
-	const void *ll_dest;
-	const void *ll_source;
-	uint16_t net_proto;
 	unsigned int i;
 	unsigned int successes;
 	int rc;
@@ -137,7 +217,7 @@ int loopback_test ( struct net_device *sender, struct net_device *receiver,
 		if ( ! iobuf ) {
 			printf ( "\nFailed to allocate I/O buffer" );
 			rc = -ENOMEM;
-			goto done;
+			break;
 		}
 		iob_reserve ( iobuf, MAX_LL_HEADER_LEN );
 		memcpy ( iob_put ( iobuf, sizeof ( buf ) ),
@@ -149,64 +229,17 @@ int loopback_test ( struct net_device *sender, struct net_device *receiver,
 				     sender->ll_addr ) ) != 0 ) {
 			printf ( "\nFailed to transmit packet: %s",
 				 strerror ( rc ) );
-			goto done;
+			break;
 		}
 
-		/* Poll until packet arrives */
-		do {
-			/* Check for cancellation */
-			if ( iskey() && ( getchar() == CTRL_C ) ) {
-				rc = -ECANCELED;
-				goto done;
-			}
-			/* Poll network devices */
-			net_poll();
-		} while ( ( iobuf = netdev_rx_dequeue ( receiver ) ) == NULL );
-
-		/* Check received packet */
-		if ( ( rc = receiver->ll_protocol->pull ( receiver, iobuf,
-							  &ll_dest, &ll_source,
-							  &net_proto ) ) != 0 ){
-			printf ( "\nFailed to strip link-layer header: %s",
-				 strerror ( rc ) );
-			goto done;
+		/* Wait for received packet */
+		if ( ( rc = loopback_wait ( receiver, buf,
+					    sizeof ( buf ) ) ) != 0 ) {
+			break;
 		}
-		if ( net_proto == lotest_protocol.net_proto ) {
-			if ( iob_len ( iobuf ) != sizeof ( buf ) ) {
-				printf ( "\nLength mismatch: sent %zd, "
-					 "received %zd",
-					 sizeof ( buf ), iob_len ( iobuf ) );
-				DBG ( "\nSent:\n" );
-				DBG_HDA ( 0, buf, sizeof ( buf ) );
-				DBG ( "Received:\n" );
-				DBG_HDA ( 0, iobuf->data, iob_len ( iobuf ) );
-				rc = -EINVAL;
-				goto done;
-			}
-			if ( memcmp ( iobuf->data, buf, sizeof ( buf ) ) != 0){
-				printf ( "\nContent mismatch" );
-				DBG ( "\nSent:\n" );
-				DBG_HDA ( 0, buf, sizeof ( buf ) );
-				DBG ( "Received:\n" );
-				DBG_HDA ( 0, iobuf->data, iob_len ( iobuf ) );
-				rc = -EINVAL;
-				goto done;
-			}
-		} else {
-			printf ( "\nReceived spurious packet type %04x\n",
-				 ntohs ( net_proto ) );
-			/* Continue; this allows for the fact that
-			 * there may have been packets outstanding on
-			 * the wire when we started the test.
-			 */
-		}
-
-		free_iob ( iob_disown ( iobuf ) );
 	}
 
- done:
 	printf ( "\n");
-	free_iob ( iobuf );
 	netdev_rx_unfreeze ( receiver );
 
 	/* Dump final statistics */
