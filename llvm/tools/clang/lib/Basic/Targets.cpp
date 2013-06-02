@@ -276,6 +276,7 @@ public:
           this->MCountName = "_mcount";
           break;
         case llvm::Triple::arm:
+        case llvm::Triple::armeb:
           this->MCountName = "__mcount";
           break;
       }
@@ -384,6 +385,7 @@ public:
         case llvm::Triple::x86:
         case llvm::Triple::x86_64:
         case llvm::Triple::arm:
+        case llvm::Triple::armeb:
         case llvm::Triple::sparc:
           this->MCountName = "__mcount";
           break;
@@ -1228,6 +1230,7 @@ public:
     : DarwinTargetInfo<PPC32TargetInfo>(triple) {
     HasAlignMac68kSupport = true;
     BoolWidth = BoolAlign = 32; //XXX support -mone-byte-bool?
+    PtrDiffType = SignedInt;	// for http://llvm.org/bugs/show_bug.cgi?id=15726
     LongLongAlign = 32;
     SuitableAlign = 128;
     DescriptionString = "E-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
@@ -3141,6 +3144,7 @@ public:
           // this->MCountName = "_mcount";
           break;
         case llvm::Triple::arm:
+        case llvm::Triple::armeb:
           // this->MCountName = "__mcount";
           break;
       }
@@ -3559,6 +3563,42 @@ private:
 
   static const Builtin::Info BuiltinInfo[];
 
+  static bool shouldUseInlineAtomic(const llvm::Triple &T) {
+    // On linux, binaries targeting old cpus call functions in libgcc to
+    // perform atomic operations. The implementation in libgcc then calls into
+    // the kernel which on armv6 and newer uses ldrex and strex. The net result
+    // is that if we assume the kernel is at least as recent as the hardware,
+    // it is safe to use atomic instructions on armv6 and newer.
+    if (T.getOS() != llvm::Triple::Linux)
+     return false;
+    StringRef ArchName = T.getArchName();
+    if (T.getArch() == llvm::Triple::arm ||
+        T.getArch() == llvm::Triple::armeb) {
+      if (!ArchName.startswith("armv"))
+        return false;
+      StringRef VersionStr = ArchName.substr(4);
+      unsigned Version = 0;
+      while (!VersionStr.empty() && isdigit(VersionStr[0])) {
+        Version = Version * 10 + (VersionStr[0] - '0');
+        VersionStr = VersionStr.substr(1);
+      }
+#if RICH
+      // Replaced to handle e.g. armv6eb.
+      if (VersionStr.getAsInteger(10, Version))
+        return false;
+#endif
+      return Version >= 6;
+    }
+    assert(T.getArch() == llvm::Triple::thumb);
+    if (!ArchName.startswith("thumbv"))
+      return false;
+    StringRef VersionStr = ArchName.substr(6);
+    unsigned Version;
+    if (VersionStr.getAsInteger(10, Version))
+      return false;
+    return Version >= 7;
+  }
+
 public:
   ARMTargetInfo(const std::string &TripleStr)
     : TargetInfo(TripleStr), ABI("aapcs-linux"), CPU("arm1136j-s"), IsAAPCS(true)
@@ -3581,8 +3621,9 @@ public:
     TheCXXABI.set(TargetCXXABI::GenericARM);
 
     // ARM has atomics up to 8 bytes
-    // FIXME: Set MaxAtomicInlineWidth if we have the feature v6e
     MaxAtomicPromoteWidth = 64;
+    if (shouldUseInlineAtomic(getTriple()))
+      MaxAtomicInlineWidth = 64;
 
     // Do force alignment of members that follow zero length bitfields.  If
     // the alignment of the zero-length bitfield is greater than the member 
@@ -4367,6 +4408,18 @@ public:
     // FIXME: Support Sparc quad-precision long double?
     DescriptionString = "E-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
                         "i64:64:64-f32:32:32-f64:64:64-v64:64:64-n32:64-S128";
+    // This is an LP64 platform.
+    LongWidth = LongAlign = PointerWidth = PointerAlign = 64;
+
+    // OpenBSD uses long long for int64_t and intmax_t.
+    if (getTriple().getOS() == llvm::Triple::OpenBSD) {
+      IntMaxType = SignedLongLong;
+      UIntMaxType = UnsignedLongLong;
+    } else {
+      IntMaxType = SignedLong;
+      UIntMaxType = UnsignedLong;
+    }
+    Int64Type = IntMaxType;
   }
 
   virtual void getTargetDefines(const LangOptions &Opts,
@@ -5417,8 +5470,14 @@ static TargetInfo *AllocateTarget(const std::string &T) {
       return new FreeBSDTargetInfo<ARMEBTargetInfo>(T);
     case llvm::Triple::NetBSD:
       return new NetBSDTargetInfo<ARMEBTargetInfo>(T);
+    case llvm::Triple::OpenBSD:
+      return new OpenBSDTargetInfo<ARMEBTargetInfo>(T);
+    case llvm::Triple::Bitrig:
+      return new BitrigTargetInfo<ARMEBTargetInfo>(T);
     case llvm::Triple::RTEMS:
       return new RTEMSTargetInfo<ARMEBTargetInfo>(T);
+    case llvm::Triple::NaCl:
+      return new NaClTargetInfo<ARMEBTargetInfo>(T);
     default:
       return new ARMEBTargetInfo(T);
     }

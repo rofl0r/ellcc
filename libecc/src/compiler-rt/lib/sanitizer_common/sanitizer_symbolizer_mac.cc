@@ -24,10 +24,15 @@ bool StartSymbolizerSubprocess(const char *path_to_symbolizer,
   UNIMPLEMENTED();
 }
 
-uptr GetListOfModules(LoadedModule *modules, uptr max_modules) {
+uptr GetListOfModules(LoadedModule *modules, uptr max_modules,
+                      string_predicate_t filter) {
   // FIXME: Actually implement this on Mac. Just using MemoryMappingLayout
   // may be enough for this on Mac.
   return 0;
+}
+
+void SymbolizerPrepareForSandboxing() {
+  // Do nothing on Mac.
 }
 
 }  // namespace __sanitizer

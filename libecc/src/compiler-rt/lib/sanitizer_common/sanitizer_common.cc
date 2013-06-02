@@ -31,11 +31,11 @@ static bool log_to_file = false;  // Set to true by __sanitizer_set_report_path
 // By default, dump to stderr. If |log_to_file| is true and |report_fd_pid|
 // isn't equal to the current PID, try to obtain file descriptor by opening
 // file "report_path_prefix.<PID>".
-static fd_t report_fd = kStderrFd;
+fd_t report_fd = kStderrFd;
 static char report_path_prefix[4096];  // Set via __sanitizer_set_report_path.
 // PID of process that opened |report_fd|. If a fork() occurs, the PID of the
 // child thread will be different from |report_fd_pid|.
-static int report_fd_pid = 0;
+static uptr report_fd_pid = 0;
 
 static void (*DieCallback)(void);
 void SetDieCallback(void (*callback)(void)) {
@@ -64,11 +64,11 @@ void NORETURN CheckFailed(const char *file, int line, const char *cond,
   Die();
 }
 
-static void MaybeOpenReportFile() {
-  if (!log_to_file || (report_fd_pid == GetPid())) return;
+void MaybeOpenReportFile() {
+  if (!log_to_file || (report_fd_pid == internal_getpid())) return;
   InternalScopedBuffer<char> report_path_full(4096);
   internal_snprintf(report_path_full.data(), report_path_full.size(),
-                    "%s.%d", report_path_prefix, GetPid());
+                    "%s.%d", report_path_prefix, internal_getpid());
   uptr openrv = OpenFile(report_path_full.data(), true);
   if (internal_iserror(openrv)) {
     report_fd = kStderrFd;
@@ -81,12 +81,7 @@ static void MaybeOpenReportFile() {
     internal_close(report_fd);
   }
   report_fd = openrv;
-  report_fd_pid = GetPid();
-}
-
-bool PrintsToTty() {
-  MaybeOpenReportFile();
-  return internal_isatty(report_fd);
+  report_fd_pid = internal_getpid();
 }
 
 void RawWrite(const char *buffer) {
@@ -132,45 +127,15 @@ uptr ReadFileToBuffer(const char *file_name, char **buff,
   return read_len;
 }
 
-// We don't want to use std::sort to avoid including <algorithm>, as
-// we may end up with two implementation of std::sort - one in instrumented
-// code, and the other in runtime.
-// qsort() from stdlib won't work as it calls malloc(), which results
-// in deadlock in ASan allocator.
-// We re-implement in-place sorting w/o recursion as straightforward heapsort.
+typedef bool UptrComparisonFunction(const uptr &a, const uptr &b);
+
+template<class T>
+static inline bool CompareLess(const T &a, const T &b) {
+  return a < b;
+}
+
 void SortArray(uptr *array, uptr size) {
-  if (size < 2)
-    return;
-  // Stage 1: insert elements to the heap.
-  for (uptr i = 1; i < size; i++) {
-    uptr j, p;
-    for (j = i; j > 0; j = p) {
-      p = (j - 1) / 2;
-      if (array[j] > array[p])
-        Swap(array[j], array[p]);
-      else
-        break;
-    }
-  }
-  // Stage 2: swap largest element with the last one,
-  // and sink the new top.
-  for (uptr i = size - 1; i > 0; i--) {
-    Swap(array[0], array[i]);
-    uptr j, max_ind;
-    for (j = 0; j < i; j = max_ind) {
-      uptr left = 2 * j + 1;
-      uptr right = 2 * j + 2;
-      max_ind = j;
-      if (left < i && array[left] > array[max_ind])
-        max_ind = left;
-      if (right < i && array[right] > array[max_ind])
-        max_ind = right;
-      if (max_ind != j)
-        Swap(array[j], array[max_ind]);
-      else
-        break;
-    }
-  }
+  InternalSort<uptr*, UptrComparisonFunction>(&array, size, CompareLess);
 }
 
 // We want to map a chunk of address space aligned to 'alignment'.

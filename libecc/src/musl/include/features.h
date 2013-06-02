@@ -29,4 +29,6 @@
 #define _Noreturn
 #endif
 
+#define __GLIBC_PREREQ(major, minor) 0
+
 #endif

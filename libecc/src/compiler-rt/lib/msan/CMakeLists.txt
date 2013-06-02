@@ -24,10 +24,13 @@ if(CAN_TARGET_${arch})
     SOURCES ${MSAN_RTL_SOURCES}
             $<TARGET_OBJECTS:RTInterception.${arch}>
             $<TARGET_OBJECTS:RTSanitizerCommon.${arch}>
+            $<TARGET_OBJECTS:RTSanitizerCommonLibc.${arch}>
     CFLAGS ${MSAN_RTL_CFLAGS}
     SYMS msan.syms)
   list(APPEND MSAN_RUNTIME_LIBRARIES clang_rt.msan-${arch})
 endif()
+
+add_compiler_rt_resource_file(msan_blacklist msan_blacklist.txt)
 
 if(LLVM_INCLUDE_TESTS)
   add_subdirectory(tests)

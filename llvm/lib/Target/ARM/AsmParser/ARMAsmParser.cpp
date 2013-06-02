@@ -90,7 +90,7 @@ class ARMAsmParser : public MCTargetAsmParser {
     if (!inITBlock()) return;
     // Move to the next instruction in the IT block, if there is one. If not,
     // mark the block as done.
-    unsigned TZ = CountTrailingZeros_32(ITState.Mask);
+    unsigned TZ = countTrailingZeros(ITState.Mask);
     if (++ITState.CurPosition == 5 - TZ)
       ITState.CurPosition = ~0U; // Done with the IT block after this.
   }
@@ -7420,11 +7420,10 @@ processInstruction(MCInst &Inst,
     MCOperand &MO = Inst.getOperand(1);
     unsigned Mask = MO.getImm();
     unsigned OrigMask = Mask;
-    unsigned TZ = CountTrailingZeros_32(Mask);
+    unsigned TZ = countTrailingZeros(Mask);
     if ((Inst.getOperand(0).getImm() & 1) == 0) {
       assert(Mask && TZ <= 3 && "illegal IT mask value!");
-      for (unsigned i = 3; i != TZ; --i)
-        Mask ^= 1 << i;
+      Mask ^= (0xE << TZ) & 0xF;
     }
     MO.setImm(Mask);
 

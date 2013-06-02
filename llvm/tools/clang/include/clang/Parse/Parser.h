@@ -398,7 +398,8 @@ private:
   /// \brief Abruptly cut off parsing; mainly used when we have reached the
   /// code-completion point.
   void cutOffParsing() {
-    PP.setCodeCompletionReached();
+    if (PP.isCodeCompletionEnabled())
+      PP.setCodeCompletionReached();
     // Cut off parsing by acting as if we reached the end-of-file.
     Tok.setKind(tok::eof);
   }
@@ -1329,7 +1330,8 @@ private:
   // [...] () -> type {...}
   ExprResult ParseLambdaExpression();
   ExprResult TryParseLambdaExpression();
-  Optional<unsigned> ParseLambdaIntroducer(LambdaIntroducer &Intro);
+  Optional<unsigned> ParseLambdaIntroducer(LambdaIntroducer &Intro,
+                                           bool *SkippedInits = 0);
   bool TryParseLambdaIntroducer(LambdaIntroducer &Intro);
   ExprResult ParseLambdaExpressionAfterIntroducer(
                LambdaIntroducer &Intro);
@@ -2138,9 +2140,18 @@ private:
 
   //===--------------------------------------------------------------------===//
   // OpenMP: Directives and clauses.
+  /// \brief Parses declarative OpenMP directives.
   DeclGroupPtrTy ParseOpenMPDeclarativeDirective();
+  /// \brief Parses simple list of variables.
+  ///
+  /// \param Kind Kind of the directive.
+  /// \param [out] VarList List of referenced variables.
+  /// \param AllowScopeSpecifier true, if the variables can have fully
+  /// qualified names.
+  ///
   bool ParseOpenMPSimpleVarList(OpenMPDirectiveKind Kind,
-                                SmallVectorImpl<DeclarationNameInfo> &IdList);
+                                SmallVectorImpl<Expr *> &VarList,
+                                bool AllowScopeSpecifier);
 public:
   bool ParseUnqualifiedId(CXXScopeSpec &SS, bool EnteringContext,
                           bool AllowDestructorName,

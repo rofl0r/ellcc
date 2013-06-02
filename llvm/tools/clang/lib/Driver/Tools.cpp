@@ -537,6 +537,7 @@ static bool isSignedCharDefault(const llvm::Triple &Triple) {
 
   case llvm::Triple::aarch64:
   case llvm::Triple::arm:
+  case llvm::Triple::armeb:
   case llvm::Triple::ppc:
   case llvm::Triple::ppc64:
     if (Triple.isOSDarwin())
@@ -1448,7 +1449,8 @@ shouldUseExceptionTablesForObjCExceptions(const ObjCRuntime &runtime,
 
   return (!Triple.isMacOSXVersionLT(10,5) &&
           (Triple.getArch() == llvm::Triple::x86_64 ||
-           Triple.getArch() == llvm::Triple::arm));
+           Triple.getArch() == llvm::Triple::arm ||
+           Triple.getArch() == llvm::Triple::armeb));
 }
 
 /// addExceptionArgs - Adds exception related arguments to the driver command
@@ -1739,6 +1741,7 @@ static void addSanitizerRTLinkFlagsLinux(
                  LibSanitizerArgs.begin(), LibSanitizerArgs.end());
 
   CmdArgs.push_back("-lpthread");
+  CmdArgs.push_back("-lrt");
   CmdArgs.push_back("-ldl");
 
   // If possible, use a dynamic symbols file to export the symbols from the
@@ -2268,8 +2271,17 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   if (Arg *A = Args.getLastArg(options::OPT_ffast_math, FastMathAliasOption,
                                options::OPT_fno_fast_math,
                                options::OPT_fmath_errno,
-                               options::OPT_fno_math_errno))
-    MathErrno = A->getOption().getID() == options::OPT_fmath_errno;
+                               options::OPT_fno_math_errno)) {
+    // Turning on -ffast_math (with either flag) removes the need for MathErrno.
+    // However, turning *off* -ffast_math merely restores the toolchain default
+    // (which may be false).
+    if (A->getOption().getID() == options::OPT_fno_math_errno ||
+        A->getOption().getID() == options::OPT_ffast_math ||
+        A->getOption().getID() == options::OPT_Ofast)
+      MathErrno = false;
+    else if (A->getOption().getID() == options::OPT_fmath_errno)
+      MathErrno = true;
+  }
   if (MathErrno)
     CmdArgs.push_back("-fmath-errno");
 

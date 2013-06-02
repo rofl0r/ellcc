@@ -173,8 +173,8 @@ TEST(AddressSanitizer, UAF_char) {
 TEST(AddressSanitizer, UAF_long_double) {
   if (sizeof(long double) == sizeof(double)) return;
   long double *p = Ident(new long double[10]);
-  EXPECT_DEATH(Ident(p)[12] = 0, "WRITE of size 10");
-  EXPECT_DEATH(Ident(p)[0] = Ident(p)[12], "READ of size 10");
+  EXPECT_DEATH(Ident(p)[12] = 0, "WRITE of size 1[06]");
+  EXPECT_DEATH(Ident(p)[0] = Ident(p)[12], "READ of size 1[06]");
   delete [] Ident(p);
 }
 
@@ -351,6 +351,18 @@ TEST(AddressSanitizer, ReallocTest) {
   *ptr2 = 42;
   EXPECT_EQ(42, *ptr2);
   free(ptr2);
+}
+
+TEST(AddressSanitizer, ReallocFreedPointerTest) {
+  void *ptr = Ident(malloc(42));
+  ASSERT_TRUE(NULL != ptr);
+  free(ptr);
+  EXPECT_DEATH(ptr = realloc(ptr, 77), "attempting double-free");
+}
+
+TEST(AddressSanitizer, ReallocInvalidPointerTest) {
+  void *ptr = Ident(malloc(42));
+  EXPECT_DEATH(ptr = realloc((int*)ptr + 1, 77), "attempting free.*not malloc");
 }
 
 TEST(AddressSanitizer, ZeroSizeMallocTest) {
@@ -567,7 +579,10 @@ TEST(AddressSanitizer, LongJmpTest) {
   }
 }
 
-#if not defined(__ANDROID__)
+#if !defined(__ANDROID__) && \
+    !defined(__powerpc64__) && !defined(__powerpc__)
+// Does not work on Power:
+// https://code.google.com/p/address-sanitizer/issues/detail?id=185
 TEST(AddressSanitizer, BuiltinLongJmpTest) {
   static jmp_buf buf;
   if (!__builtin_setjmp((void**)buf)) {
@@ -874,7 +889,11 @@ TEST(AddressSanitizer, ShadowGapTest) {
 #if SANITIZER_WORDSIZE == 32
   char *addr = (char*)0x22000000;
 #else
+# if defined(__powerpc64__)
+  char *addr = (char*)0x024000800000;
+# else
   char *addr = (char*)0x0000100000080000;
+# endif
 #endif
   EXPECT_DEATH(*addr = 1, "AddressSanitizer: SEGV on unknown");
 }
@@ -1197,4 +1216,17 @@ TEST(AddressSanitizer, LongDoubleNegativeTest) {
   static long double c;
   memcpy(Ident(&a), Ident(&b), sizeof(long double));
   memcpy(Ident(&c), Ident(&b), sizeof(long double));
+}
+
+TEST(AddressSanitizer, pthread_getschedparam) {
+  int policy;
+  struct sched_param param;
+  EXPECT_DEATH(
+      pthread_getschedparam(pthread_self(), &policy, Ident(&param) + 2),
+      "AddressSanitizer: stack-buffer-overflow");
+  EXPECT_DEATH(
+      pthread_getschedparam(pthread_self(), Ident(&policy) - 1, &param),
+      "AddressSanitizer: stack-buffer-overflow");
+  int res = pthread_getschedparam(pthread_self(), &policy, &param);
+  ASSERT_EQ(0, res);
 }

@@ -13,7 +13,6 @@
 // This variant uses the allocator from sanitizer_common, i.e. the one shared
 // with ThreadSanitizer and MemorySanitizer.
 //
-// Status: under development, not enabled by default yet.
 //===----------------------------------------------------------------------===//
 #include "asan_allocator.h"
 
@@ -27,6 +26,7 @@
 #include "sanitizer_common/sanitizer_list.h"
 #include "sanitizer_common/sanitizer_stackdepot.h"
 #include "sanitizer_common/sanitizer_quarantine.h"
+#include "lsan/lsan_common.h"
 
 namespace __asan {
 
@@ -58,18 +58,23 @@ struct AsanMapUnmapCallback {
 #if SANITIZER_WORDSIZE == 64
 #if defined(__powerpc64__)
 const uptr kAllocatorSpace =  0xa0000000000ULL;
+const uptr kAllocatorSize  =  0x20000000000ULL;  // 2T.
 #else
 const uptr kAllocatorSpace = 0x600000000000ULL;
-#endif
 const uptr kAllocatorSize  =  0x40000000000ULL;  // 4T.
+#endif
 typedef DefaultSizeClassMap SizeClassMap;
 typedef SizeClassAllocator64<kAllocatorSpace, kAllocatorSize, 0 /*metadata*/,
     SizeClassMap, AsanMapUnmapCallback> PrimaryAllocator;
 #elif SANITIZER_WORDSIZE == 32
 static const u64 kAddressSpaceSize = 1ULL << 32;
 typedef CompactSizeClassMap SizeClassMap;
+static const uptr kRegionSizeLog = 20;
+static const uptr kFlatByteMapSize = kAddressSpaceSize >> kRegionSizeLog;
 typedef SizeClassAllocator32<0, kAddressSpaceSize, 16,
-  SizeClassMap, AsanMapUnmapCallback> PrimaryAllocator;
+  SizeClassMap, kRegionSizeLog,
+  FlatByteMap<kFlatByteMapSize>,
+  AsanMapUnmapCallback> PrimaryAllocator;
 #endif
 
 typedef SizeClassAllocatorLocalCache<PrimaryAllocator> AllocatorCache;
@@ -159,6 +164,7 @@ struct ChunkHeader {
   u32 from_memalign     : 1;
   u32 alloc_type        : 2;
   u32 rz_log            : 3;
+  u32 lsan_tag          : 2;
   // 2-nd 8 bytes
   // This field is used for small sizes. For large sizes it is equal to
   // SizeClassMap::kMaxSize and the actual size is stored in the
@@ -169,7 +175,6 @@ struct ChunkHeader {
 
 struct ChunkBase : ChunkHeader {
   // Header2, intersects with user memory.
-  AsanChunk *next;
   u32 free_context_id;
 };
 
@@ -190,7 +195,8 @@ struct AsanChunk: ChunkBase {
       return allocator.GetBlockBegin(reinterpret_cast<void *>(this));
     return reinterpret_cast<void*>(Beg() - RZLog2Size(rz_log));
   }
-  // We store the alloc/free stack traces in the chunk itself.
+  // If we don't use stack depot, we store the alloc/free stack traces
+  // in the chunk itself.
   u32 *AllocStackBeg() {
     return (u32*)(Beg() - RZLog2Size(rz_log));
   }
@@ -205,6 +211,9 @@ struct AsanChunk: ChunkBase {
     if (user_requested_size < kChunkHeader2Size) return 0;
     uptr available = RoundUpTo(user_requested_size, SHADOW_GRANULARITY);
     return (available - kChunkHeader2Size) / sizeof(u32);
+  }
+  bool AddrIsInside(uptr addr) {
+    return (addr >= Beg()) && (addr < Beg() + UsedSize());
   }
 };
 
@@ -259,8 +268,8 @@ struct QuarantineCallback {
   }
 
   void Recycle(AsanChunk *m) {
-    CHECK(m->chunk_state == CHUNK_QUARANTINE);
-    m->chunk_state = CHUNK_AVAILABLE;
+    CHECK_EQ(m->chunk_state, CHUNK_QUARANTINE);
+    atomic_store((atomic_uint8_t*)m, CHUNK_AVAILABLE, memory_order_relaxed);
     CHECK_NE(m->alloc_tid, kInvalidTid);
     CHECK_NE(m->free_tid, kInvalidTid);
     PoisonShadow(m->Beg(),
@@ -317,9 +326,7 @@ static void *Allocate(uptr size, uptr alignment, StackTrace *stack,
   CHECK(IsPowerOfTwo(alignment));
   uptr rz_log = ComputeRZLog(size);
   uptr rz_size = RZLog2Size(rz_log);
-  uptr rounded_size = RoundUpTo(size, alignment);
-  if (rounded_size < kChunkHeader2Size)
-    rounded_size = kChunkHeader2Size;
+  uptr rounded_size = RoundUpTo(Max(size, kChunkHeader2Size), alignment);
   uptr needed_size = rounded_size + rz_size;
   if (alignment > min_alignment)
     needed_size += alignment;
@@ -359,7 +366,6 @@ static void *Allocate(uptr size, uptr alignment, StackTrace *stack,
   CHECK_LE(user_end, alloc_end);
   uptr chunk_beg = user_beg - kChunkHeaderSize;
   AsanChunk *m = reinterpret_cast<AsanChunk *>(chunk_beg);
-  m->chunk_state = CHUNK_ALLOCATED;
   m->alloc_type = alloc_type;
   m->rz_log = rz_log;
   u32 alloc_tid = t ? t->tid() : 0;
@@ -416,27 +422,37 @@ static void *Allocate(uptr size, uptr alignment, StackTrace *stack,
     uptr fill_size = Min(size, (uptr)fl.max_malloc_fill_size);
     REAL(memset)(res, fl.malloc_fill_byte, fill_size);
   }
+  // Must be the last mutation of metadata in this function.
+  atomic_store((atomic_uint8_t *)m, CHUNK_ALLOCATED, memory_order_release);
   ASAN_MALLOC_HOOK(res, size);
   return res;
 }
 
-static void Deallocate(void *ptr, StackTrace *stack, AllocType alloc_type) {
-  uptr p = reinterpret_cast<uptr>(ptr);
-  if (p == 0) return;
-  ASAN_FREE_HOOK(ptr);
-  uptr chunk_beg = p - kChunkHeaderSize;
-  AsanChunk *m = reinterpret_cast<AsanChunk *>(chunk_beg);
-
+static void AtomicallySetQuarantineFlag(AsanChunk *m,
+                                        void *ptr, StackTrace *stack) {
   u8 old_chunk_state = CHUNK_ALLOCATED;
   // Flip the chunk_state atomically to avoid race on double-free.
   if (!atomic_compare_exchange_strong((atomic_uint8_t*)m, &old_chunk_state,
-                                      CHUNK_QUARANTINE, memory_order_relaxed)) {
+                                      CHUNK_QUARANTINE, memory_order_acquire)) {
     if (old_chunk_state == CHUNK_QUARANTINE)
       ReportDoubleFree((uptr)ptr, stack);
     else
       ReportFreeNotMalloced((uptr)ptr, stack);
   }
   CHECK_EQ(CHUNK_ALLOCATED, old_chunk_state);
+}
+
+// Expects the chunk to already be marked as quarantined by using
+// AtomicallySetQuarantineFlag.
+static void QuarantineChunk(AsanChunk *m, void *ptr,
+                            StackTrace *stack, AllocType alloc_type) {
+  CHECK_EQ(m->chunk_state, CHUNK_QUARANTINE);
+
+  // FIXME: if the free hook produces an ASan report (e.g. due to a bug),
+  // printing the report may crash as the AsanChunk free-related fields have not
+  // been updated yet. We might need to introduce yet another chunk state to
+  // handle this correctly, but don't want to yet.
+  ASAN_FREE_HOOK(ptr);
 
   if (m->alloc_type != alloc_type && flags()->alloc_dealloc_mismatch)
     ReportAllocTypeMismatch((uptr)ptr, stack,
@@ -453,7 +469,6 @@ static void Deallocate(void *ptr, StackTrace *stack, AllocType alloc_type) {
     m->free_context_id = 0;
     StackTrace::CompressStack(stack, m->FreeStackBeg(), m->FreeStackSize());
   }
-  CHECK(m->chunk_state == CHUNK_QUARANTINE);
   // Poison the region.
   PoisonShadow(m->Beg(),
                RoundUpTo(m->UsedSize(), SHADOW_GRANULARITY),
@@ -477,6 +492,17 @@ static void Deallocate(void *ptr, StackTrace *stack, AllocType alloc_type) {
   }
 }
 
+static void Deallocate(void *ptr, StackTrace *stack, AllocType alloc_type) {
+  uptr p = reinterpret_cast<uptr>(ptr);
+  if (p == 0) return;
+
+  uptr chunk_beg = p - kChunkHeaderSize;
+  AsanChunk *m = reinterpret_cast<AsanChunk *>(chunk_beg);
+  // Must mark the chunk as quarantined before any changes to its metadata.
+  AtomicallySetQuarantineFlag(m, ptr, stack);
+  QuarantineChunk(m, ptr, stack, alloc_type);
+}
+
 static void *Reallocate(void *old_ptr, uptr new_size, StackTrace *stack) {
   CHECK(old_ptr && new_size);
   uptr p = reinterpret_cast<uptr>(old_ptr);
@@ -487,14 +513,17 @@ static void *Reallocate(void *old_ptr, uptr new_size, StackTrace *stack) {
   thread_stats.reallocs++;
   thread_stats.realloced += new_size;
 
-  CHECK(m->chunk_state == CHUNK_ALLOCATED);
+  // Must mark the chunk as quarantined before any changes to its metadata.
+  // This also ensures that other threads can't deallocate it in the meantime.
+  AtomicallySetQuarantineFlag(m, old_ptr, stack);
+
   uptr old_size = m->UsedSize();
   uptr memcpy_size = Min(new_size, old_size);
   void *new_ptr = Allocate(new_size, 8, stack, FROM_MALLOC, true);
   if (new_ptr) {
     CHECK_NE(REAL(memcpy), (void*)0);
     REAL(memcpy)(new_ptr, old_ptr, memcpy_size);
-    Deallocate(old_ptr, stack, FROM_MALLOC);
+    QuarantineChunk(m, old_ptr, stack, FROM_MALLOC);
   }
   return new_ptr;
 }
@@ -674,6 +703,82 @@ void asan_mz_force_unlock() {
 }
 
 }  // namespace __asan
+
+// --- Implementation of LSan-specific functions --- {{{1
+namespace __lsan {
+void LockAllocator() {
+  __asan::allocator.ForceLock();
+}
+
+void UnlockAllocator() {
+  __asan::allocator.ForceUnlock();
+}
+
+void GetAllocatorGlobalRange(uptr *begin, uptr *end) {
+  *begin = (uptr)&__asan::allocator;
+  *end = *begin + sizeof(__asan::allocator);
+}
+
+void *PointsIntoChunk(void* p) {
+  uptr addr = reinterpret_cast<uptr>(p);
+  __asan::AsanChunk *m = __asan::GetAsanChunkByAddr(addr);
+  if (!m) return 0;
+  uptr chunk = m->Beg();
+  if ((m->chunk_state == __asan::CHUNK_ALLOCATED) && m->AddrIsInside(addr))
+    return reinterpret_cast<void *>(chunk);
+  return 0;
+}
+
+void *GetUserBegin(void *p) {
+  __asan::AsanChunk *m = __asan::GetAsanChunkByAddr(reinterpret_cast<uptr>(p));
+  CHECK(m);
+  return reinterpret_cast<void *>(m->Beg());
+}
+
+LsanMetadata::LsanMetadata(void *chunk) {
+  uptr addr = reinterpret_cast<uptr>(chunk);
+  metadata_ = reinterpret_cast<void *>(addr - __asan::kChunkHeaderSize);
+}
+
+bool LsanMetadata::allocated() const {
+  __asan::AsanChunk *m = reinterpret_cast<__asan::AsanChunk *>(metadata_);
+  return m->chunk_state == __asan::CHUNK_ALLOCATED;
+}
+
+ChunkTag LsanMetadata::tag() const {
+  __asan::AsanChunk *m = reinterpret_cast<__asan::AsanChunk *>(metadata_);
+  return static_cast<ChunkTag>(m->lsan_tag);
+}
+
+void LsanMetadata::set_tag(ChunkTag value) {
+  __asan::AsanChunk *m = reinterpret_cast<__asan::AsanChunk *>(metadata_);
+  m->lsan_tag = value;
+}
+
+uptr LsanMetadata::requested_size() const {
+  __asan::AsanChunk *m = reinterpret_cast<__asan::AsanChunk *>(metadata_);
+  return m->UsedSize();
+}
+
+u32 LsanMetadata::stack_trace_id() const {
+  __asan::AsanChunk *m = reinterpret_cast<__asan::AsanChunk *>(metadata_);
+  return m->alloc_context_id;
+}
+
+template <typename Callable> void ForEachChunk(Callable const &callback) {
+  __asan::allocator.ForEachChunk(callback);
+}
+#if CAN_SANITIZE_LEAKS
+template void ForEachChunk<ProcessPlatformSpecificAllocationsCb>(
+    ProcessPlatformSpecificAllocationsCb const &callback);
+template void ForEachChunk<PrintLeakedCb>(PrintLeakedCb const &callback);
+template void ForEachChunk<CollectLeaksCb>(CollectLeaksCb const &callback);
+template void ForEachChunk<MarkIndirectlyLeakedCb>(
+    MarkIndirectlyLeakedCb const &callback);
+template void ForEachChunk<ReportLeakedCb>(ReportLeakedCb const &callback);
+template void ForEachChunk<ClearTagCb>(ClearTagCb const &callback);
+#endif  // CAN_SANITIZE_LEAKS
+}  // namespace __lsan
 
 // ---------------------- Interface ---------------- {{{1
 using namespace __asan;  // NOLINT

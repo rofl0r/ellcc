@@ -25,12 +25,15 @@
 #include <pthread.h>
 #include <pwd.h>
 #include <signal.h>
+#include <stddef.h>
 #include <sys/utsname.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <sys/socket.h>
+#include <netdb.h>
 #include <time.h>
 
 #if !SANITIZER_ANDROID
@@ -38,6 +41,7 @@
 #endif // !SANITIZER_ANDROID
 
 #if SANITIZER_LINUX
+#include <link.h>
 #include <sys/vfs.h>
 #include <sys/epoll.h>
 #endif // SANITIZER_LINUX
@@ -54,6 +58,7 @@ namespace __sanitizer {
   unsigned struct_sigaction_sz = sizeof(struct sigaction);
   unsigned struct_itimerval_sz = sizeof(struct itimerval);
   unsigned pthread_t_sz = sizeof(pthread_t);
+  unsigned struct_sockaddr_sz = sizeof(struct sockaddr);
 
 #if !SANITIZER_ANDROID
   unsigned ucontext_t_sz = sizeof(ucontext_t);
@@ -120,4 +125,31 @@ namespace __sanitizer {
 COMPILER_CHECK(sizeof(__sanitizer_pthread_attr_t) >= sizeof(pthread_attr_t));
 COMPILER_CHECK(sizeof(__sanitizer::struct_sigaction_max_sz) >=
                    sizeof(__sanitizer::struct_sigaction_sz));
+#if SANITIZER_LINUX
+COMPILER_CHECK(offsetof(struct __sanitizer_dl_phdr_info, dlpi_addr) ==
+               offsetof(struct dl_phdr_info, dlpi_addr));
+COMPILER_CHECK(offsetof(struct __sanitizer_dl_phdr_info, dlpi_name) ==
+               offsetof(struct dl_phdr_info, dlpi_name));
+COMPILER_CHECK(offsetof(struct __sanitizer_dl_phdr_info, dlpi_phdr) ==
+               offsetof(struct dl_phdr_info, dlpi_phdr));
+COMPILER_CHECK(offsetof(struct __sanitizer_dl_phdr_info, dlpi_phnum) ==
+               offsetof(struct dl_phdr_info, dlpi_phnum));
+#endif
+
+COMPILER_CHECK(sizeof(struct __sanitizer_addrinfo) == sizeof(struct addrinfo));
+COMPILER_CHECK(offsetof(struct __sanitizer_addrinfo, ai_addr) ==
+               offsetof(struct addrinfo, ai_addr));
+COMPILER_CHECK(offsetof(struct __sanitizer_addrinfo, ai_canonname) ==
+               offsetof(struct addrinfo, ai_canonname));
+COMPILER_CHECK(offsetof(struct __sanitizer_addrinfo, ai_next) ==
+               offsetof(struct addrinfo, ai_next));
+
+COMPILER_CHECK(sizeof(struct __sanitizer_hostent) == sizeof(struct hostent));
+COMPILER_CHECK(offsetof(struct __sanitizer_hostent, h_name) ==
+               offsetof(struct hostent, h_name));
+COMPILER_CHECK(offsetof(struct __sanitizer_hostent, h_aliases) ==
+               offsetof(struct hostent, h_aliases));
+COMPILER_CHECK(offsetof(struct __sanitizer_hostent, h_addr_list) ==
+               offsetof(struct hostent, h_addr_list));
+
 #endif  // SANITIZER_LINUX || SANITIZER_MAC

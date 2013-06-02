@@ -179,6 +179,7 @@ void StatOutput(u64 *stat) {
   name[StatInt_pthread_barrier_destroy]  = "  pthread_barrier_destroy         ";
   name[StatInt_pthread_barrier_wait]     = "  pthread_barrier_wait            ";
   name[StatInt_pthread_once]             = "  pthread_once                    ";
+  name[StatInt_pthread_getschedparam]    = "  pthread_getschedparam           ";
   name[StatInt_sem_init]                 = "  sem_init                        ";
   name[StatInt_sem_destroy]              = "  sem_destroy                     ";
   name[StatInt_sem_wait]                 = "  sem_wait                        ";
@@ -310,6 +311,17 @@ void StatOutput(u64 *stat) {
   name[StatInt_wait4]                    = "  wait4                           ";
   name[StatInt_inet_ntop]                = "  inet_ntop                       ";
   name[StatInt_inet_pton]                = "  inet_pton                       ";
+  name[StatInt_getaddrinfo]              = "  getaddrinfo                     ";
+  name[StatInt_getsockname]              = "  getsockname                     ";
+  name[StatInt_gethostent]               = "  gethostent                      ";
+  name[StatInt_gethostbyname]            = "  gethostbyname                   ";
+  name[StatInt_gethostbyname2]           = "  gethostbyname2                  ";
+  name[StatInt_gethostbyaddr]            = "  gethostbyaddr                   ";
+  name[StatInt_gethostent_r]             = "  gethostent_r                    ";
+  name[StatInt_gethostbyname_r]          = "  gethostbyname_r                 ";
+  name[StatInt_gethostbyname2_r]         = "  gethostbyname2_r                ";
+  name[StatInt_gethostbyaddr_r]          = "  gethostbyaddr_r                 ";
+  name[StatInt_getsockopt]               = "  getsockopt                      ";
 
   name[StatAnnotation]                   = "Dynamic annotations               ";
   name[StatAnnotateHappensBefore]        = "  HappensBefore                   ";

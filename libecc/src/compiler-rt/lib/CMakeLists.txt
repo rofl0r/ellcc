@@ -16,6 +16,7 @@ if("${CMAKE_SYSTEM_NAME}" STREQUAL "Linux" AND NOT ANDROID)
   add_subdirectory(tsan)
   add_subdirectory(msan)
   add_subdirectory(msandr)
+  add_subdirectory(lsan)
 endif()
 
 # The top-level lib directory contains a large amount of C code which provides
@@ -36,6 +37,8 @@ set(GENERIC_SOURCES
   ashlti3.c
   ashrdi3.c
   ashrti3.c
+  # FIXME: atomic.c may only be compiled if host compiler understands _Atomic
+  # atomic.c
   clear_cache.c
   clzdi2.c
   clzsi2.c

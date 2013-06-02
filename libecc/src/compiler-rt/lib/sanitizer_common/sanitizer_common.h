@@ -40,7 +40,6 @@ uptr GetPageSize();
 uptr GetPageSizeCached();
 uptr GetMmapGranularity();
 // Threads
-int GetPid();
 uptr GetTid();
 uptr GetThreadSelf();
 void GetThreadStackTopAndBottom(bool at_initialization, uptr *stack_top,
@@ -114,6 +113,8 @@ void Report(const char *format, ...);
 void SetPrintfAndReportCallback(void (*callback)(const char *));
 // Can be used to prevent mixing error reports from different sanitizers.
 extern StaticSpinMutex CommonSanitizerReportMutex;
+void MaybeOpenReportFile();
+extern fd_t report_fd;
 
 uptr OpenFile(const char *filename, bool write);
 // Opens the file 'file_name" and reads up to 'max_len' bytes.
@@ -340,6 +341,44 @@ class InternalVector {
   uptr capacity_;
   uptr size_;
 };
+
+// HeapSort for arrays and InternalVector.
+template<class Container, class Compare>
+void InternalSort(Container *v, uptr size, Compare comp) {
+  if (size < 2)
+    return;
+  // Stage 1: insert elements to the heap.
+  for (uptr i = 1; i < size; i++) {
+    uptr j, p;
+    for (j = i; j > 0; j = p) {
+      p = (j - 1) / 2;
+      if (comp((*v)[p], (*v)[j]))
+        Swap((*v)[j], (*v)[p]);
+      else
+        break;
+    }
+  }
+  // Stage 2: swap largest element with the last one,
+  // and sink the new top.
+  for (uptr i = size - 1; i > 0; i--) {
+    Swap((*v)[0], (*v)[i]);
+    uptr j, max_ind;
+    for (j = 0; j < i; j = max_ind) {
+      uptr left = 2 * j + 1;
+      uptr right = 2 * j + 2;
+      max_ind = j;
+      if (left < i && comp((*v)[max_ind], (*v)[left]))
+        max_ind = left;
+      if (right < i && comp((*v)[max_ind], (*v)[right]))
+        max_ind = right;
+      if (max_ind != j)
+        Swap((*v)[j], (*v)[max_ind]);
+      else
+        break;
+    }
+  }
+}
+
 }  // namespace __sanitizer
 
 #endif  // SANITIZER_COMMON_H

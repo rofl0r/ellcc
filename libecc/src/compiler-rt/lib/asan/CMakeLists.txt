@@ -84,12 +84,16 @@ else()
       SOURCES ${ASAN_SOURCES}
               $<TARGET_OBJECTS:RTInterception.${arch}>
               $<TARGET_OBJECTS:RTSanitizerCommon.${arch}>
+              $<TARGET_OBJECTS:RTSanitizerCommonLibc.${arch}>
+              $<TARGET_OBJECTS:RTLSanCommon.${arch}>
       CFLAGS ${ASAN_CFLAGS}
       DEFS ${ASAN_COMMON_DEFINITIONS}
       SYMS asan.syms)
     list(APPEND ASAN_RUNTIME_LIBRARIES clang_rt.asan-${arch})
   endforeach()
 endif()
+
+add_compiler_rt_resource_file(asan_blacklist asan_blacklist.txt)
 
 if(LLVM_INCLUDE_TESTS)
   add_subdirectory(tests)

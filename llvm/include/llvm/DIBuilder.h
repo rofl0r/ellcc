@@ -505,7 +505,7 @@ namespace llvm {
     DISubprogram createFunction(DIDescriptor Scope, StringRef Name,
                                 StringRef LinkageName,
                                 DIFile File, unsigned LineNo,
-                                DIType Ty, bool isLocalToUnit,
+                                DICompositeType Ty, bool isLocalToUnit,
                                 bool isDefinition,
                                 unsigned ScopeLine,
                                 unsigned Flags = 0,
@@ -536,7 +536,7 @@ namespace llvm {
     DISubprogram createMethod(DIDescriptor Scope, StringRef Name,
                               StringRef LinkageName,
                               DIFile File, unsigned LineNo,
-                              DIType Ty, bool isLocalToUnit,
+                              DICompositeType Ty, bool isLocalToUnit,
                               bool isDefinition,
                               unsigned Virtuality = 0, unsigned VTableIndex = 0,
                               MDNode *VTableHolder = 0,
@@ -577,7 +577,15 @@ namespace llvm {
     /// @param NS The namespace being imported here
     /// @param Line Line number
     DIImportedEntity createImportedModule(DIScope Context, DINameSpace NS,
-                                          unsigned Line);
+                                          unsigned Line,
+                                          StringRef Name = StringRef());
+
+    /// \brief Create a descriptor for an imported module.
+    /// @param Context The scope this module is imported into
+    /// @param NS An aliased namespace
+    /// @param Line Line number
+    DIImportedEntity createImportedModule(DIScope Context, DIImportedEntity NS,
+                                          unsigned Line, StringRef Name);
 
     /// \brief Create a descriptor for an imported function.
     /// @param Context The scope this module is imported into

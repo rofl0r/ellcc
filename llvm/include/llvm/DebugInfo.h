@@ -427,19 +427,6 @@ namespace llvm {
     unsigned getLineNumber() const      { return getUnsignedField(6); }
     DICompositeType getType() const { return getFieldAs<DICompositeType>(7); }
 
-    /// getReturnTypeName - Subprogram return types are encoded either as
-    /// DIType or as DICompositeType.
-    StringRef getReturnTypeName() const {
-      DICompositeType DCT(getFieldAs<DICompositeType>(7));
-      if (DCT.Verify()) {
-        DIArray A = DCT.getTypeArray();
-        DIType T(A.getElement(0));
-        return T.getName();
-      }
-      DIType T(getFieldAs<DIType>(7));
-      return T.getName();
-    }
-
     /// isLocalToUnit - Return true if this subprogram is local to the current
     /// compile unit, like 'static' in C.
     unsigned isLocalToUnit() const     { return getUnsignedField(8); }
@@ -695,6 +682,7 @@ namespace llvm {
     DIScope getContext() const { return getFieldAs<DIScope>(1); }
     DIDescriptor getEntity() const { return getFieldAs<DIDescriptor>(2); }
     unsigned getLineNumber() const { return getUnsignedField(3); }
+    StringRef getName() const { return getStringField(4); }
     bool Verify() const;
   };
 

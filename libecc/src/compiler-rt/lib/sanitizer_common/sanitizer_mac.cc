@@ -115,6 +115,10 @@ void internal__exit(int exitcode) {
   _exit(exitcode);
 }
 
+uptr internal_getpid() {
+  return getpid();
+}
+
 // ----------------- sanitizer_common.h
 bool FileExists(const char *filename) {
   struct stat st;
@@ -164,6 +168,10 @@ void ReExec() {
 
 void PrepareForSandboxing() {
   // Nothing here for now.
+}
+
+uptr GetPageSize() {
+  return sysconf(_SC_PAGESIZE);
 }
 
 // ----------------- sanitizer_procmaps.h

@@ -29,6 +29,7 @@ namespace __sanitizer {
   extern unsigned siginfo_t_sz;
   extern unsigned struct_itimerval_sz;
   extern unsigned pthread_t_sz;
+  extern unsigned struct_sockaddr_sz;
 
 #if !SANITIZER_ANDROID
   extern unsigned ucontext_t_sz;
@@ -74,6 +75,41 @@ namespace __sanitizer {
   extern uptr sig_dfl;
 
   uptr __sanitizer_in_addr_sz(int af);
+
+#if SANITIZER_LINUX
+  struct __sanitizer_dl_phdr_info {
+    uptr dlpi_addr;
+    const char *dlpi_name;
+    const void *dlpi_phdr;
+    short dlpi_phnum;
+  };
+#endif
+
+  struct __sanitizer_addrinfo {
+    int ai_flags;
+    int ai_family;
+    int ai_socktype;
+    int ai_protocol;
+#if SANITIZER_ANDROID || SANITIZER_MAC
+    unsigned ai_addrlen;
+    char *ai_canonname;
+    void *ai_addr;
+#else // LINUX
+    uptr ai_addrlen;
+    void *ai_addr;
+    char *ai_canonname;
+#endif
+    struct __sanitizer_addrinfo *ai_next;
+  };
+
+  struct __sanitizer_hostent {
+    char *h_name;
+    char **h_aliases;
+    int h_addrtype;
+    int h_length;
+    char **h_addr_list;
+  };
+
 }  // namespace __sanitizer
 
 #endif
