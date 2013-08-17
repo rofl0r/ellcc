@@ -1017,10 +1017,23 @@ Sema::ActOnCXXNew(SourceLocation StartLoc, bool UseGlobal,
       DeclaratorChunk::ArrayTypeInfo &Array = D.getTypeObject(I).Arr;
       if (Expr *NumElts = (Expr *)Array.NumElts) {
         if (!NumElts->isTypeDependent() && !NumElts->isValueDependent()) {
-          Array.NumElts
-            = VerifyIntegerConstantExpression(NumElts, 0,
-                                              diag::err_new_array_nonconst)
-                .take();
+          if (getLangOpts().CPlusPlus1y) {
+	    // C++1y [expr.new]p6: Every constant-expression in a noptr-new-declarator
+	    //   shall be a converted constant expression (5.19) of type std::size_t
+	    //   and shall evaluate to a strictly positive value.
+            unsigned IntWidth = Context.getTargetInfo().getIntWidth();
+            assert(IntWidth && "Builtin type of size 0?");
+            llvm::APSInt Value(IntWidth);
+            Array.NumElts
+             = CheckConvertedConstantExpression(NumElts, Context.getSizeType(), Value,
+                                                CCEK_NewExpr)
+                 .take();
+          } else {
+            Array.NumElts
+              = VerifyIntegerConstantExpression(NumElts, 0,
+                                                diag::err_new_array_nonconst)
+                  .take();
+          }
           if (!Array.NumElts)
             return ExprError();
         }
@@ -1181,67 +1194,84 @@ Sema::BuildCXXNew(SourceRange Range, bool UseGlobal,
   //   enumeration type, or a class type for which a single non-explicit
   //   conversion function to integral or unscoped enumeration type exists.
   // C++1y [expr.new]p6: The expression [...] is implicitly converted to
-  //   std::size_t. (FIXME)
+  //   std::size_t.
   if (ArraySize && !ArraySize->isTypeDependent()) {
-    class SizeConvertDiagnoser : public ICEConvertDiagnoser {
-      Expr *ArraySize;
+    ExprResult ConvertedSize;
+    if (getLangOpts().CPlusPlus1y) {
+      unsigned IntWidth = Context.getTargetInfo().getIntWidth();
+      assert(IntWidth && "Builtin type of size 0?");
+      llvm::APSInt Value(IntWidth);
+      ConvertedSize = PerformImplicitConversion(ArraySize, Context.getSizeType(),
+						AA_Converting);
 
-    public:
-      SizeConvertDiagnoser(Expr *ArraySize)
-          : ICEConvertDiagnoser(/*AllowScopedEnumerations*/false, false, false),
-            ArraySize(ArraySize) {}
+      if (!ConvertedSize.isInvalid() && 
+          ArraySize->getType()->getAs<RecordType>())
+        // Diagnose the compatibility of this conversion.
+        Diag(StartLoc, diag::warn_cxx98_compat_array_size_conversion)
+          << ArraySize->getType() << 0 << "'size_t'";
+    } else {
+      class SizeConvertDiagnoser : public ICEConvertDiagnoser {
+      protected:
+        Expr *ArraySize;
+  
+      public:
+        SizeConvertDiagnoser(Expr *ArraySize)
+            : ICEConvertDiagnoser(/*AllowScopedEnumerations*/false, false, false),
+              ArraySize(ArraySize) {}
+  
+        virtual SemaDiagnosticBuilder diagnoseNotInt(Sema &S, SourceLocation Loc,
+                                                     QualType T) {
+          return S.Diag(Loc, diag::err_array_size_not_integral)
+                   << S.getLangOpts().CPlusPlus11 << T;
+        }
+  
+        virtual SemaDiagnosticBuilder diagnoseIncomplete(
+            Sema &S, SourceLocation Loc, QualType T) {
+          return S.Diag(Loc, diag::err_array_size_incomplete_type)
+                   << T << ArraySize->getSourceRange();
+        }
+  
+        virtual SemaDiagnosticBuilder diagnoseExplicitConv(
+            Sema &S, SourceLocation Loc, QualType T, QualType ConvTy) {
+          return S.Diag(Loc, diag::err_array_size_explicit_conversion) << T << ConvTy;
+        }
+  
+        virtual SemaDiagnosticBuilder noteExplicitConv(
+            Sema &S, CXXConversionDecl *Conv, QualType ConvTy) {
+          return S.Diag(Conv->getLocation(), diag::note_array_size_conversion)
+                   << ConvTy->isEnumeralType() << ConvTy;
+        }
+  
+        virtual SemaDiagnosticBuilder diagnoseAmbiguous(
+            Sema &S, SourceLocation Loc, QualType T) {
+          return S.Diag(Loc, diag::err_array_size_ambiguous_conversion) << T;
+        }
+  
+        virtual SemaDiagnosticBuilder noteAmbiguous(
+            Sema &S, CXXConversionDecl *Conv, QualType ConvTy) {
+          return S.Diag(Conv->getLocation(), diag::note_array_size_conversion)
+                   << ConvTy->isEnumeralType() << ConvTy;
+        }
 
-      virtual SemaDiagnosticBuilder diagnoseNotInt(Sema &S, SourceLocation Loc,
-                                                   QualType T) {
-        return S.Diag(Loc, diag::err_array_size_not_integral)
-                 << S.getLangOpts().CPlusPlus11 << T;
-      }
+        virtual SemaDiagnosticBuilder diagnoseConversion(
+            Sema &S, SourceLocation Loc, QualType T, QualType ConvTy) {
+          return S.Diag(Loc,
+                        S.getLangOpts().CPlusPlus11
+                          ? diag::warn_cxx98_compat_array_size_conversion
+                          : diag::ext_array_size_conversion)
+                   << T << ConvTy->isEnumeralType() << ConvTy;
+        }
+      } SizeDiagnoser(ArraySize);
 
-      virtual SemaDiagnosticBuilder diagnoseIncomplete(
-          Sema &S, SourceLocation Loc, QualType T) {
-        return S.Diag(Loc, diag::err_array_size_incomplete_type)
-                 << T << ArraySize->getSourceRange();
-      }
-
-      virtual SemaDiagnosticBuilder diagnoseExplicitConv(
-          Sema &S, SourceLocation Loc, QualType T, QualType ConvTy) {
-        return S.Diag(Loc, diag::err_array_size_explicit_conversion) << T << ConvTy;
-      }
-
-      virtual SemaDiagnosticBuilder noteExplicitConv(
-          Sema &S, CXXConversionDecl *Conv, QualType ConvTy) {
-        return S.Diag(Conv->getLocation(), diag::note_array_size_conversion)
-                 << ConvTy->isEnumeralType() << ConvTy;
-      }
-
-      virtual SemaDiagnosticBuilder diagnoseAmbiguous(
-          Sema &S, SourceLocation Loc, QualType T) {
-        return S.Diag(Loc, diag::err_array_size_ambiguous_conversion) << T;
-      }
-
-      virtual SemaDiagnosticBuilder noteAmbiguous(
-          Sema &S, CXXConversionDecl *Conv, QualType ConvTy) {
-        return S.Diag(Conv->getLocation(), diag::note_array_size_conversion)
-                 << ConvTy->isEnumeralType() << ConvTy;
-      }
-
-      virtual SemaDiagnosticBuilder diagnoseConversion(
-          Sema &S, SourceLocation Loc, QualType T, QualType ConvTy) {
-        return S.Diag(Loc,
-                      S.getLangOpts().CPlusPlus11
-                        ? diag::warn_cxx98_compat_array_size_conversion
-                        : diag::ext_array_size_conversion)
-                 << T << ConvTy->isEnumeralType() << ConvTy;
-      }
-    } SizeDiagnoser(ArraySize);
-
-    ExprResult ConvertedSize
-      = PerformContextualImplicitConversion(StartLoc, ArraySize, SizeDiagnoser);
+      ConvertedSize = PerformContextualImplicitConversion(StartLoc, ArraySize,
+                                                          SizeDiagnoser);
+    }
     if (ConvertedSize.isInvalid())
       return ExprError();
 
     ArraySize = ConvertedSize.take();
     QualType SizeType = ArraySize->getType();
+
     if (!SizeType->isIntegralOrUnscopedEnumerationType())
       return ExprError();
 
@@ -1554,13 +1584,28 @@ bool Sema::FindAllocationFunctions(SourceLocation StartLoc, SourceRange Range,
                                /*AllowMissing=*/true, OperatorNew))
       return true;
   }
+
   if (!OperatorNew) {
     // Didn't find a member overload. Look for a global one.
     DeclareGlobalNewDelete();
     DeclContext *TUDecl = Context.getTranslationUnitDecl();
+    bool FallbackEnabled = IsArray && Context.getLangOpts().MicrosoftMode;
     if (FindAllocationOverload(StartLoc, Range, NewName, AllocArgs, TUDecl,
+                               /*AllowMissing=*/FallbackEnabled, OperatorNew,
+                               /*Diagnose=*/!FallbackEnabled)) {
+      if (!FallbackEnabled)
+        return true;
+
+      // MSVC will fall back on trying to find a matching global operator new
+      // if operator new[] cannot be found.  Also, MSVC will leak by not
+      // generating a call to operator delete or operator delete[], but we
+      // will not replicate that bug.
+      NewName = Context.DeclarationNames.getCXXOperatorName(OO_New);
+      DeleteName = Context.DeclarationNames.getCXXOperatorName(OO_Delete);
+      if (FindAllocationOverload(StartLoc, Range, NewName, AllocArgs, TUDecl,
                                /*AllowMissing=*/false, OperatorNew))
       return true;
+    }
   }
 
   // We don't need an operator delete if we're running under
@@ -4258,8 +4303,8 @@ QualType Sema::CXXCheckConditionalOperands(ExprResult &Cond, ExprResult &LHS,
     //   ... and one of the following shall hold:
     //   -- The second or the third operand (but not both) is a throw-
     //      expression; the result is of the type of the other and is a prvalue.
-    bool LThrow = isa<CXXThrowExpr>(LHS.get());
-    bool RThrow = isa<CXXThrowExpr>(RHS.get());
+    bool LThrow = isa<CXXThrowExpr>(LHS.get()->IgnoreParenCasts());
+    bool RThrow = isa<CXXThrowExpr>(RHS.get()->IgnoreParenCasts());
     if (LThrow && !RThrow)
       return RTy;
     if (RThrow && !LThrow)

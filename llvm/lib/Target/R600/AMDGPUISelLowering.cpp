@@ -14,14 +14,17 @@
 //===----------------------------------------------------------------------===//
 
 #include "AMDGPUISelLowering.h"
+#include "AMDGPU.h"
 #include "AMDGPURegisterInfo.h"
 #include "AMDGPUSubtarget.h"
 #include "AMDILIntrinsicInfo.h"
+#include "SIMachineFunctionInfo.h"
 #include "llvm/CodeGen/CallingConvLower.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/SelectionDAG.h"
 #include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
+#include "llvm/IR/DataLayout.h"
 
 using namespace llvm;
 
@@ -68,6 +71,30 @@ AMDGPUTargetLowering::AMDGPUTargetLowering(TargetMachine &TM) :
   setOperationAction(ISD::UDIV, MVT::i32, Expand);
   setOperationAction(ISD::UDIVREM, MVT::i32, Custom);
   setOperationAction(ISD::UREM, MVT::i32, Expand);
+
+  setOperationAction(ISD::GlobalAddress, MVT::i32, Custom);
+
+  int types[] = {
+    (int)MVT::v2i32,
+    (int)MVT::v4i32
+  };
+  size_t NumTypes = sizeof(types) / sizeof(*types);
+
+  for (unsigned int x  = 0; x < NumTypes; ++x) {
+    MVT::SimpleValueType VT = (MVT::SimpleValueType)types[x];
+    //Expand the following operations for the current type by default
+    setOperationAction(ISD::ADD,  VT, Expand);
+    setOperationAction(ISD::AND,  VT, Expand);
+    setOperationAction(ISD::MUL,  VT, Expand);
+    setOperationAction(ISD::OR,   VT, Expand);
+    setOperationAction(ISD::SHL,  VT, Expand);
+    setOperationAction(ISD::SRL,  VT, Expand);
+    setOperationAction(ISD::SRA,  VT, Expand);
+    setOperationAction(ISD::SUB,  VT, Expand);
+    setOperationAction(ISD::UDIV, VT, Expand);
+    setOperationAction(ISD::UREM, VT, Expand);
+    setOperationAction(ISD::XOR,  VT, Expand);
+  }
 }
 
 //===---------------------------------------------------------------------===//
@@ -112,6 +139,26 @@ SDValue AMDGPUTargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG)
   case ISD::UDIVREM: return LowerUDIVREM(Op, DAG);
   }
   return Op;
+}
+
+SDValue AMDGPUTargetLowering::LowerGlobalAddress(AMDGPUMachineFunction* MFI,
+                                                 SDValue Op,
+                                                 SelectionDAG &DAG) const {
+
+  const DataLayout *TD = getTargetMachine().getDataLayout();
+  GlobalAddressSDNode *G = cast<GlobalAddressSDNode>(Op);
+  // XXX: What does the value of G->getOffset() mean?
+  assert(G->getOffset() == 0 &&
+         "Do not know what to do with an non-zero offset");
+
+  unsigned Offset = MFI->LDSSize;
+  const GlobalValue *GV = G->getGlobal();
+  uint64_t Size = TD->getTypeAllocSize(GV->getType()->getElementType());
+
+  // XXX: Account for alignment?
+  MFI->LDSSize += Size;
+
+  return DAG.getConstant(Offset, MVT::i32);
 }
 
 SDValue AMDGPUTargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op,

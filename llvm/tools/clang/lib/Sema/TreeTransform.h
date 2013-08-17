@@ -2630,11 +2630,18 @@ ExprResult TreeTransform<Derived>::TransformInitializer(Expr *Init,
   if (ExprWithCleanups *ExprTemp = dyn_cast<ExprWithCleanups>(Init))
     Init = ExprTemp->getSubExpr();
 
+  if (MaterializeTemporaryExpr *MTE = dyn_cast<MaterializeTemporaryExpr>(Init))
+    Init = MTE->GetTemporaryExpr();
+
   while (CXXBindTemporaryExpr *Binder = dyn_cast<CXXBindTemporaryExpr>(Init))
     Init = Binder->getSubExpr();
 
   if (ImplicitCastExpr *ICE = dyn_cast<ImplicitCastExpr>(Init))
     Init = ICE->getSubExprAsWritten();
+
+  if (CXXStdInitializerListExpr *ILE =
+          dyn_cast<CXXStdInitializerListExpr>(Init))
+    return TransformInitializer(ILE->getSubExpr(), CXXDirectInit);
 
   // If this is not a direct-initializer, we only need to reconstruct
   // InitListExprs. Other forms of copy-initialization will be a no-op if
@@ -3226,8 +3233,8 @@ bool TreeTransform<Derived>::TransformTemplateArguments(InputIterator First,
       SourceLocation Ellipsis;
       Optional<unsigned> OrigNumExpansions;
       TemplateArgumentLoc Pattern
-        = In.getPackExpansionPattern(Ellipsis, OrigNumExpansions,
-                                     getSema().Context);
+        = getSema().getTemplateArgumentPackExpansionPattern(
+              In, Ellipsis, OrigNumExpansions);
 
       SmallVector<UnexpandedParameterPack, 2> Unexpanded;
       getSema().collectUnexpandedParameterPacks(Pattern, Unexpanded);
@@ -3424,7 +3431,7 @@ TreeTransform<Derived>::TransformQualifiedType(TypeLocBuilder &TLB,
       } else {
         // Otherwise, complain about the addition of a qualifier to an
         // already-qualified type.
-        SourceRange R = TLB.getTemporaryTypeLoc(Result).getSourceRange();
+        SourceRange R = T.getUnqualifiedLoc().getSourceRange();
         SemaRef.Diag(R.getBegin(), diag::err_attr_objc_ownership_redundant)
           << Result << R;
 
@@ -3576,6 +3583,22 @@ QualType TreeTransform<Derived>::TransformComplexType(TypeLocBuilder &TLB,
                                                       ComplexTypeLoc T) {
   // FIXME: recurse?
   return TransformTypeSpecType(TLB, T);
+}
+
+template<typename Derived>
+QualType TreeTransform<Derived>::TransformDecayedType(TypeLocBuilder &TLB,
+                                                      DecayedTypeLoc TL) {
+  QualType OriginalType = getDerived().TransformType(TLB, TL.getOriginalLoc());
+  if (OriginalType.isNull())
+    return QualType();
+
+  QualType Result = TL.getType();
+  if (getDerived().AlwaysRebuild() ||
+      OriginalType != TL.getOriginalLoc().getType())
+    Result = SemaRef.Context.getDecayedType(OriginalType);
+  TLB.push<DecayedTypeLoc>(Result);
+  // Nothing to set for DecayedTypeLoc.
+  return Result;
 }
 
 template<typename Derived>
@@ -7262,18 +7285,7 @@ TreeTransform<Derived>::TransformCXXNullPtrLiteralExpr(
 template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformCXXThisExpr(CXXThisExpr *E) {
-  DeclContext *DC = getSema().getFunctionLevelDeclContext();
-  QualType T;
-  if (CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(DC))
-    T = MD->getThisType(getSema().Context);
-  else if (CXXRecordDecl *Record = dyn_cast<CXXRecordDecl>(DC)) {
-    T = getSema().Context.getPointerType(
-          getSema().Context.getRecordType(Record));
-  } else {
-    assert(SemaRef.Context.getDiagnostics().hasErrorOccurred() &&
-           "this in the wrong scope?");
-    return ExprError();
-  }
+  QualType T = getSema().getCurrentThisType();
 
   if (!getDerived().AlwaysRebuild() && T == E->getType()) {
     // Make sure that we capture 'this'.
@@ -8557,6 +8569,13 @@ TreeTransform<Derived>::TransformMaterializeTemporaryExpr(
 
 template<typename Derived>
 ExprResult
+TreeTransform<Derived>::TransformCXXStdInitializerListExpr(
+    CXXStdInitializerListExpr *E) {
+  return getDerived().TransformExpr(E->getSubExpr());
+}
+
+template<typename Derived>
+ExprResult
 TreeTransform<Derived>::TransformObjCStringLiteral(ObjCStringLiteral *E) {
   return SemaRef.MaybeBindToTemporary(E);
 }
@@ -8982,15 +9001,6 @@ TreeTransform<Derived>::TransformBlockExpr(BlockExpr *E) {
   const FunctionProtoType *exprFunctionType = E->getFunctionType();
   QualType exprResultType =
       getDerived().TransformType(exprFunctionType->getResultType());
-
-  // Don't allow returning a objc interface by value.
-  if (exprResultType->isObjCObjectType()) {
-    getSema().Diag(E->getCaretLocation(),
-                   diag::err_object_cannot_be_passed_returned_by_value)
-      << 0 << exprResultType;
-    getSema().ActOnBlockError(E->getCaretLocation(), /*Scope=*/0);
-    return ExprError();
-  }
 
   QualType functionType =
     getDerived().RebuildFunctionProtoType(exprResultType, paramTypes,

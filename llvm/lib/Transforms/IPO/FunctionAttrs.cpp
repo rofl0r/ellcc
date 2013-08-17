@@ -71,36 +71,36 @@ namespace {
 
     void setDoesNotAccessMemory(Function &F) {
       if (!F.doesNotAccessMemory()) {
-	F.setDoesNotAccessMemory();
-	++NumAnnotated;
+        F.setDoesNotAccessMemory();
+        ++NumAnnotated;
       }
     }
 
     void setOnlyReadsMemory(Function &F) {
       if (!F.onlyReadsMemory()) {
-	F.setOnlyReadsMemory();
-	++NumAnnotated;
+        F.setOnlyReadsMemory();
+        ++NumAnnotated;
       }
     }
 
     void setDoesNotThrow(Function &F) {
       if (!F.doesNotThrow()) {
-	F.setDoesNotThrow();
-	++NumAnnotated;
+        F.setDoesNotThrow();
+        ++NumAnnotated;
       }
     }
 
     void setDoesNotCapture(Function &F, unsigned n) {
       if (!F.doesNotCapture(n)) {
-	F.setDoesNotCapture(n);
-	++NumAnnotated;
+        F.setDoesNotCapture(n);
+        ++NumAnnotated;
       }
     }
 
     void setDoesNotAlias(Function &F, unsigned n) {
       if (!F.doesNotAlias(n)) {
-	F.setDoesNotAlias(n);
-	++NumAnnotated;
+        F.setDoesNotAlias(n);
+        ++NumAnnotated;
       }
     }
 
@@ -1004,6 +1004,7 @@ bool FunctionAttrs::inferPrototypeAttributes(Function &F) {
       return false;
     setDoesNotThrow(F);
     setDoesNotCapture(F, 3);
+    break;
   case LibFunc::fread:
   case LibFunc::fwrite:
     if (FTy->getNumParams() != 4 ||
@@ -1013,6 +1014,7 @@ bool FunctionAttrs::inferPrototypeAttributes(Function &F) {
     setDoesNotThrow(F);
     setDoesNotCapture(F, 1);
     setDoesNotCapture(F, 4);
+    break;
   case LibFunc::fputs:
   case LibFunc::fscanf:
   case LibFunc::fprintf:
@@ -1308,6 +1310,16 @@ bool FunctionAttrs::inferPrototypeAttributes(Function &F) {
     // May throw; "open" is a valid pthread cancellation point.
     setDoesNotCapture(F, 1);
     break;
+  case LibFunc::gettimeofday:
+    if (FTy->getNumParams() != 2 || !FTy->getParamType(0)->isPointerTy() ||
+        !FTy->getParamType(1)->isPointerTy())
+      return false;
+    // Currently some platforms have the restrict keyword on the arguments to
+    // gettimeofday. To be conservative, do not add noalias to gettimeofday's
+    // arguments.
+    setDoesNotThrow(F);
+    setDoesNotCapture(F, 1);
+    setDoesNotCapture(F, 2);
   default:
     // Didn't mark any attributes.
     return false;

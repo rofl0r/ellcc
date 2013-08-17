@@ -474,6 +474,45 @@ public:
   child_range children() { return child_range(); }
 };
 
+/// \brief Implicit construction of a std::initializer_list<T> object from an
+/// array temporary within list-initialization (C++11 [dcl.init.list]p5).
+class CXXStdInitializerListExpr : public Expr {
+  Stmt *SubExpr;
+
+  CXXStdInitializerListExpr(EmptyShell Empty)
+    : Expr(CXXStdInitializerListExprClass, Empty), SubExpr(0) {}
+
+public:
+  CXXStdInitializerListExpr(QualType Ty, Expr *SubExpr)
+    : Expr(CXXStdInitializerListExprClass, Ty, VK_RValue, OK_Ordinary,
+           Ty->isDependentType(), SubExpr->isValueDependent(),
+           SubExpr->isInstantiationDependent(),
+           SubExpr->containsUnexpandedParameterPack()),
+      SubExpr(SubExpr) {}
+
+  Expr *getSubExpr() { return static_cast<Expr*>(SubExpr); }
+  const Expr *getSubExpr() const { return static_cast<const Expr*>(SubExpr); }
+
+  SourceLocation getLocStart() const LLVM_READONLY {
+    return SubExpr->getLocStart();
+  }
+  SourceLocation getLocEnd() const LLVM_READONLY {
+    return SubExpr->getLocEnd();
+  }
+  SourceRange getSourceRange() const LLVM_READONLY {
+    return SubExpr->getSourceRange();
+  }
+
+  static bool classof(const Stmt *S) {
+    return S->getStmtClass() == CXXStdInitializerListExprClass;
+  }
+
+  child_range children() { return child_range(&SubExpr, &SubExpr + 1); }
+
+  friend class ASTReader;
+  friend class ASTStmtReader;
+};
+
 /// CXXTypeidExpr - A C++ @c typeid expression (C++ [expr.typeid]), which gets
 /// the type_info that corresponds to the supplied type, or the (possibly
 /// dynamic) type of the supplied expression.
@@ -1244,12 +1283,16 @@ public:
 /// }
 /// \endcode
 ///
-/// Lambda expressions can capture local variables, either by copying
+/// C++11 lambda expressions can capture local variables, either by copying
 /// the values of those local variables at the time the function
 /// object is constructed (not when it is called!) or by holding a
 /// reference to the local variable. These captures can occur either
 /// implicitly or can be written explicitly between the square
 /// brackets ([...]) that start the lambda expression.
+///
+/// C++1y introduces a new form of "capture" called an init-capture that
+/// includes an initializing expression (rather than capturing a variable),
+/// and which can never occur implicitly.
 class LambdaExpr : public Expr {
   enum {
     /// \brief Flag used by the Capture class to indicate that the given
@@ -1258,6 +1301,8 @@ class LambdaExpr : public Expr {
 
     /// \brief Flag used by the Capture class to indicate that the
     /// given capture was by-copy.
+    ///
+    /// This includes the case of a non-reference init-capture.
     Capture_ByCopy = 0x02
   };
 
@@ -1297,7 +1342,8 @@ class LambdaExpr : public Expr {
   // array captures.
 
 public:
-  /// \brief Describes the capture of either a variable or 'this'.
+  /// \brief Describes the capture of a variable or of \c this, or of a
+  /// C++1y init-capture.
   class Capture {
     llvm::PointerIntPair<Decl *, 2> DeclAndBits;
     SourceLocation Loc;
@@ -1307,16 +1353,17 @@ public:
     friend class ASTStmtWriter;
     
   public:
-    /// \brief Create a new capture.
+    /// \brief Create a new capture of a variable or of \c this.
     ///
     /// \param Loc The source location associated with this capture.
     ///
-    /// \param Kind The kind of capture (this, byref, bycopy).
+    /// \param Kind The kind of capture (this, byref, bycopy), which must
+    /// not be init-capture.
     ///
     /// \param Implicit Whether the capture was implicit or explicit.
     ///
-    /// \param Var The local variable being captured, or null if capturing this
-    ///        or if this is an init-capture.
+    /// \param Var The local variable being captured, or null if capturing
+    /// \c this.
     ///
     /// \param EllipsisLoc The location of the ellipsis (...) for a
     /// capture that is a pack expansion, or an invalid source
@@ -1331,7 +1378,7 @@ public:
     /// \brief Determine the kind of capture.
     LambdaCaptureKind getCaptureKind() const;
 
-    /// \brief Determine whether this capture handles the C++ 'this'
+    /// \brief Determine whether this capture handles the C++ \c this
     /// pointer.
     bool capturesThis() const { return DeclAndBits.getPointer() == 0; }
 
@@ -1340,14 +1387,14 @@ public:
       return dyn_cast_or_null<VarDecl>(DeclAndBits.getPointer());
     }
 
-    /// \brief Determines whether this is an init-capture.
+    /// \brief Determine whether this is an init-capture.
     bool isInitCapture() const { return getCaptureKind() == LCK_Init; }
 
     /// \brief Retrieve the declaration of the local variable being
     /// captured.
     ///
     /// This operation is only valid if this capture is a variable capture
-    /// (other than a capture of 'this').
+    /// (other than a capture of \c this).
     VarDecl *getCapturedVar() const {
       assert(capturesVariable() && "No variable available for 'this' capture");
       return cast<VarDecl>(DeclAndBits.getPointer());
@@ -1371,7 +1418,7 @@ public:
     ///
     /// For an explicit capture, this returns the location of the
     /// explicit capture in the source. For an implicit capture, this
-    /// returns the location at which the variable or 'this' was first
+    /// returns the location at which the variable or \c this was first
     /// used.
     SourceLocation getLocation() const { return Loc; }
 
@@ -3387,6 +3434,10 @@ public:
   // expression refers to.
   SourceLocation getMemberLoc() const { return getNameLoc(); }
 
+  // \brief Return the preferred location (the member name) for the arrow when
+  // diagnosing a problem with this expression.
+  SourceLocation getExprLoc() const LLVM_READONLY { return getMemberLoc(); }
+
   SourceLocation getLocStart() const LLVM_READONLY {
     if (!isImplicitAccess())
       return Base->getLocStart();
@@ -3820,30 +3871,60 @@ public:
 /// binds to the temporary. \c MaterializeTemporaryExprs are always glvalues
 /// (either an lvalue or an xvalue, depending on the kind of reference binding
 /// to it), maintaining the invariant that references always bind to glvalues.
+///
+/// Reference binding and copy-elision can both extend the lifetime of a
+/// temporary. When either happens, the expression will also track the
+/// declaration which is responsible for the lifetime extension.
 class MaterializeTemporaryExpr : public Expr {
+public:
   /// \brief The temporary-generating expression whose value will be
   /// materialized.
   Stmt *Temporary;
+
+  /// \brief The declaration which lifetime-extended this reference, if any.
+  /// Either a VarDecl, or (for a ctor-initializer) a FieldDecl.
+  const ValueDecl *ExtendingDecl;
 
   friend class ASTStmtReader;
   friend class ASTStmtWriter;
 
 public:
   MaterializeTemporaryExpr(QualType T, Expr *Temporary,
-                           bool BoundToLvalueReference)
+                           bool BoundToLvalueReference,
+                           const ValueDecl *ExtendedBy)
     : Expr(MaterializeTemporaryExprClass, T,
            BoundToLvalueReference? VK_LValue : VK_XValue, OK_Ordinary,
            Temporary->isTypeDependent(), Temporary->isValueDependent(),
            Temporary->isInstantiationDependent(),
            Temporary->containsUnexpandedParameterPack()),
-      Temporary(Temporary) { }
+      Temporary(Temporary), ExtendingDecl(ExtendedBy) {
+  }
 
   MaterializeTemporaryExpr(EmptyShell Empty)
     : Expr(MaterializeTemporaryExprClass, Empty) { }
 
   /// \brief Retrieve the temporary-generating subexpression whose value will
   /// be materialized into a glvalue.
-  Expr *GetTemporaryExpr() const { return reinterpret_cast<Expr *>(Temporary); }
+  Expr *GetTemporaryExpr() const { return static_cast<Expr *>(Temporary); }
+
+  /// \brief Retrieve the storage duration for the materialized temporary.
+  StorageDuration getStorageDuration() const {
+    if (!ExtendingDecl)
+      return SD_FullExpression;
+    // FIXME: This is not necessarily correct for a temporary materialized
+    // within a default initializer.
+    if (isa<FieldDecl>(ExtendingDecl))
+      return SD_Automatic;
+    return cast<VarDecl>(ExtendingDecl)->getStorageDuration();
+  }
+
+  /// \brief Get the declaration which triggered the lifetime-extension of this
+  /// temporary, if any.
+  const ValueDecl *getExtendingDecl() const { return ExtendingDecl; }
+
+  void setExtendingDecl(const ValueDecl *ExtendedBy) {
+    ExtendingDecl = ExtendedBy;
+  }
 
   /// \brief Determine whether this materialized temporary is bound to an
   /// lvalue reference; otherwise, it's bound to an rvalue reference.

@@ -166,6 +166,12 @@
 /* Define to 1 if you have the `fmodf' function. */
 #undef HAVE_FMODF
 
+/* Define to 1 if you have the `futimens' function. */
+#undef HAVE_FUTIMENS
+
+/* Define to 1 if you have the `futimes' function. */
+#undef HAVE_FUTIMES
+
 /* Define to 1 if you have the `getcwd' function. */
 #undef HAVE_GETCWD
 
@@ -602,9 +608,6 @@
 /* Installation directory for .info files */
 #undef LLVM_INFODIR
 
-/* Installation directory for libraries */
-#undef LLVM_LIBDIR
-
 /* Installation directory for man pages */
 #undef LLVM_MANDIR
 
@@ -683,10 +686,6 @@
 /* Define to the sub-directory in which libtool stores uninstalled libraries.
    */
 #undef LTDL_OBJDIR
-
-/* Define to the name of the environment variable that determines the dynamic
-   library search path. */
-#undef LTDL_SHLIBPATH_VAR
 
 /* Define to the extension used for shared libraries, say, ".so". */
 #undef LTDL_SHLIB_EXT

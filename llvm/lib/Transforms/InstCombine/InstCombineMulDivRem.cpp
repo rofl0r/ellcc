@@ -95,6 +95,25 @@ static bool MultiplyOverflows(ConstantInt *C1, ConstantInt *C2, bool sign) {
   return MulExt.slt(Min) || MulExt.sgt(Max);
 }
 
+/// \brief A helper routine of InstCombiner::visitMul().
+///
+/// If C is a vector of known powers of 2, then this function returns
+/// a new vector obtained from C replacing each element with its logBase2.
+/// Return a null pointer otherwise.
+static Constant *getLogBase2Vector(ConstantDataVector *CV) {
+  const APInt *IVal;
+  SmallVector<Constant *, 4> Elts;
+
+  for (unsigned I = 0, E = CV->getNumElements(); I != E; ++I) {
+    Constant *Elt = CV->getElementAsConstant(I);
+    if (!match(Elt, m_APInt(IVal)) || !IVal->isPowerOf2())
+      return 0;
+    Elts.push_back(ConstantInt::get(Elt->getType(), IVal->logBase2()));
+  }
+
+  return ConstantVector::get(Elts);
+}
+
 Instruction *InstCombiner::visitMul(BinaryOperator &I) {
   bool Changed = SimplifyAssociativeOrCommutative(I);
   Value *Op0 = I.getOperand(0), *Op1 = I.getOperand(1);
@@ -108,24 +127,37 @@ Instruction *InstCombiner::visitMul(BinaryOperator &I) {
   if (match(Op1, m_AllOnes()))  // X * -1 == 0 - X
     return BinaryOperator::CreateNeg(Op0, I.getName());
 
-  if (ConstantInt *CI = dyn_cast<ConstantInt>(Op1)) {
+  // Also allow combining multiply instructions on vectors.
+  {
+    Value *NewOp;
+    Constant *C1, *C2;
+    const APInt *IVal;
+    if (match(&I, m_Mul(m_Shl(m_Value(NewOp), m_Constant(C2)),
+                        m_Constant(C1))) &&
+        match(C1, m_APInt(IVal)))
+      // ((X << C1)*C2) == (X * (C2 << C1))
+      return BinaryOperator::CreateMul(NewOp, ConstantExpr::getShl(C1, C2));
 
-    // ((X << C1)*C2) == (X * (C2 << C1))
-    if (BinaryOperator *SI = dyn_cast<BinaryOperator>(Op0))
-      if (SI->getOpcode() == Instruction::Shl)
-        if (Constant *ShOp = dyn_cast<Constant>(SI->getOperand(1)))
-          return BinaryOperator::CreateMul(SI->getOperand(0),
-                                           ConstantExpr::getShl(CI, ShOp));
+    if (match(&I, m_Mul(m_Value(NewOp), m_Constant(C1)))) {
+      Constant *NewCst = 0;
+      if (match(C1, m_APInt(IVal)) && IVal->isPowerOf2())
+        // Replace X*(2^C) with X << C, where C is either a scalar or a splat.
+        NewCst = ConstantInt::get(NewOp->getType(), IVal->logBase2());
+      else if (ConstantDataVector *CV = dyn_cast<ConstantDataVector>(C1))
+        // Replace X*(2^C) with X << C, where C is a vector of known
+        // constant powers of 2.
+        NewCst = getLogBase2Vector(CV);
 
-    const APInt &Val = CI->getValue();
-    if (Val.isPowerOf2()) {          // Replace X*(2^C) with X << C
-      Constant *NewCst = ConstantInt::get(Op0->getType(), Val.logBase2());
-      BinaryOperator *Shl = BinaryOperator::CreateShl(Op0, NewCst);
-      if (I.hasNoSignedWrap()) Shl->setHasNoSignedWrap();
-      if (I.hasNoUnsignedWrap()) Shl->setHasNoUnsignedWrap();
-      return Shl;
+      if (NewCst) {
+        BinaryOperator *Shl = BinaryOperator::CreateShl(NewOp, NewCst);
+        if (I.hasNoSignedWrap()) Shl->setHasNoSignedWrap();
+        if (I.hasNoUnsignedWrap()) Shl->setHasNoUnsignedWrap();
+        return Shl;
+      }
     }
+  }
 
+  if (ConstantInt *CI = dyn_cast<ConstantInt>(Op1)) {
     // Canonicalize (X+C1)*CI -> X*CI+C1*CI.
     { Value *X; ConstantInt *C1;
       if (Op0->hasOneUse() &&
@@ -306,13 +338,13 @@ static bool isFMulOrFDivWithConstant(Value *V) {
   if (C0 && C1)
     return false;
 
-  return (C0 && C0->getValueAPF().isNormal()) ||
-         (C1 && C1->getValueAPF().isNormal());
+  return (C0 && C0->getValueAPF().isFiniteNonZero()) ||
+         (C1 && C1->getValueAPF().isFiniteNonZero());
 }
 
 static bool isNormalFp(const ConstantFP *C) {
   const APFloat &Flt = C->getValueAPF();
-  return Flt.isNormal() && !Flt.isDenormal();
+  return Flt.isNormal();
 }
 
 /// foldFMulConst() is a helper routine of InstCombiner::visitFMul().
@@ -391,7 +423,7 @@ Instruction *InstCombiner::visitFMul(BinaryOperator &I) {
         return NV;
 
     ConstantFP *C = dyn_cast<ConstantFP>(Op1);
-    if (C && AllowReassociate && C->getValueAPF().isNormal()) {
+    if (C && AllowReassociate && C->getValueAPF().isFiniteNonZero()) {
       // Let MDC denote an expression in one of these forms:
       // X * C, C/X, X/C, where C is a constant.
       //
@@ -418,7 +450,7 @@ Instruction *InstCombiner::visitFMul(BinaryOperator &I) {
           Swap = true;
         }
 
-        if (C1 && C1->getValueAPF().isNormal() &&
+        if (C1 && C1->getValueAPF().isFiniteNonZero() &&
             isFMulOrFDivWithConstant(Opnd0)) {
           Value *M1 = ConstantExpr::getFMul(C1, C);
           Value *M0 = isNormalFp(cast<ConstantFP>(M1)) ?
@@ -584,8 +616,7 @@ bool InstCombiner::SimplifyDivRemOfSelect(BinaryOperator &I) {
         *I = SI->getOperand(NonNullOperand);
         Worklist.Add(BBI);
       } else if (*I == SelectCond) {
-        *I = NonNullOperand == 1 ? ConstantInt::getTrue(BBI->getContext()) :
-                                   ConstantInt::getFalse(BBI->getContext());
+        *I = Builder->getInt1(NonNullOperand == 1);
         Worklist.Add(BBI);
       }
     }
@@ -827,7 +858,7 @@ static Instruction *CvtFDivConstToReciprocal(Value *Dividend,
   APFloat Reciprocal(FpVal.getSemantics());
   bool Cvt = FpVal.getExactInverse(&Reciprocal);
 
-  if (!Cvt && AllowReciprocal && FpVal.isNormal()) {
+  if (!Cvt && AllowReciprocal && FpVal.isFiniteNonZero()) {
     Reciprocal = APFloat(FpVal.getSemantics(), 1.0f);
     (void)Reciprocal.divide(FpVal, APFloat::rmNearestTiesToEven);
     Cvt = !Reciprocal.isDenormal();
@@ -862,14 +893,14 @@ Instruction *InstCombiner::visitFDiv(BinaryOperator &I) {
         //
         Constant *C = ConstantExpr::getFDiv(C1, C2);
         const APFloat &F = cast<ConstantFP>(C)->getValueAPF();
-        if (F.isNormal() && !F.isDenormal())
+        if (F.isNormal())
           Res = BinaryOperator::CreateFMul(X, C);
       } else if (match(Op0, m_FDiv(m_Value(X), m_ConstantFP(C1)))) {
         // (X/C1)/C2 => X /(C2*C1) [=> X * 1/(C2*C1) if reciprocal is allowed]
         //
         Constant *C = ConstantExpr::getFMul(C1, C2);
         const APFloat &F = cast<ConstantFP>(C)->getValueAPF();
-        if (F.isNormal() && !F.isDenormal()) {
+        if (F.isNormal()) {
           Res = CvtFDivConstToReciprocal(X, cast<ConstantFP>(C),
                                          AllowReciprocal);
           if (!Res)
@@ -910,7 +941,7 @@ Instruction *InstCombiner::visitFDiv(BinaryOperator &I) {
 
     if (Fold) {
       const APFloat &FoldC = cast<ConstantFP>(Fold)->getValueAPF();
-      if (FoldC.isNormal() && !FoldC.isDenormal()) {
+      if (FoldC.isNormal()) {
         Instruction *R = CreateDiv ?
                          BinaryOperator::CreateFDiv(Fold, X) :
                          BinaryOperator::CreateFMul(X, Fold);

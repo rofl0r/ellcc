@@ -8,34 +8,64 @@
 # CHECK: b target                        # encoding: [0b010010AA,A,A,0bAAAAAA00]
 # CHECK-NEXT:                            #   fixup A - offset: 0, value: target, kind: fixup_ppc_br24
          b target
-# FIXME: ba target
+# CHECK: ba target                       # encoding: [0b010010AA,A,A,0bAAAAAA10]
+# CHECK-NEXT:                            #   fixup A - offset: 0, value: target, kind: fixup_ppc_br24abs
+         ba target
 # CHECK: bl target                       # encoding: [0b010010AA,A,A,0bAAAAAA01]
 # CHECK-NEXT:                            #   fixup A - offset: 0, value: target, kind: fixup_ppc_br24
          bl target
-# FIXME: bla target
+# CHECK: bla target                      # encoding: [0b010010AA,A,A,0bAAAAAA11]
+# CHECK-NEXT:                            #   fixup A - offset: 0, value: target, kind: fixup_ppc_br24abs
+         bla target
 
-# FIXME: bc 4, 10, target
-# FIXME: bca 4, 10, target
-# FIXME: bcl 4, 10, target
-# FIXME: bcla 4, 10, target
+# CHECK: bc 4, 10, target                # encoding: [0x40,0x8a,A,0bAAAAAA00]
+# CHECK-NEXT:                            #   fixup A - offset: 0, value: target, kind: fixup_ppc_brcond14
+         bc 4, 10, target
+# CHECK: bca 4, 10, target               # encoding: [0x40,0x8a,A,0bAAAAAA10]
+# CHECK-NEXT:                            #   fixup A - offset: 0, value: target, kind: fixup_ppc_brcond14abs
+         bca 4, 10, target
+# CHECK: bcl 4, 10, target               # encoding: [0x40,0x8a,A,0bAAAAAA01]
+# CHECK-NEXT:                            #   fixup A - offset: 0, value: target, kind: fixup_ppc_brcond14
+         bcl 4, 10, target
+# CHECK: bcla 4, 10, target              # encoding: [0x40,0x8a,A,0bAAAAAA11]
+# CHECK-NEXT:                            #   fixup A - offset: 0, value: target, kind: fixup_ppc_brcond14abs
+         bcla 4, 10, target
 
-# FIXME: bclr 4, 10, 3
-# FIXME: bclrl 4, 10, 3
-# FIXME: bcctr 4, 10, 3
-# FIXME: bcctrl 4, 10, 3
+# CHECK: bclr 4, 10, 3                   # encoding: [0x4c,0x8a,0x18,0x20]
+         bclr 4, 10, 3
+# CHECK: bclr 4, 10, 0                   # encoding: [0x4c,0x8a,0x00,0x20]
+         bclr 4, 10
+# CHECK: bclrl 4, 10, 3                  # encoding: [0x4c,0x8a,0x18,0x21]
+         bclrl 4, 10, 3
+# CHECK: bclrl 4, 10, 0                  # encoding: [0x4c,0x8a,0x00,0x21]
+         bclrl 4, 10
+# CHECK: bcctr 4, 10, 3                  # encoding: [0x4c,0x8a,0x1c,0x20]
+         bcctr 4, 10, 3
+# CHECK: bcctr 4, 10, 0                  # encoding: [0x4c,0x8a,0x04,0x20]
+         bcctr 4, 10
+# CHECK: bcctrl 4, 10, 3                 # encoding: [0x4c,0x8a,0x1c,0x21]
+         bcctrl 4, 10, 3
+# CHECK: bcctrl 4, 10, 0                 # encoding: [0x4c,0x8a,0x04,0x21]
+         bcctrl 4, 10
 
 # Condition register instructions
 
-# FIXME: crand 2, 3, 4
-# FIXME: crnand 2, 3, 4
+# CHECK: crand 2, 3, 4                   # encoding: [0x4c,0x43,0x22,0x02]
+         crand 2, 3, 4
+# CHECK: crnand 2, 3, 4                  # encoding: [0x4c,0x43,0x21,0xc2]
+         crnand 2, 3, 4
 # CHECK: cror 2, 3, 4                    # encoding: [0x4c,0x43,0x23,0x82]
          cror 2, 3, 4
-# FIXME: crxor 2, 3, 4
-# FIXME: crnor 2, 3, 4
+# CHECK: crxor 2, 3, 4                   # encoding: [0x4c,0x43,0x21,0x82]
+         crxor 2, 3, 4
+# CHECK: crnor 2, 3, 4                   # encoding: [0x4c,0x43,0x20,0x42]
+         crnor 2, 3, 4
 # CHECK: creqv 2, 3, 4                   # encoding: [0x4c,0x43,0x22,0x42]
          creqv 2, 3, 4
-# FIXME: crandc 2, 3, 4
-# FIXME: crorc 2, 3, 4
+# CHECK: crandc 2, 3, 4                  # encoding: [0x4c,0x43,0x21,0x02]
+         crandc 2, 3, 4
+# CHECK: crorc 2, 3, 4                   # encoding: [0x4c,0x43,0x23,0x42]
+         crorc 2, 3, 4
 # CHECK: mcrf 2, 3                       # encoding: [0x4d,0x0c,0x00,0x00]
          mcrf 2, 3
 
@@ -43,6 +73,8 @@
 
 # CHECK: sc 1                            # encoding: [0x44,0x00,0x00,0x22]
          sc 1
+# CHECK: sc 0                            # encoding: [0x44,0x00,0x00,0x02]
+         sc
 
 # Fixed-point facility
 
@@ -145,7 +177,12 @@
 # CHECK: stdbrx 2, 3, 4                  # encoding: [0x7c,0x43,0x25,0x28]
          stdbrx 2, 3, 4
 
-# FIXME: Fixed-point load and store multiple instructions
+# Fixed-point load and store multiple instructions
+
+# CHECK: lmw 2, 128(1)                   # encoding: [0xb8,0x41,0x00,0x80]
+         lmw 2, 128(1)
+# CHECK: stmw 2, 128(1)                  # encoding: [0xbc,0x41,0x00,0x80]
+         stmw 2, 128(1)
 
 # FIXME: Fixed-point move assist instructions
 
@@ -418,14 +455,18 @@
          rldicr 2, 3, 4, 5
 # CHECK: rldicr. 2, 3, 4, 5              # encoding: [0x78,0x62,0x21,0x45]
          rldicr. 2, 3, 4, 5
-# FIXME: rldic 2, 3, 4, 5
-# FIXME: rldic. 2, 3, 4, 5
+# CHECK: rldic 2, 3, 4, 5                # encoding: [0x78,0x62,0x21,0x48]
+         rldic 2, 3, 4, 5
+# CHECK: rldic. 2, 3, 4, 5               # encoding: [0x78,0x62,0x21,0x49]
+         rldic. 2, 3, 4, 5
 # CHECK: rldcl 2, 3, 4, 5                # encoding: [0x78,0x62,0x21,0x50]
          rldcl 2, 3, 4, 5
 # CHECK: rldcl. 2, 3, 4, 5               # encoding: [0x78,0x62,0x21,0x51]
          rldcl. 2, 3, 4, 5
-# FIXME: rldcr 2, 3, 4, 5
-# FIXME: rldcr. 2, 3, 4, 5
+# CHECK: rldcr 2, 3, 4, 5                # encoding: [0x78,0x62,0x21,0x52]
+         rldcr 2, 3, 4, 5
+# CHECK: rldcr. 2, 3, 4, 5               # encoding: [0x78,0x62,0x21,0x53]
+         rldcr. 2, 3, 4, 5
 # CHECK: rldimi 2, 3, 4, 5               # encoding: [0x78,0x62,0x21,0x4c]
          rldimi 2, 3, 4, 5
 # CHECK: rldimi. 2, 3, 4, 5              # encoding: [0x78,0x62,0x21,0x4d]
@@ -468,14 +509,16 @@
 
 # Move to/from system register instructions
 
-# FIXME: mtspr 256, 2
-# FIXME: mfspr 2, 256
-# CHECK: mtcrf 16, 2                     # encoding: [0x7c,0x41,0x01,0x20]
-         mtcrf 16, 2
+# CHECK: mtspr 600, 2                    # encoding: [0x7c,0x58,0x93,0xa6]
+         mtspr 600, 2
+# CHECK: mfspr 2, 600                    # encoding: [0x7c,0x58,0x92,0xa6]
+         mfspr 2, 600
+# CHECK: mtcrf 123, 2                    # encoding: [0x7c,0x47,0xb1,0x20]
+         mtcrf 123, 2
 # CHECK: mfcr 2                          # encoding: [0x7c,0x40,0x00,0x26]
          mfcr 2
-# FIXME: mtocrf 16, 2
+# CHECK: mtocrf 16, 2                    # encoding: [0x7c,0x51,0x01,0x20]
+         mtocrf 16, 2
 # CHECK: mfocrf 16, 8                    # encoding: [0x7e,0x10,0x80,0x26]
          mfocrf 16, 8
-# FIXME: mcrxr 2
 

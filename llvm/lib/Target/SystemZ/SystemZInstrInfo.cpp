@@ -13,6 +13,7 @@
 
 #include "SystemZInstrInfo.h"
 #include "SystemZInstrBuilder.h"
+#include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/Target/TargetMachine.h"
 
 #define GET_INSTRINFO_CTOR
@@ -23,7 +24,7 @@ using namespace llvm;
 
 SystemZInstrInfo::SystemZInstrInfo(SystemZTargetMachine &tm)
   : SystemZGenInstrInfo(SystemZ::ADJCALLSTACKDOWN, SystemZ::ADJCALLSTACKUP),
-    RI(tm, *this) {
+    RI(tm) {
 }
 
 // MI is a 128-bit load or store.  Split it into two 64-bit loads or stores,
@@ -80,7 +81,8 @@ void SystemZInstrInfo::splitAdjDynAlloc(MachineBasicBlock::iterator MI) const {
 // Return 0 otherwise.
 //
 // Flag is SimpleBDXLoad for loads and SimpleBDXStore for stores.
-static int isSimpleMove(const MachineInstr *MI, int &FrameIndex, int Flag) {
+static int isSimpleMove(const MachineInstr *MI, int &FrameIndex,
+                        unsigned Flag) {
   const MCInstrDesc &MCID = MI->getDesc();
   if ((MCID.TSFlags & Flag) &&
       MI->getOperand(1).isFI() &&
@@ -124,19 +126,22 @@ bool SystemZInstrInfo::AnalyzeBranch(MachineBasicBlock &MBB,
 
     // A terminator that isn't a branch can't easily be handled by this
     // analysis.
-    unsigned ThisCond;
-    const MachineOperand *ThisTarget;
-    if (!isBranch(I, ThisCond, ThisTarget))
+    if (!I->isBranch())
       return true;
 
     // Can't handle indirect branches.
-    if (!ThisTarget->isMBB())
+    SystemZII::Branch Branch(getBranchInfo(I));
+    if (!Branch.Target->isMBB())
       return true;
 
-    if (ThisCond == SystemZ::CCMASK_ANY) {
+    // Punt on compound branches.
+    if (Branch.Type != SystemZII::BranchNormal)
+      return true;
+
+    if (Branch.CCMask == SystemZ::CCMASK_ANY) {
       // Handle unconditional branches.
       if (!AllowModify) {
-        TBB = ThisTarget->getMBB();
+        TBB = Branch.Target->getMBB();
         continue;
       }
 
@@ -148,7 +153,7 @@ bool SystemZInstrInfo::AnalyzeBranch(MachineBasicBlock &MBB,
       FBB = 0;
 
       // Delete the JMP if it's equivalent to a fall-through.
-      if (MBB.isLayoutSuccessor(ThisTarget->getMBB())) {
+      if (MBB.isLayoutSuccessor(Branch.Target->getMBB())) {
         TBB = 0;
         I->eraseFromParent();
         I = MBB.end();
@@ -156,7 +161,7 @@ bool SystemZInstrInfo::AnalyzeBranch(MachineBasicBlock &MBB,
       }
 
       // TBB is used to indicate the unconditinal destination.
-      TBB = ThisTarget->getMBB();
+      TBB = Branch.Target->getMBB();
       continue;
     }
 
@@ -164,8 +169,8 @@ bool SystemZInstrInfo::AnalyzeBranch(MachineBasicBlock &MBB,
     if (Cond.empty()) {
       // FIXME: add X86-style branch swap
       FBB = TBB;
-      TBB = ThisTarget->getMBB();
-      Cond.push_back(MachineOperand::CreateImm(ThisCond));
+      TBB = Branch.Target->getMBB();
+      Cond.push_back(MachineOperand::CreateImm(Branch.CCMask));
       continue;
     }
 
@@ -175,12 +180,12 @@ bool SystemZInstrInfo::AnalyzeBranch(MachineBasicBlock &MBB,
 
     // Only handle the case where all conditional branches branch to the same
     // destination.
-    if (TBB != ThisTarget->getMBB())
+    if (TBB != Branch.Target->getMBB())
       return true;
 
     // If the conditions are the same, we can leave them alone.
     unsigned OldCond = Cond[0].getImm();
-    if (OldCond == ThisCond)
+    if (OldCond == Branch.CCMask)
       continue;
 
     // FIXME: Try combining conditions like X86 does.  Should be easy on Z!
@@ -198,11 +203,9 @@ unsigned SystemZInstrInfo::RemoveBranch(MachineBasicBlock &MBB) const {
     --I;
     if (I->isDebugValue())
       continue;
-    unsigned Cond;
-    const MachineOperand *Target;
-    if (!isBranch(I, Cond, Target))
+    if (!I->isBranch())
       break;
-    if (!Target->isMBB())
+    if (!getBranchInfo(I).Target->isMBB())
       break;
     // Remove the branch.
     I->eraseFromParent();
@@ -314,6 +317,120 @@ SystemZInstrInfo::loadRegFromStackSlot(MachineBasicBlock &MBB,
                     FrameIdx);
 }
 
+// Return true if MI is a simple load or store with a 12-bit displacement
+// and no index.  Flag is SimpleBDXLoad for loads and SimpleBDXStore for stores.
+static bool isSimpleBD12Move(const MachineInstr *MI, unsigned Flag) {
+  const MCInstrDesc &MCID = MI->getDesc();
+  return ((MCID.TSFlags & Flag) &&
+          isUInt<12>(MI->getOperand(2).getImm()) &&
+          MI->getOperand(3).getReg() == 0);
+}
+
+// Return a MachineMemOperand for FrameIndex with flags MMOFlags.
+// Offset is the byte offset from the start of FrameIndex.
+static MachineMemOperand *getFrameMMO(MachineFunction &MF, int FrameIndex,
+                                      uint64_t &Offset, unsigned MMOFlags) {
+  const MachineFrameInfo *MFI = MF.getFrameInfo();
+  const Value *V = PseudoSourceValue::getFixedStack(FrameIndex);
+  return MF.getMachineMemOperand(MachinePointerInfo(V, Offset), MMOFlags,
+                                 MFI->getObjectSize(FrameIndex),
+                                 MFI->getObjectAlignment(FrameIndex));
+}
+
+MachineInstr *
+SystemZInstrInfo::foldMemoryOperandImpl(MachineFunction &MF,
+                                        MachineInstr *MI,
+                                        const SmallVectorImpl<unsigned> &Ops,
+                                        int FrameIndex) const {
+  const MachineFrameInfo *MFI = MF.getFrameInfo();
+  unsigned Size = MFI->getObjectSize(FrameIndex);
+
+  // Eary exit for cases we don't care about
+  if (Ops.size() != 1)
+    return 0;
+
+  unsigned OpNum = Ops[0];
+  assert(Size == MF.getRegInfo()
+         .getRegClass(MI->getOperand(OpNum).getReg())->getSize() &&
+         "Invalid size combination");
+
+  // Look for cases where the source of a simple store or the destination
+  // of a simple load is being spilled.  Try to use MVC instead.
+  //
+  // Although MVC is in practice a fast choice in these cases, it is still
+  // logically a bytewise copy.  This means that we cannot use it if the
+  // load or store is volatile.  It also means that the transformation is
+  // not valid in cases where the two memories partially overlap; however,
+  // that is not a problem here, because we know that one of the memories
+  // is a full frame index.
+  //
+  // For now we punt if the load or store is also to a frame index.
+  // In that case we might end up eliminating both of them to out-of-range
+  // offsets, which might then force the register scavenger to spill two
+  // other registers.  The backend can only handle one such scavenger spill
+  // at a time.
+  if (OpNum == 0 && MI->hasOneMemOperand()) {
+    MachineMemOperand *MMO = *MI->memoperands_begin();
+    if (MMO->getSize() == Size && !MMO->isVolatile()) {
+      // Handle conversion of loads.
+      if (isSimpleBD12Move(MI, SystemZII::SimpleBDXLoad) &&
+          !MI->getOperand(1).isFI()) {
+        uint64_t Offset = 0;
+        MachineMemOperand *FrameMMO = getFrameMMO(MF, FrameIndex, Offset,
+                                                  MachineMemOperand::MOStore);
+        return BuildMI(MF, MI->getDebugLoc(), get(SystemZ::MVC))
+          .addFrameIndex(FrameIndex).addImm(Offset).addImm(Size)
+          .addOperand(MI->getOperand(1)).addImm(MI->getOperand(2).getImm())
+          .addMemOperand(FrameMMO).addMemOperand(MMO);
+      }
+      // Handle conversion of stores.
+      if (isSimpleBD12Move(MI, SystemZII::SimpleBDXStore) &&
+          !MI->getOperand(1).isFI()) {
+        uint64_t Offset = 0;
+        MachineMemOperand *FrameMMO = getFrameMMO(MF, FrameIndex, Offset,
+                                                  MachineMemOperand::MOLoad);
+        return BuildMI(MF, MI->getDebugLoc(), get(SystemZ::MVC))
+          .addOperand(MI->getOperand(1)).addImm(MI->getOperand(2).getImm())
+          .addImm(Size).addFrameIndex(FrameIndex).addImm(Offset)
+          .addMemOperand(MMO).addMemOperand(FrameMMO);
+      }
+    }
+  }
+
+  // If the spilled operand is the final one, try to change <INSN>R
+  // into <INSN>.
+  int MemOpcode = SystemZ::getMemOpcode(MI->getOpcode());
+  if (MemOpcode >= 0) {
+    unsigned NumOps = MI->getNumExplicitOperands();
+    if (OpNum == NumOps - 1) {
+      const MCInstrDesc &MemDesc = get(MemOpcode);
+      uint64_t AccessBytes = SystemZII::getAccessSize(MemDesc.TSFlags);
+      assert(AccessBytes != 0 && "Size of access should be known");
+      assert(AccessBytes <= Size && "Access outside the frame index");
+      uint64_t Offset = Size - AccessBytes;
+      MachineMemOperand *FrameMMO = getFrameMMO(MF, FrameIndex, Offset,
+                                                MachineMemOperand::MOLoad);
+      MachineInstrBuilder MIB = BuildMI(MF, MI->getDebugLoc(), get(MemOpcode));
+      for (unsigned I = 0; I < OpNum; ++I)
+        MIB.addOperand(MI->getOperand(I));
+      MIB.addFrameIndex(FrameIndex).addImm(Offset);
+      if (MemDesc.TSFlags & SystemZII::HasIndex)
+        MIB.addReg(0);
+      MIB.addMemOperand(FrameMMO);
+      return MIB;
+    }
+  }
+
+  return 0;
+}
+
+MachineInstr *
+SystemZInstrInfo::foldMemoryOperandImpl(MachineFunction &MF, MachineInstr* MI,
+                                        const SmallVectorImpl<unsigned> &Ops,
+                                        MachineInstr* LoadMI) const {
+  return 0;
+}
+
 bool
 SystemZInstrInfo::expandPostRAPseudo(MachineBasicBlock::iterator MI) const {
   switch (MI->getOpcode()) {
@@ -358,25 +475,32 @@ uint64_t SystemZInstrInfo::getInstSizeInBytes(const MachineInstr *MI) const {
   return MI->getDesc().getSize();
 }
 
-bool SystemZInstrInfo::isBranch(const MachineInstr *MI, unsigned &Cond,
-                                const MachineOperand *&Target) const {
+SystemZII::Branch
+SystemZInstrInfo::getBranchInfo(const MachineInstr *MI) const {
   switch (MI->getOpcode()) {
   case SystemZ::BR:
   case SystemZ::J:
   case SystemZ::JG:
-    Cond = SystemZ::CCMASK_ANY;
-    Target = &MI->getOperand(0);
-    return true;
+    return SystemZII::Branch(SystemZII::BranchNormal, SystemZ::CCMASK_ANY,
+                             &MI->getOperand(0));
 
   case SystemZ::BRC:
   case SystemZ::BRCL:
-    Cond = MI->getOperand(0).getImm();
-    Target = &MI->getOperand(1);
-    return true;
+    return SystemZII::Branch(SystemZII::BranchNormal,
+                             MI->getOperand(0).getImm(), &MI->getOperand(1));
+
+  case SystemZ::CIJ:
+  case SystemZ::CRJ:
+    return SystemZII::Branch(SystemZII::BranchC, MI->getOperand(2).getImm(),
+                             &MI->getOperand(3));
+
+  case SystemZ::CGIJ:
+  case SystemZ::CGRJ:
+    return SystemZII::Branch(SystemZII::BranchCG, MI->getOperand(2).getImm(),
+                             &MI->getOperand(3));
 
   default:
-    assert(!MI->getDesc().isBranch() && "Unknown branch opcode");
-    return false;
+    llvm_unreachable("Unrecognized branch opcode");
   }
 }
 
@@ -432,6 +556,22 @@ unsigned SystemZInstrInfo::getOpcodeForOffset(unsigned Opcode,
       return Opcode;
   }
   return 0;
+}
+
+unsigned SystemZInstrInfo::getCompareAndBranch(unsigned Opcode,
+                                               const MachineInstr *MI) const {
+  switch (Opcode) {
+  case SystemZ::CR:
+    return SystemZ::CRJ;
+  case SystemZ::CGR:
+    return SystemZ::CGRJ;
+  case SystemZ::CHI:
+    return MI && isInt<8>(MI->getOperand(1).getImm()) ? SystemZ::CIJ : 0;
+  case SystemZ::CGHI:
+    return MI && isInt<8>(MI->getOperand(1).getImm()) ? SystemZ::CGIJ : 0;
+  default:
+    return 0;
+  }
 }
 
 void SystemZInstrInfo::loadImmediate(MachineBasicBlock &MBB,

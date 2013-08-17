@@ -1746,6 +1746,12 @@ static void handleNoCommonAttr(Sema &S, Decl *D, const AttributeList &Attr) {
 
 static void handleCommonAttr(Sema &S, Decl *D, const AttributeList &Attr) {
   assert(!Attr.isInvalid());
+
+  if (S.LangOpts.CPlusPlus) {
+    S.Diag(Attr.getLoc(), diag::err_common_not_supported_cplusplus);
+    return;
+  }
+
   if (isa<VarDecl>(D))
     D->addAttr(::new (S.Context)
                CommonAttr(Attr.getRange(), S.Context,
@@ -3724,14 +3730,18 @@ static void handleModeAttr(Sema &S, Decl *D, const AttributeList &Attr) {
     NewTy = S.Context.LongDoubleTy;
     break;
   case 128:
-    if (!IntegerMode) {
+    if (!IntegerMode && &S.Context.getTargetInfo().getLongDoubleFormat() !=
+        &llvm::APFloat::PPCDoubleDouble) {
       S.Diag(Attr.getLoc(), diag::err_unsupported_machine_mode) << Name;
       return;
     }
-    if (OldTy->isSignedIntegerType())
-      NewTy = S.Context.Int128Ty;
-    else
-      NewTy = S.Context.UnsignedInt128Ty;
+    if (IntegerMode) {
+      if (OldTy->isSignedIntegerType())
+        NewTy = S.Context.Int128Ty;
+      else
+        NewTy = S.Context.UnsignedInt128Ty;
+    } else
+      NewTy = S.Context.LongDoubleTy;
     break;
   }
 
@@ -3740,11 +3750,14 @@ static void handleModeAttr(Sema &S, Decl *D, const AttributeList &Attr) {
   }
 
   // Install the new type.
-  if (TypedefNameDecl *TD = dyn_cast<TypedefNameDecl>(D)) {
-    // FIXME: preserve existing source info.
-    TD->setTypeSourceInfo(S.Context.getTrivialTypeSourceInfo(NewTy));
-  } else
+  if (TypedefNameDecl *TD = dyn_cast<TypedefNameDecl>(D))
+    TD->setModedTypeSourceInfo(TD->getTypeSourceInfo(), NewTy);
+  else
     cast<ValueDecl>(D)->setType(NewTy);
+
+  D->addAttr(::new (S.Context)
+             ModeAttr(Attr.getRange(), S.Context, Name,
+                      Attr.getAttributeSpellingListIndex()));
 }
 
 static void handleNoDebugAttr(Sema &S, Decl *D, const AttributeList &Attr) {

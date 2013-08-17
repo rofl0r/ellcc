@@ -29,12 +29,14 @@
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/MachineLoopInfo.h"
+#include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/RegisterScavenging.h"
 #include "llvm/IR/InlineAsm.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetFrameLowering.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetMachine.h"
@@ -45,6 +47,11 @@ using namespace llvm;
 
 char PEI::ID = 0;
 char &llvm::PrologEpilogCodeInserterID = PEI::ID;
+
+static cl::opt<unsigned>
+WarnStackSize("warn-stack-size", cl::Hidden, cl::init((unsigned)-1),
+              cl::desc("Warn for stack size bigger than the given"
+                       " number"));
 
 INITIALIZE_PASS_BEGIN(PEI, "prologepilog",
                 "Prologue/Epilogue Insertion", false, false)
@@ -127,6 +134,13 @@ bool PEI::runOnMachineFunction(MachineFunction &Fn) {
 
   // Clear any vregs created by virtual scavenging.
   Fn.getRegInfo().clearVirtRegs();
+
+  // Warn on stack size when we exceeds the given limit.
+  MachineFrameInfo *MFI = Fn.getFrameInfo();
+  if (WarnStackSize.getNumOccurrences() > 0 &&
+      WarnStackSize < MFI->getStackSize())
+    errs() << "warning: Stack size limit exceeded (" << MFI->getStackSize()
+           << ") in " << Fn.getName()  << ".\n";
 
   delete RS;
   clearAllSets();
@@ -214,7 +228,8 @@ void PEI::calculateCalleeSavedRegisters(MachineFunction &F) {
   std::vector<CalleeSavedInfo> CSI;
   for (unsigned i = 0; CSRegs[i]; ++i) {
     unsigned Reg = CSRegs[i];
-    if (F.getRegInfo().isPhysRegUsed(Reg)) {
+    // Functions which call __builtin_unwind_init get all their registers saved.
+    if (F.getRegInfo().isPhysRegUsed(Reg) || F.getMMI().callsUnwindInit()) {
       // If the reg is modified, save it!
       CSI.push_back(CalleeSavedInfo(Reg));
     }
@@ -549,8 +564,8 @@ void PEI::calculateFrameObjectOffsets(MachineFunction &Fn) {
       !RegInfo->needsStackRealignment(Fn)) {
     SmallVector<int, 2> SFIs;
     RS->getScavengingFrameIndices(SFIs);
-    for (SmallVector<int, 2>::iterator I = SFIs.begin(),
-         IE = SFIs.end(); I != IE; ++I)
+    for (SmallVectorImpl<int>::iterator I = SFIs.begin(),
+           IE = SFIs.end(); I != IE; ++I)
       AdjustStackOffset(MFI, *I, StackGrowsDown, Offset, MaxAlign);
   }
 
@@ -634,8 +649,8 @@ void PEI::calculateFrameObjectOffsets(MachineFunction &Fn) {
              !RegInfo->useFPForScavengingIndex(Fn))) {
     SmallVector<int, 2> SFIs;
     RS->getScavengingFrameIndices(SFIs);
-    for (SmallVector<int, 2>::iterator I = SFIs.begin(),
-         IE = SFIs.end(); I != IE; ++I)
+    for (SmallVectorImpl<int>::iterator I = SFIs.begin(),
+           IE = SFIs.end(); I != IE; ++I)
       AdjustStackOffset(MFI, *I, StackGrowsDown, Offset, MaxAlign);
   }
 
@@ -762,7 +777,22 @@ void PEI::replaceFrameIndices(MachineFunction &Fn) {
       bool DoIncr = true;
       for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i) {
         if (!MI->getOperand(i).isFI())
-            continue;
+          continue;
+
+        // Frame indicies in debug values are encoded in a target independent
+        // way with simply the frame index and offset rather than any
+        // target-specific addressing mode.
+        if (MI->isDebugValue()) {
+          assert(i == 0 && "Frame indicies can only appear as the first "
+                           "operand of a DBG_VALUE machine instruction");
+          unsigned Reg;
+          MachineOperand &Offset = MI->getOperand(1);
+          Offset.setImm(Offset.getImm() +
+                        TFI->getFrameIndexReference(
+                            Fn, MI->getOperand(0).getIndex(), Reg));
+          MI->getOperand(0).ChangeToRegister(Reg, false /*isDef*/);
+          continue;
+        }
 
         // Some instructions (e.g. inline asm instructions) can have
         // multiple frame indices and/or cause eliminateFrameIndex

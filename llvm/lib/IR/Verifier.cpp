@@ -463,11 +463,11 @@ void Verifier::visitGlobalVariable(GlobalVariable &GV) {
         Assert1(InitArray, "wrong initalizer for intrinsic global variable",
                 Init);
         for (unsigned i = 0, e = InitArray->getNumOperands(); i != e; ++i) {
-          Value *V = Init->getOperand(i)->stripPointerCasts();
-          // stripPointerCasts strips aliases, so we only need to check for
-          // variables and functions.
-          Assert1(isa<GlobalVariable>(V) || isa<Function>(V),
-                  "invalid llvm.used member", V);
+          Value *V = Init->getOperand(i)->stripPointerCastsNoFollowAliases();
+          Assert1(
+              isa<GlobalVariable>(V) || isa<Function>(V) || isa<GlobalAlias>(V),
+              "invalid llvm.used member", V);
+          Assert1(V->hasName(), "members of llvm.used must be named", V);
         }
       }
     }
@@ -692,14 +692,16 @@ void Verifier::VerifyAttributeTypes(AttributeSet Attrs, unsigned Idx,
         I->getKindAsEnum() == Attribute::SanitizeMemory ||
         I->getKindAsEnum() == Attribute::MinSize ||
         I->getKindAsEnum() == Attribute::NoDuplicate ||
+        I->getKindAsEnum() == Attribute::Builtin ||
         I->getKindAsEnum() == Attribute::NoBuiltin ||
         I->getKindAsEnum() == Attribute::Cold) {
-      if (!isFunction)
-          CheckFailed("Attribute '" + I->getKindAsString() +
+      if (!isFunction) {
+          CheckFailed("Attribute '" + I->getAsString() +
                       "' only applies to functions!", V);
           return;
+      }
     } else if (isFunction) {
-        CheckFailed("Attribute '" + I->getKindAsString() +
+        CheckFailed("Attribute '" + I->getAsString() +
                     "' does not apply to functions!", V);
         return;
     }
@@ -876,6 +878,13 @@ void Verifier::visitFunction(Function &F) {
 
   // Check function attributes.
   VerifyFunctionAttrs(FT, Attrs, &F);
+
+  // On function declarations/definitions, we do not support the builtin
+  // attribute. We do not check this in VerifyFunctionAttrs since that is
+  // checking for Attributes that can/can not ever be on functions.
+  Assert1(!Attrs.hasAttribute(AttributeSet::FunctionIndex,
+                              Attribute::Builtin),
+          "Attribute 'builtin' can only be applied to a callsite.", &F);
 
   // Check that this function meets the restrictions on this calling convention.
   switch (F.getCallingConv()) {
@@ -1435,6 +1444,14 @@ void Verifier::VerifyCallSite(CallSite CS) {
               "Function has metadata parameter but isn't an intrinsic", I);
   }
 
+  // If the call site has the 'builtin' attribute, verify that it's applied to a
+  // direct call to a function with the 'nobuiltin' attribute.
+  if (CS.hasFnAttr(Attribute::Builtin))
+    Assert1(CS.getCalledFunction() &&
+            CS.getCalledFunction()->hasFnAttribute(Attribute::NoBuiltin),
+            "Attribute 'builtin' can only be used in a call to a function with "
+            "the 'nobuiltin' attribute.", I);
+
   visitInstruction(*I);
 }
 
@@ -1955,7 +1972,7 @@ void Verifier::visitInstruction(Instruction &I) {
     Value *Op0 = MD->getOperand(0);
     if (ConstantFP *CFP0 = dyn_cast_or_null<ConstantFP>(Op0)) {
       APFloat Accuracy = CFP0->getValueAPF();
-      Assert1(Accuracy.isNormal() && !Accuracy.isNegative(),
+      Assert1(Accuracy.isFiniteNonZero() && !Accuracy.isNegative(),
               "fpmath accuracy not a positive number!", &I);
     } else {
       Assert1(false, "invalid fpmath accuracy!", &I);

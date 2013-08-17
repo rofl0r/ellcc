@@ -320,7 +320,7 @@ SDValue VectorLegalizer::PromoteVectorOp(SDValue Op) {
   assert(Op.getNode()->getNumValues() == 1 &&
          "Can't promote a vector with multiple results!");
   MVT NVT = TLI.getTypeToPromoteTo(Op.getOpcode(), VT);
-  SDLoc dl(Op);;
+  SDLoc dl(Op);
   SmallVector<SDValue, 4> Operands(Op.getNumOperands());
 
   for (unsigned j = 0; j != Op.getNumOperands(); ++j) {
@@ -357,7 +357,7 @@ SDValue VectorLegalizer::PromoteVectorOpINT_TO_FP(SDValue Op) {
   // Build a new vector type and check if it is legal.
   MVT NVT = MVT::getVectorVT(EltVT.getSimpleVT(), NumElts);
 
-  SDLoc dl(Op);;
+  SDLoc dl(Op);
   SmallVector<SDValue, 4> Operands(Op.getNumOperands());
 
   unsigned Opc = Op.getOpcode() == ISD::UINT_TO_FP ? ISD::ZERO_EXTEND :
@@ -375,7 +375,7 @@ SDValue VectorLegalizer::PromoteVectorOpINT_TO_FP(SDValue Op) {
 
 
 SDValue VectorLegalizer::ExpandLoad(SDValue Op) {
-  SDLoc dl(Op);;
+  SDLoc dl(Op);
   LoadSDNode *LD = cast<LoadSDNode>(Op.getNode());
   SDValue Chain = LD->getChain();
   SDValue BasePTR = LD->getBasePtr();
@@ -519,7 +519,7 @@ SDValue VectorLegalizer::ExpandLoad(SDValue Op) {
 }
 
 SDValue VectorLegalizer::ExpandStore(SDValue Op) {
-  SDLoc dl(Op);;
+  SDLoc dl(Op);
   StoreSDNode *ST = cast<StoreSDNode>(Op.getNode());
   SDValue Chain = ST->getChain();
   SDValue BasePTR = ST->getBasePtr();
@@ -574,7 +574,7 @@ SDValue VectorLegalizer::ExpandSELECT(SDValue Op) {
   // operands are vectors. Lower this select to VSELECT and implement it
   // using XOR AND OR. The selector bit is broadcasted. 
   EVT VT = Op.getValueType();
-  SDLoc DL(Op);;
+  SDLoc DL(Op);
 
   SDValue Mask = Op.getOperand(0);
   SDValue Op1 = Op.getOperand(1);
@@ -605,7 +605,7 @@ SDValue VectorLegalizer::ExpandSELECT(SDValue Op) {
   // What is the size of each element in the vector mask.
   EVT BitTy = MaskTy.getScalarType();
 
-  Mask = DAG.getNode(ISD::SELECT, DL, BitTy, Mask,
+  Mask = DAG.getSelect(DL, BitTy, Mask,
           DAG.getConstant(APInt::getAllOnesValue(BitTy.getSizeInBits()), BitTy),
           DAG.getConstant(0, BitTy));
 
@@ -637,7 +637,7 @@ SDValue VectorLegalizer::ExpandSEXTINREG(SDValue Op) {
       TLI.getOperationAction(ISD::SHL, VT) == TargetLowering::Expand)
     return DAG.UnrollVectorOp(Op.getNode());
 
-  SDLoc DL(Op);;
+  SDLoc DL(Op);
   EVT OrigTy = cast<VTSDNode>(Op->getOperand(1))->getVT();
 
   unsigned BW = VT.getScalarType().getSizeInBits();
@@ -652,7 +652,7 @@ SDValue VectorLegalizer::ExpandSEXTINREG(SDValue Op) {
 SDValue VectorLegalizer::ExpandVSELECT(SDValue Op) {
   // Implement VSELECT in terms of XOR, AND, OR
   // on platforms which do not support blend natively.
-  SDLoc DL(Op);;
+  SDLoc DL(Op);
 
   SDValue Mask = Op.getOperand(0);
   SDValue Op1 = Op.getOperand(1);
@@ -698,7 +698,7 @@ SDValue VectorLegalizer::ExpandVSELECT(SDValue Op) {
 
 SDValue VectorLegalizer::ExpandUINT_TO_FLOAT(SDValue Op) {
   EVT VT = Op.getOperand(0).getValueType();
-  SDLoc DL(Op);;
+  SDLoc DL(Op);
 
   // Make sure that the SINT_TO_FP and SRL instructions are available.
   if (TLI.getOperationAction(ISD::SINT_TO_FP, VT) == TargetLowering::Expand ||
@@ -751,7 +751,7 @@ SDValue VectorLegalizer::UnrollVSETCC(SDValue Op) {
   EVT EltVT = VT.getVectorElementType();
   SDValue LHS = Op.getOperand(0), RHS = Op.getOperand(1), CC = Op.getOperand(2);
   EVT TmpEltVT = LHS.getValueType().getVectorElementType();
-  SDLoc dl(Op);;
+  SDLoc dl(Op);
   SmallVector<SDValue, 8> Ops(NumElems);
   for (unsigned i = 0; i < NumElems; ++i) {
     SDValue LHSElem = DAG.getNode(ISD::EXTRACT_VECTOR_ELT, dl, TmpEltVT, LHS,
@@ -761,10 +761,10 @@ SDValue VectorLegalizer::UnrollVSETCC(SDValue Op) {
     Ops[i] = DAG.getNode(ISD::SETCC, dl,
                          TLI.getSetCCResultType(*DAG.getContext(), TmpEltVT),
                          LHSElem, RHSElem, CC);
-    Ops[i] = DAG.getNode(ISD::SELECT, dl, EltVT, Ops[i],
-                         DAG.getConstant(APInt::getAllOnesValue
-                                         (EltVT.getSizeInBits()), EltVT),
-                         DAG.getConstant(0, EltVT));
+    Ops[i] = DAG.getSelect(dl, EltVT, Ops[i],
+                           DAG.getConstant(APInt::getAllOnesValue
+                                           (EltVT.getSizeInBits()), EltVT),
+                           DAG.getConstant(0, EltVT));
   }
   return DAG.getNode(ISD::BUILD_VECTOR, dl, VT, &Ops[0], NumElems);
 }

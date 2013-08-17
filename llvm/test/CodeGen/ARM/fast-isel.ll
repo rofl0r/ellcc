@@ -1,4 +1,5 @@
 ; RUN: llc < %s -O0 -fast-isel-abort -relocation-model=dynamic-no-pic -mtriple=armv7-apple-ios | FileCheck %s --check-prefix=ARM
+; RUN: llc < %s -O0 -fast-isel-abort -relocation-model=dynamic-no-pic -mtriple=armv7-linux-gnueabi | FileCheck %s --check-prefix=ARM
 ; RUN: llc < %s -O0 -fast-isel-abort -relocation-model=dynamic-no-pic -mtriple=thumbv7-apple-ios | FileCheck %s --check-prefix=THUMB
 
 ; Very basic fast-isel functionality.
@@ -80,12 +81,12 @@ bb1:
 
 ; THUMB: and
 ; THUMB: strb
-; THUMB: uxtb
+; THUMB: and{{.*}}, #255
 ; THUMB: strh
 ; THUMB: uxth
 ; ARM: and
 ; ARM: strb
-; ARM: uxtb
+; ARM: and{{.*}}, #255
 ; ARM: strh
 ; ARM: uxth
 
@@ -121,13 +122,13 @@ bb3:
 
 ; THUMB: ldrb
 ; THUMB: ldrh
-; THUMB: uxtb
+; THUMB: and{{.*}}, #255
 ; THUMB: sxth
 ; THUMB: add
 ; THUMB: sub
 ; ARM: ldrb
 ; ARM: ldrh
-; ARM: uxtb
+; ARM: and{{.*}}, #255
 ; ARM: sxth
 ; ARM: add
 ; ARM: sub

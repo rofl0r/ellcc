@@ -253,6 +253,16 @@ bool SystemZTargetLowering::isFPImmLegal(const APFloat &Imm, EVT VT) const {
   return Imm.isZero() || Imm.isNegZero();
 }
 
+bool SystemZTargetLowering::allowsUnalignedMemoryAccesses(EVT VT,
+                                                          bool *Fast) const {
+  // Unaligned accesses should never be slower than the expanded version.
+  // We check specifically for aligned accesses in the few cases where
+  // they are required.
+  if (Fast)
+    *Fast = true;
+  return true;
+}
+  
 //===----------------------------------------------------------------------===//
 // Inline asm support
 //===----------------------------------------------------------------------===//
@@ -350,7 +360,7 @@ getSingleConstraintMatchWeight(AsmOperandInfo &info,
 }
 
 std::pair<unsigned, const TargetRegisterClass *> SystemZTargetLowering::
-getRegForInlineAsmConstraint(const std::string &Constraint, EVT VT) const {
+getRegForInlineAsmConstraint(const std::string &Constraint, MVT VT) const {
   if (Constraint.size() == 1) {
     // GCC Constraint Letters
     switch (Constraint[0]) {
@@ -623,7 +633,8 @@ SystemZTargetLowering::LowerCall(CallLoweringInfo &CLI,
   unsigned NumBytes = ArgCCInfo.getNextStackOffset();
 
   // Mark the start of the call.
-  Chain = DAG.getCALLSEQ_START(Chain, DAG.getConstant(NumBytes, PtrVT, true));
+  Chain = DAG.getCALLSEQ_START(Chain, DAG.getConstant(NumBytes, PtrVT, true),
+                               DL);
 
   // Copy argument values to their designated locations.
   SmallVector<std::pair<unsigned, SDValue>, 9> RegsToPass;
@@ -714,7 +725,7 @@ SystemZTargetLowering::LowerCall(CallLoweringInfo &CLI,
   Chain = DAG.getCALLSEQ_END(Chain,
                              DAG.getConstant(NumBytes, PtrVT, true),
                              DAG.getConstant(0, PtrVT, true),
-                             Glue);
+                             Glue, DL);
   Glue = Chain.getValue(1);
 
   // Assign locations to each value returned by this call.
@@ -1258,18 +1269,23 @@ SDValue SystemZTargetLowering::lowerSDIVREM(SDValue Op,
   SDValue Op1 = Op.getOperand(1);
   EVT VT = Op.getValueType();
   SDLoc DL(Op);
+  unsigned Opcode;
 
   // We use DSGF for 32-bit division.
   if (is32Bit(VT)) {
     Op0 = DAG.getNode(ISD::SIGN_EXTEND, DL, MVT::i64, Op0);
-    Op1 = DAG.getNode(ISD::SIGN_EXTEND, DL, MVT::i64, Op1);
-  }
+    Opcode = SystemZISD::SDIVREM32;
+  } else if (DAG.ComputeNumSignBits(Op1) > 32) {
+    Op1 = DAG.getNode(ISD::TRUNCATE, DL, MVT::i32, Op1);
+    Opcode = SystemZISD::SDIVREM32;
+  } else    
+    Opcode = SystemZISD::SDIVREM64;
 
   // DSG(F) takes a 64-bit dividend, so the even register in the GR128
   // input is "don't care".  The instruction returns the remainder in
   // the even register and the quotient in the odd register.
   SDValue Ops[2];
-  lowerGR128Binary(DAG, DL, VT, SystemZ::AEXT128_64, SystemZISD::SDIVREM64,
+  lowerGR128Binary(DAG, DL, VT, SystemZ::AEXT128_64, Opcode,
                    Op0, Op1, Ops[1], Ops[0]);
   return DAG.getMergeValues(Ops, 2, DL);
 }
@@ -1609,6 +1625,34 @@ static MachineBasicBlock *splitBlockAfter(MachineInstr *MI,
   return NewMBB;
 }
 
+bool SystemZTargetLowering::
+convertPrevCompareToBranch(MachineBasicBlock *MBB,
+                           MachineBasicBlock::iterator MBBI,
+                           unsigned CCMask, MachineBasicBlock *Target) const {
+  MachineBasicBlock::iterator Compare = MBBI;
+  MachineBasicBlock::iterator Begin = MBB->begin();
+  do
+    {
+      if (Compare == Begin)
+        return false;
+      --Compare;
+    }
+  while (Compare->isDebugValue());
+
+  const SystemZInstrInfo *TII = TM.getInstrInfo();
+  unsigned FusedOpcode = TII->getCompareAndBranch(Compare->getOpcode(),
+                                                  Compare);
+  if (!FusedOpcode)
+    return false;
+
+  DebugLoc DL = Compare->getDebugLoc();
+  BuildMI(*MBB, MBBI, DL, TII->get(FusedOpcode))
+    .addOperand(Compare->getOperand(0)).addOperand(Compare->getOperand(1))
+    .addImm(CCMask).addMBB(Target);
+  Compare->removeFromParent();
+  return true;
+}
+
 // Implement EmitInstrWithCustomInserter for pseudo Select* instruction MI.
 MachineBasicBlock *
 SystemZTargetLowering::emitSelect(MachineInstr *MI,
@@ -1626,13 +1670,17 @@ SystemZTargetLowering::emitSelect(MachineInstr *MI,
   MachineBasicBlock *FalseMBB = emitBlockAfter(StartMBB);
 
   //  StartMBB:
-  //   ...
-  //   TrueVal = ...
-  //   cmpTY ccX, r1, r2
-  //   jCC JoinMBB
+  //   BRC CCMask, JoinMBB
   //   # fallthrough to FalseMBB
+  //
+  // The original DAG glues comparisons to their uses, both to ensure
+  // that no CC-clobbering instructions are inserted between them, and
+  // to ensure that comparison results are not reused.  This means that
+  // this Select is the sole user of any preceding comparison instruction
+  // and that we can try to use a fused compare and branch instead.
   MBB = StartMBB;
-  BuildMI(MBB, DL, TII->get(SystemZ::BRC)).addImm(CCMask).addMBB(JoinMBB);
+  if (!convertPrevCompareToBranch(MBB, MI, CCMask, JoinMBB))
+    BuildMI(MBB, DL, TII->get(SystemZ::BRC)).addImm(CCMask).addMBB(JoinMBB);
   MBB->addSuccessor(JoinMBB);
   MBB->addSuccessor(FalseMBB);
 
@@ -1648,6 +1696,59 @@ SystemZTargetLowering::emitSelect(MachineInstr *MI,
   BuildMI(*MBB, MBB->begin(), DL, TII->get(SystemZ::PHI), DestReg)
     .addReg(TrueReg).addMBB(StartMBB)
     .addReg(FalseReg).addMBB(FalseMBB);
+
+  MI->eraseFromParent();
+  return JoinMBB;
+}
+
+// Implement EmitInstrWithCustomInserter for pseudo CondStore* instruction MI.
+// StoreOpcode is the store to use and Invert says whether the store should
+// happen when the condition is false rather than true.
+MachineBasicBlock *
+SystemZTargetLowering::emitCondStore(MachineInstr *MI,
+                                     MachineBasicBlock *MBB,
+                                     unsigned StoreOpcode, bool Invert) const {
+  const SystemZInstrInfo *TII = TM.getInstrInfo();
+
+  MachineOperand Base = MI->getOperand(0);
+  int64_t Disp        = MI->getOperand(1).getImm();
+  unsigned IndexReg   = MI->getOperand(2).getReg();
+  unsigned SrcReg     = MI->getOperand(3).getReg();
+  unsigned CCMask     = MI->getOperand(4).getImm();
+  DebugLoc DL         = MI->getDebugLoc();
+
+  StoreOpcode = TII->getOpcodeForOffset(StoreOpcode, Disp);
+
+  // Get the condition needed to branch around the store.
+  if (!Invert)
+    CCMask = CCMask ^ SystemZ::CCMASK_ANY;
+
+  MachineBasicBlock *StartMBB = MBB;
+  MachineBasicBlock *JoinMBB  = splitBlockAfter(MI, MBB);
+  MachineBasicBlock *FalseMBB = emitBlockAfter(StartMBB);
+
+  //  StartMBB:
+  //   BRC CCMask, JoinMBB
+  //   # fallthrough to FalseMBB
+  //
+  // The original DAG glues comparisons to their uses, both to ensure
+  // that no CC-clobbering instructions are inserted between them, and
+  // to ensure that comparison results are not reused.  This means that
+  // this CondStore is the sole user of any preceding comparison instruction
+  // and that we can try to use a fused compare and branch instead.
+  MBB = StartMBB;
+  if (!convertPrevCompareToBranch(MBB, MI, CCMask, JoinMBB))
+    BuildMI(MBB, DL, TII->get(SystemZ::BRC)).addImm(CCMask).addMBB(JoinMBB);
+  MBB->addSuccessor(JoinMBB);
+  MBB->addSuccessor(FalseMBB);
+
+  //  FalseMBB:
+  //   store %SrcReg, %Disp(%Index,%Base)
+  //   # fallthrough to JoinMBB
+  MBB = FalseMBB;
+  BuildMI(MBB, DL, TII->get(StoreOpcode))
+    .addReg(SrcReg).addOperand(Base).addImm(Disp).addReg(IndexReg);
+  MBB->addSuccessor(JoinMBB);
 
   MI->eraseFromParent();
   return JoinMBB;
@@ -1854,10 +1955,17 @@ SystemZTargetLowering::emitAtomicLoadMinMax(MachineInstr *MI,
   if (IsSubWord)
     BuildMI(MBB, DL, TII->get(SystemZ::RLL), RotatedOldVal)
       .addReg(OldVal).addReg(BitShift).addImm(0);
-  BuildMI(MBB, DL, TII->get(CompareOpcode))
-    .addReg(RotatedOldVal).addReg(Src2);
-  BuildMI(MBB, DL, TII->get(SystemZ::BRC))
-    .addImm(KeepOldMask).addMBB(UpdateMBB);
+  unsigned FusedOpcode = TII->getCompareAndBranch(CompareOpcode);
+  if (FusedOpcode)
+    BuildMI(MBB, DL, TII->get(FusedOpcode))
+      .addReg(RotatedOldVal).addReg(Src2)
+      .addImm(KeepOldMask).addMBB(UpdateMBB);
+  else {
+    BuildMI(MBB, DL, TII->get(CompareOpcode))
+      .addReg(RotatedOldVal).addReg(Src2);
+    BuildMI(MBB, DL, TII->get(SystemZ::BRC))
+      .addImm(KeepOldMask).addMBB(UpdateMBB);
+  }
   MBB->addSuccessor(UpdateMBB);
   MBB->addSuccessor(UseAltMBB);
 
@@ -1959,8 +2067,7 @@ SystemZTargetLowering::emitAtomicCmpSwapW(MachineInstr *MI,
   //                      ^^ Replace the upper 32-BitSize bits of the
   //                         comparison value with those that we loaded,
   //                         so that we can use a full word comparison.
-  //   CR %Dest, %RetryCmpVal
-  //   JNE DoneMBB
+  //   CRJNE %Dest, %RetryCmpVal, DoneMBB
   //   # Fall through to SetMBB
   MBB = LoopMBB;
   BuildMI(MBB, DL, TII->get(SystemZ::PHI), OldVal)
@@ -1976,9 +2083,9 @@ SystemZTargetLowering::emitAtomicCmpSwapW(MachineInstr *MI,
     .addReg(OldVal).addReg(BitShift).addImm(BitSize);
   BuildMI(MBB, DL, TII->get(SystemZ::RISBG32), RetryCmpVal)
     .addReg(CmpVal).addReg(Dest).addImm(32).addImm(63 - BitSize).addImm(0);
-  BuildMI(MBB, DL, TII->get(SystemZ::CR))
-    .addReg(Dest).addReg(RetryCmpVal);
-  BuildMI(MBB, DL, TII->get(SystemZ::BRC)).addImm(MaskNE).addMBB(DoneMBB);
+  BuildMI(MBB, DL, TII->get(SystemZ::CRJ))
+    .addReg(Dest).addReg(RetryCmpVal)
+    .addImm(MaskNE).addMBB(DoneMBB);
   MBB->addSuccessor(DoneMBB);
   MBB->addSuccessor(SetMBB);
 
@@ -2050,6 +2157,43 @@ EmitInstrWithCustomInserter(MachineInstr *MI, MachineBasicBlock *MBB) const {
   case SystemZ::SelectF64:
   case SystemZ::SelectF128:
     return emitSelect(MI, MBB);
+
+  case SystemZ::CondStore8_32:
+    return emitCondStore(MI, MBB, SystemZ::STC32, false);
+  case SystemZ::CondStore8_32Inv:
+    return emitCondStore(MI, MBB, SystemZ::STC32, true);
+  case SystemZ::CondStore16_32:
+    return emitCondStore(MI, MBB, SystemZ::STH32, false);
+  case SystemZ::CondStore16_32Inv:
+    return emitCondStore(MI, MBB, SystemZ::STH32, true);
+  case SystemZ::CondStore32_32:
+    return emitCondStore(MI, MBB, SystemZ::ST32, false);
+  case SystemZ::CondStore32_32Inv:
+    return emitCondStore(MI, MBB, SystemZ::ST32, true);
+  case SystemZ::CondStore8:
+    return emitCondStore(MI, MBB, SystemZ::STC, false);
+  case SystemZ::CondStore8Inv:
+    return emitCondStore(MI, MBB, SystemZ::STC, true);
+  case SystemZ::CondStore16:
+    return emitCondStore(MI, MBB, SystemZ::STH, false);
+  case SystemZ::CondStore16Inv:
+    return emitCondStore(MI, MBB, SystemZ::STH, true);
+  case SystemZ::CondStore32:
+    return emitCondStore(MI, MBB, SystemZ::ST, false);
+  case SystemZ::CondStore32Inv:
+    return emitCondStore(MI, MBB, SystemZ::ST, true);
+  case SystemZ::CondStore64:
+    return emitCondStore(MI, MBB, SystemZ::STG, false);
+  case SystemZ::CondStore64Inv:
+    return emitCondStore(MI, MBB, SystemZ::STG, true);
+  case SystemZ::CondStoreF32:
+    return emitCondStore(MI, MBB, SystemZ::STE, false);
+  case SystemZ::CondStoreF32Inv:
+    return emitCondStore(MI, MBB, SystemZ::STE, true);
+  case SystemZ::CondStoreF64:
+    return emitCondStore(MI, MBB, SystemZ::STD, false);
+  case SystemZ::CondStoreF64Inv:
+    return emitCondStore(MI, MBB, SystemZ::STD, true);
 
   case SystemZ::AEXT128_64:
     return emitExt128(MI, MBB, false, SystemZ::subreg_low);
@@ -2227,6 +2371,16 @@ EmitInstrWithCustomInserter(MachineInstr *MI, MachineBasicBlock *MBB) const {
 
   case SystemZ::ATOMIC_CMP_SWAPW:
     return emitAtomicCmpSwapW(MI, MBB);
+  case SystemZ::BRC:
+    // The original DAG glues comparisons to their uses, both to ensure
+    // that no CC-clobbering instructions are inserted between them, and
+    // to ensure that comparison results are not reused.  This means that
+    // a BRC is the sole user of a preceding comparison and that we can
+    // try to use a fused compare and branch instead.
+    if (convertPrevCompareToBranch(MBB, MI, MI->getOperand(0).getImm(),
+                                   MI->getOperand(1).getMBB()))
+      MI->eraseFromParent();
+    return MBB;
   default:
     llvm_unreachable("Unexpected instr type to insert");
   }

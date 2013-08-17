@@ -511,6 +511,14 @@ static bool LookupBuiltin(Sema &S, LookupResult &R) {
       NameKind == Sema::LookupRedeclarationWithLinkage) {
     IdentifierInfo *II = R.getLookupName().getAsIdentifierInfo();
     if (II) {
+      if (S.getLangOpts().CPlusPlus11 && S.getLangOpts().GNUMode &&
+          II == S.getFloat128Identifier()) {
+        // libstdc++4.7's type_traits expects type __float128 to exist, so
+        // insert a dummy type to make that header build in gnu++11 mode.
+        R.addDecl(S.getASTContext().getFloat128StubType());
+        return true;
+      }
+
       // If this is a builtin on this (or all) targets, create the decl.
       if (unsigned BuiltinID = II->getBuiltinID()) {
         // In C++, we don't have any predefined library functions like
@@ -3406,7 +3414,7 @@ class NamespaceSpecifierSet {
   NamespaceSpecifierSet(ASTContext &Context, DeclContext *CurContext,
                         CXXScopeSpec *CurScopeSpec)
       : Context(Context), CurContextChain(BuildContextChain(CurContext)),
-        isSorted(true) {
+        isSorted(false) {
     if (CurScopeSpec && CurScopeSpec->getScopeRep())
       getNestedNameSpecifierIdentifiers(CurScopeSpec->getScopeRep(),
                                         CurNameSpecifierIdentifiers);
@@ -3419,6 +3427,12 @@ class NamespaceSpecifierSet {
       if (NamespaceDecl *ND = dyn_cast_or_null<NamespaceDecl>(*C))
         CurContextIdentifiers.push_back(ND->getIdentifier());
     }
+
+    // Add the global context as a NestedNameSpecifier
+    Distances.insert(1);
+    DistanceMap[1].push_back(
+        SpecifierInfo(cast<DeclContext>(Context.getTranslationUnitDecl()),
+                      NestedNameSpecifier::GlobalSpecifier(Context), 1));
   }
 
   /// \brief Add the namespace to the set, computing the corresponding
@@ -3456,8 +3470,8 @@ void NamespaceSpecifierSet::SortNamespaces() {
     std::sort(sortedDistances.begin(), sortedDistances.end());
 
   Specifiers.clear();
-  for (SmallVector<unsigned, 4>::iterator DI = sortedDistances.begin(),
-                                       DIEnd = sortedDistances.end();
+  for (SmallVectorImpl<unsigned>::iterator DI = sortedDistances.begin(),
+                                        DIEnd = sortedDistances.end();
        DI != DIEnd; ++DI) {
     SpecifierInfoList &SpecList = DistanceMap[*DI];
     Specifiers.append(SpecList.begin(), SpecList.end());
@@ -3482,9 +3496,11 @@ void NamespaceSpecifierSet::AddNamespace(NamespaceDecl *ND) {
   }
 
   // Add an explicit leading '::' specifier if needed.
-  if (NamespaceDecl *ND =
-        NamespaceDeclChain.empty() ? NULL :
-          dyn_cast_or_null<NamespaceDecl>(NamespaceDeclChain.back())) {
+  if (NamespaceDeclChain.empty()) {
+    NamespaceDeclChain = FullNamespaceDeclChain;
+    NNS = NestedNameSpecifier::GlobalSpecifier(Context);
+  } else if (NamespaceDecl *ND =
+                 dyn_cast_or_null<NamespaceDecl>(NamespaceDeclChain.back())) {
     IdentifierInfo *Name = ND->getIdentifier();
     if (std::find(CurContextIdentifiers.begin(), CurContextIdentifiers.end(),
                   Name) != CurContextIdentifiers.end() ||
@@ -3976,13 +3992,29 @@ TypoCorrection Sema::CorrectTypo(const DeclarationNameInfo &TypoName,
       // Perform name lookup on this name.
       TypoCorrection &Candidate = I->second.front();
       IdentifierInfo *Name = Candidate.getCorrectionAsIdentifierInfo();
-      LookupPotentialTypoResult(*this, TmpRes, Name, S, SS, MemberContext,
-                                EnteringContext, CCC.IsObjCIvarLookup);
+      DeclContext *TempMemberContext = MemberContext;
+      CXXScopeSpec *TempSS = SS;
+retry_lookup:
+      LookupPotentialTypoResult(*this, TmpRes, Name, S, TempSS,
+                                TempMemberContext, EnteringContext,
+                                CCC.IsObjCIvarLookup);
 
       switch (TmpRes.getResultKind()) {
       case LookupResult::NotFound:
       case LookupResult::NotFoundInCurrentInstantiation:
       case LookupResult::FoundUnresolvedValue:
+        if (TempSS) {
+          // Immediately retry the lookup without the given CXXScopeSpec
+          TempSS = NULL;
+          Candidate.WillReplaceSpecifier(true);
+          goto retry_lookup;
+        }
+        if (TempMemberContext) {
+          if (SS && !TempSS)
+            TempSS = SS;
+          TempMemberContext = NULL;
+          goto retry_lookup;
+        }
         QualifiedResults.push_back(Candidate);
         // We didn't find this name in our scope, or didn't like what we found;
         // ignore it.
@@ -4006,8 +4038,10 @@ TypoCorrection Sema::CorrectTypo(const DeclarationNameInfo &TypoName,
              TRD != TRDEnd; ++TRD)
           Candidate.addCorrectionDecl(*TRD);
         ++I;
-        if (!isCandidateViable(CCC, Candidate))
+        if (!isCandidateViable(CCC, Candidate)) {
+          QualifiedResults.push_back(Candidate);
           DI->second.erase(Prev);
+        }
         break;
       }
 
@@ -4015,8 +4049,10 @@ TypoCorrection Sema::CorrectTypo(const DeclarationNameInfo &TypoName,
         TypoCorrectionConsumer::result_iterator Prev = I;
         Candidate.setCorrectionDecl(TmpRes.getAsSingle<NamedDecl>());
         ++I;
-        if (!isCandidateViable(CCC, Candidate))
+        if (!isCandidateViable(CCC, Candidate)) {
+          QualifiedResults.push_back(Candidate);
           DI->second.erase(Prev);
+        }
         break;
       }
 
@@ -4052,18 +4088,12 @@ TypoCorrection Sema::CorrectTypo(const DeclarationNameInfo &TypoName,
           // Any corrections added below will be validated in subsequent
           // iterations of the main while() loop over the Consumer's contents.
           switch (TmpRes.getResultKind()) {
-          case LookupResult::Found: {
-            TypoCorrection TC(*QRI);
-            TC.setCorrectionDecl(TmpRes.getAsSingle<NamedDecl>());
-            TC.setCorrectionSpecifier(NI->NameSpecifier);
-            TC.setQualifierDistance(NI->EditDistance);
-            Consumer.addCorrection(TC);
-            break;
-          }
+          case LookupResult::Found:
           case LookupResult::FoundOverloaded: {
             TypoCorrection TC(*QRI);
             TC.setCorrectionSpecifier(NI->NameSpecifier);
             TC.setQualifierDistance(NI->EditDistance);
+            TC.setCallbackDistance(0); // Reset the callback distance
             for (LookupResult::iterator TRD = TmpRes.begin(),
                                      TRDEnd = TmpRes.end();
                  TRD != TRDEnd; ++TRD)

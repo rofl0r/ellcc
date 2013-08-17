@@ -33,11 +33,17 @@ struct FormatStyle {
   /// \brief The column limit.
   unsigned ColumnLimit;
 
-  /// \brief The penalty for each character outside of the column limit.
-  unsigned PenaltyExcessCharacter;
-
   /// \brief The maximum number of consecutive empty lines to keep.
   unsigned MaxEmptyLinesToKeep;
+
+  /// \brief The penalty for each line break introduced inside a comment.
+  unsigned PenaltyBreakComment;
+
+  /// \brief The penalty for each line break introduced inside a string literal.
+  unsigned PenaltyBreakString;
+
+  /// \brief The penalty for each character outside of the column limit.
+  unsigned PenaltyExcessCharacter;
 
   /// \brief Set whether & and * bind to the type as opposed to the variable.
   bool PointerBindsToType;
@@ -100,6 +106,13 @@ struct FormatStyle {
   /// \brief The number of characters to use for indentation.
   unsigned IndentWidth;
 
+  /// \brief If \c true, always break after the \c template<...> of a template
+  /// declaration.
+  bool AlwaysBreakTemplateDeclarations;
+
+  /// \brief If \c true, always break before multiline string literals.
+  bool AlwaysBreakBeforeMultilineStrings;
+
   /// \brief If true, \c IndentWidth consecutive spaces will be replaced with
   /// tab characters.
   bool UseTab;
@@ -121,6 +134,10 @@ struct FormatStyle {
   /// \brief If \c true, format { 1 }, otherwise {1}.
   bool SpacesInBracedLists;
 
+  /// \brief If \c true, indent when breaking function declarations which
+  /// are not also definitions after the type.
+  bool IndentFunctionDeclarationAfterType;
+
   bool operator==(const FormatStyle &R) const {
     return AccessModifierOffset == R.AccessModifierOffset &&
            AlignEscapedNewlinesLeft == R.AlignEscapedNewlinesLeft &&
@@ -128,6 +145,10 @@ struct FormatStyle {
                R.AllowAllParametersOfDeclarationOnNextLine &&
            AllowShortIfStatementsOnASingleLine ==
                R.AllowShortIfStatementsOnASingleLine &&
+           AlwaysBreakTemplateDeclarations ==
+               R.AlwaysBreakTemplateDeclarations &&
+           AlwaysBreakBeforeMultilineStrings ==
+               R.AlwaysBreakBeforeMultilineStrings &&
            BinPackParameters == R.BinPackParameters &&
            BreakBeforeBraces == R.BreakBeforeBraces &&
            ColumnLimit == R.ColumnLimit &&
@@ -138,15 +159,17 @@ struct FormatStyle {
            IndentWidth == R.IndentWidth &&
            MaxEmptyLinesToKeep == R.MaxEmptyLinesToKeep &&
            ObjCSpaceBeforeProtocolList == R.ObjCSpaceBeforeProtocolList &&
+           PenaltyBreakString == R.PenaltyBreakString &&
+           PenaltyBreakComment == R.PenaltyBreakComment &&
            PenaltyExcessCharacter == R.PenaltyExcessCharacter &&
            PenaltyReturnTypeOnItsOwnLine == R.PenaltyReturnTypeOnItsOwnLine &&
            PointerBindsToType == R.PointerBindsToType &&
            SpacesBeforeTrailingComments == R.SpacesBeforeTrailingComments &&
            SpacesInBracedLists == R.SpacesInBracedLists &&
-           Standard == R.Standard &&
-           UseTab == R.UseTab;
+           Standard == R.Standard && UseTab == R.UseTab &&
+           IndentFunctionDeclarationAfterType ==
+               R.IndentFunctionDeclarationAfterType;
   }
-
 };
 
 /// \brief Returns a format style complying with the LLVM coding standards:
@@ -200,7 +223,11 @@ tooling::Replacements reformat(const FormatStyle &Style, StringRef Code,
                                StringRef FileName = "<stdin>");
 
 /// \brief Returns the \c LangOpts that the formatter expects you to set.
-LangOptions getFormattingLangOpts();
+///
+/// \param Standard determines lexing mode: LC_Cpp11 and LS_Auto turn on C++11
+/// lexing mode, LS_Cpp03 - C++03 mode.
+LangOptions getFormattingLangOpts(FormatStyle::LanguageStandard Standard =
+                                      FormatStyle::LS_Cpp11);
 
 } // end namespace format
 } // end namespace clang

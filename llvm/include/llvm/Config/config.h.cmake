@@ -170,6 +170,12 @@
 /* Define to 1 if you have the `fmodf' function. */
 #cmakedefine HAVE_FMODF ${HAVE_FMODF}
 
+/* Define to 1 if you have the `futimes' function. */
+#cmakedefine HAVE_FUTIMES ${HAVE_FUTIMES}
+
+/* Define to 1 if you have the `futimens' function */
+#cmakedefine HAVE_FUTIMENS ${HAVE_FUTIMENS}
+
 /* Define to 1 if you have the `getcwd' function. */
 #cmakedefine HAVE_GETCWD ${HAVE_GETCWD}
 
@@ -597,9 +603,6 @@
 /* Installation directory for .info files */
 #cmakedefine LLVM_INFODIR "${LLVM_INFODIR}"
 
-/* Installation directory for libraries */
-#cmakedefine LLVM_LIBDIR "${LLVM_LIBDIR}"
-
 /* Installation directory for man pages */
 #cmakedefine LLVM_MANDIR "${LLVM_MANDIR}"
 
@@ -678,10 +681,6 @@
 /* Define to the sub-directory in which libtool stores uninstalled libraries.
    */
 #undef LTDL_OBJDIR
-
-/* Define to the name of the environment variable that determines the dynamic
-   library search path. */
-#cmakedefine LTDL_SHLIBPATH_VAR "${LTDL_SHLIBPATH_VAR}"
 
 /* Define to the extension used for shared libraries, say, ".so". */
 #cmakedefine LTDL_SHLIB_EXT "${LTDL_SHLIB_EXT}"

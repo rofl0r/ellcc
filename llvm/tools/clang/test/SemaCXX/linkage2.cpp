@@ -186,3 +186,30 @@ namespace test17 {
     g();
   }
 }
+
+namespace test18 {
+  template <typename T> struct foo {
+    template <T *P> static void f() {}
+    static void *g() { return (void *)f<&x>; }
+    static T x;
+  };
+  template <typename T> T foo<T>::x;
+  inline void *f() {
+    struct S {
+    };
+    return foo<S>::g();
+  }
+  void *h() { return f(); }
+}
+
+extern "C" void pr16247_foo(int);
+static void pr16247_foo(double);
+void pr16247_foo(int) {}
+void pr16247_foo(double) {}
+
+namespace PR16247 {
+  extern "C" void pr16247_bar(int);
+  static void pr16247_bar(double);
+  void pr16247_bar(int) {}
+  void pr16247_bar(double) {}
+}

@@ -854,7 +854,9 @@ static bool LdStHasDebugValue(DIVariable &DIVar, Instruction *I) {
 bool llvm::ConvertDebugDeclareToDebugValue(DbgDeclareInst *DDI,
                                            StoreInst *SI, DIBuilder &Builder) {
   DIVariable DIVar(DDI->getVariable());
-  if (!DIVar.Verify())
+  assert((!DIVar || DIVar.isVariable()) &&
+         "Variable in DbgDeclareInst should be either null or a DIVariable.");
+  if (!DIVar)
     return false;
 
   if (LdStHasDebugValue(DIVar, SI))
@@ -888,7 +890,9 @@ bool llvm::ConvertDebugDeclareToDebugValue(DbgDeclareInst *DDI,
 bool llvm::ConvertDebugDeclareToDebugValue(DbgDeclareInst *DDI,
                                            LoadInst *LI, DIBuilder &Builder) {
   DIVariable DIVar(DDI->getVariable());
-  if (!DIVar.Verify())
+  assert((!DIVar || DIVar.isVariable()) && 
+         "Variable in DbgDeclareInst should be either null or a DIVariable.");
+  if (!DIVar)
     return false;
 
   if (LdStHasDebugValue(DIVar, LI))
@@ -921,7 +925,7 @@ bool llvm::LowerDbgDeclare(Function &F) {
   if (Dbgs.empty())
     return false;
 
-  for (SmallVector<DbgDeclareInst *, 4>::iterator I = Dbgs.begin(),
+  for (SmallVectorImpl<DbgDeclareInst *>::iterator I = Dbgs.begin(),
          E = Dbgs.end(); I != E; ++I) {
     DbgDeclareInst *DDI = *I;
     if (AllocaInst *AI = dyn_cast_or_null<AllocaInst>(DDI->getAddress())) {
@@ -961,7 +965,9 @@ bool llvm::replaceDbgDeclareForAlloca(AllocaInst *AI, Value *NewAllocaAddress,
   if (!DDI)
     return false;
   DIVariable DIVar(DDI->getVariable());
-  if (!DIVar.Verify())
+  assert((!DIVar || DIVar.isVariable()) && 
+         "Variable in DbgDeclareInst should be either null or a DIVariable.");
+  if (!DIVar)
     return false;
 
   // Create a copy of the original DIDescriptor for user variable, appending

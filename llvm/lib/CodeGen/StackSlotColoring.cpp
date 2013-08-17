@@ -14,20 +14,20 @@
 #define DEBUG_TYPE "stackslotcoloring"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/ADT/BitVector.h"
-#include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/CodeGen/LiveIntervalAnalysis.h"
 #include "llvm/CodeGen/LiveStackAnalysis.h"
+#include "llvm/CodeGen/MachineBlockFrequencyInfo.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
-#include "llvm/CodeGen/MachineLoopInfo.h"
 #include "llvm/CodeGen/MachineMemOperand.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/PseudoSourceValue.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetMachine.h"
 #include <vector>
@@ -48,7 +48,7 @@ namespace {
     LiveStacks* LS;
     MachineFrameInfo *MFI;
     const TargetInstrInfo  *TII;
-    const MachineLoopInfo *loopInfo;
+    const MachineBlockFrequencyInfo *MBFI;
 
     // SSIntervals - Spill slot intervals.
     std::vector<LiveInterval*> SSIntervals;
@@ -89,8 +89,8 @@ namespace {
       AU.addRequired<SlotIndexes>();
       AU.addPreserved<SlotIndexes>();
       AU.addRequired<LiveStacks>();
-      AU.addRequired<MachineLoopInfo>();
-      AU.addPreserved<MachineLoopInfo>();
+      AU.addRequired<MachineBlockFrequencyInfo>();
+      AU.addPreserved<MachineBlockFrequencyInfo>();
       AU.addPreservedID(MachineDominatorsID);
       MachineFunctionPass::getAnalysisUsage(AU);
     }
@@ -139,7 +139,7 @@ void StackSlotColoring::ScanForSpillSlotRefs(MachineFunction &MF) {
   for (MachineFunction::iterator MBBI = MF.begin(), E = MF.end();
        MBBI != E; ++MBBI) {
     MachineBasicBlock *MBB = &*MBBI;
-    unsigned loopDepth = loopInfo->getLoopDepth(MBB);
+    BlockFrequency Freq = MBFI->getBlockFreq(MBB);
     for (MachineBasicBlock::iterator MII = MBB->begin(), EE = MBB->end();
          MII != EE; ++MII) {
       MachineInstr *MI = &*MII;
@@ -154,7 +154,7 @@ void StackSlotColoring::ScanForSpillSlotRefs(MachineFunction &MF) {
           continue;
         LiveInterval &li = LS->getInterval(FI);
         if (!MI->isDebugValue())
-          li.weight += LiveIntervals::getSpillWeight(false, true, loopDepth);
+          li.weight += LiveIntervals::getSpillWeight(false, true, Freq);
         SSRefs[FI].push_back(MI);
       }
     }
@@ -197,7 +197,7 @@ void StackSlotColoring::InitializeSlots() {
 /// LiveIntervals that have already been assigned to the specified color.
 bool
 StackSlotColoring::OverlapWithAssignments(LiveInterval *li, int Color) const {
-  const SmallVector<LiveInterval*,4> &OtherLIs = Assignments[Color];
+  const SmallVectorImpl<LiveInterval *> &OtherLIs = Assignments[Color];
   for (unsigned i = 0, e = OtherLIs.size(); i != e; ++i) {
     LiveInterval *OtherLI = OtherLIs[i];
     if (OtherLI->overlaps(*li))
@@ -292,13 +292,12 @@ bool StackSlotColoring::ColorSlots(MachineFunction &MF) {
     return false;
 
   // Rewrite all MO_FrameIndex operands.
-  SmallVector<SmallSet<unsigned, 4>, 4> NewDefs(MF.getNumBlockIDs());
   for (unsigned SS = 0, SE = SSRefs.size(); SS != SE; ++SS) {
     int NewFI = SlotMapping[SS];
     if (NewFI == -1 || (NewFI == (int)SS))
       continue;
 
-    SmallVector<MachineInstr*, 8> &RefMIs = SSRefs[SS];
+    SmallVectorImpl<MachineInstr*> &RefMIs = SSRefs[SS];
     for (unsigned i = 0, e = RefMIs.size(); i != e; ++i)
       RewriteInstruction(RefMIs[i], SS, NewFI, MF);
   }
@@ -379,7 +378,7 @@ bool StackSlotColoring::RemoveDeadStores(MachineBasicBlock* MBB) {
     ++I;
   }
 
-  for (SmallVector<MachineInstr*, 4>::iterator I = toErase.begin(),
+  for (SmallVectorImpl<MachineInstr *>::iterator I = toErase.begin(),
        E = toErase.end(); I != E; ++I)
     (*I)->eraseFromParent();
 
@@ -396,7 +395,7 @@ bool StackSlotColoring::runOnMachineFunction(MachineFunction &MF) {
   MFI = MF.getFrameInfo();
   TII = MF.getTarget().getInstrInfo();
   LS = &getAnalysis<LiveStacks>();
-  loopInfo = &getAnalysis<MachineLoopInfo>();
+  MBFI = &getAnalysis<MachineBlockFrequencyInfo>();
 
   bool Changed = false;
 

@@ -81,6 +81,7 @@ def z_adjdynalloc       : SDNode<"SystemZISD::ADJDYNALLOC", SDT_ZAdjDynAlloc>;
 def z_extract_access    : SDNode<"SystemZISD::EXTRACT_ACCESS",
                                  SDT_ZExtractAccess>;
 def z_umul_lohi64       : SDNode<"SystemZISD::UMUL_LOHI64", SDT_ZGR128Binary64>;
+def z_sdivrem32         : SDNode<"SystemZISD::SDIVREM32", SDT_ZGR128Binary32>;
 def z_sdivrem64         : SDNode<"SystemZISD::SDIVREM64", SDT_ZGR128Binary64>;
 def z_udivrem32         : SDNode<"SystemZISD::UDIVREM32", SDT_ZGR128Binary32>;
 def z_udivrem64         : SDNode<"SystemZISD::UDIVREM64", SDT_ZGR128Binary64>;
@@ -120,6 +121,20 @@ def zext32 : PatFrag<(ops node:$src), (zext (i32 node:$src))>;
 def loadf32 : PatFrag<(ops node:$src), (f32 (load node:$src))>;
 def loadf64 : PatFrag<(ops node:$src), (f64 (load node:$src))>;
 
+// Extending loads in which the extension type doesn't matter.
+def anyextload : PatFrag<(ops node:$ptr), (unindexedload node:$ptr), [{
+  return cast<LoadSDNode>(N)->getExtensionType() != ISD::NON_EXTLOAD;
+}]>;
+def anyextloadi8 : PatFrag<(ops node:$ptr), (anyextload node:$ptr), [{
+  return cast<LoadSDNode>(N)->getMemoryVT() == MVT::i8;
+}]>;
+def anyextloadi16 : PatFrag<(ops node:$ptr), (anyextload node:$ptr), [{
+  return cast<LoadSDNode>(N)->getMemoryVT() == MVT::i16;
+}]>;
+def anyextloadi32 : PatFrag<(ops node:$ptr), (anyextload node:$ptr), [{
+  return cast<LoadSDNode>(N)->getMemoryVT() == MVT::i32;
+}]>;
+
 // Aligned loads.
 class AlignedLoad<SDPatternOperator load>
   : PatFrag<(ops node:$addr), (load node:$addr), [{
@@ -141,6 +156,29 @@ class AlignedStore<SDPatternOperator store>
 def aligned_store         : AlignedStore<store>;
 def aligned_truncstorei16 : AlignedStore<truncstorei16>;
 def aligned_truncstorei32 : AlignedStore<truncstorei32>;
+
+// Non-volatile loads.  Used for instructions that might access the storage
+// location multiple times.
+class NonvolatileLoad<SDPatternOperator load>
+  : PatFrag<(ops node:$addr), (load node:$addr), [{
+  LoadSDNode *Load = cast<LoadSDNode>(N);
+  return !Load->isVolatile();
+}]>;
+def nonvolatile_load          : NonvolatileLoad<load>;
+def nonvolatile_anyextloadi8  : NonvolatileLoad<anyextloadi8>;
+def nonvolatile_anyextloadi16 : NonvolatileLoad<anyextloadi16>;
+def nonvolatile_anyextloadi32 : NonvolatileLoad<anyextloadi32>;
+
+// Non-volatile stores.
+class NonvolatileStore<SDPatternOperator store>
+  : PatFrag<(ops node:$src, node:$addr), (store node:$src, node:$addr), [{
+  StoreSDNode *Store = cast<StoreSDNode>(N);
+  return !Store->isVolatile();
+}]>;
+def nonvolatile_store         : NonvolatileStore<store>;
+def nonvolatile_truncstorei8  : NonvolatileStore<truncstorei8>;
+def nonvolatile_truncstorei16 : NonvolatileStore<truncstorei16>;
+def nonvolatile_truncstorei32 : NonvolatileStore<truncstorei32>;
 
 // Insertions.
 def inserti8 : PatFrag<(ops node:$src1, node:$src2),
@@ -186,11 +224,11 @@ def fnabs : PatFrag<(ops node:$ptr), (fneg (fabs node:$ptr))>;
 
 // Create a unary operator that loads from memory and then performs
 // the given operation on it.
-class loadu<SDPatternOperator operator>
+class loadu<SDPatternOperator operator, SDPatternOperator load = load>
   : PatFrag<(ops node:$addr), (operator (load node:$addr))>;
 
 // Create a store operator that performs the given unary operation
 // on the value before storing it.
-class storeu<SDPatternOperator operator>
+class storeu<SDPatternOperator operator, SDPatternOperator store = store>
   : PatFrag<(ops node:$value, node:$addr),
             (store (operator node:$value), node:$addr)>;

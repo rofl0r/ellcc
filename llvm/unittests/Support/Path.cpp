@@ -7,7 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/Support/PathV2.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
@@ -147,13 +147,9 @@ protected:
   SmallString<128> TestDirectory;
 
   virtual void SetUp() {
-    int fd;
     ASSERT_NO_ERROR(
-      fs::unique_file("file-system-test-%%-%%-%%-%%/test-directory.anchor", fd,
-                      TestDirectory));
+        fs::createUniqueDirectory("file-system-test", TestDirectory));
     // We don't care about this specific file.
-    ::close(fd);
-    TestDirectory = path::parent_path(TestDirectory);
     errs() << "Test Directory: " << TestDirectory << '\n';
     errs().flush();
   }
@@ -163,6 +159,42 @@ protected:
     ASSERT_NO_ERROR(fs::remove_all(TestDirectory.str(), removed));
   }
 };
+
+TEST_F(FileSystemTest, Unique) {
+  // Create a temp file.
+  int FileDescriptor;
+  SmallString<64> TempPath;
+  ASSERT_NO_ERROR(
+    fs::unique_file("%%-%%-%%-%%.temp", FileDescriptor, TempPath));
+
+  // The same file should return an identical unique id.
+  uint64_t F1, F2;
+  ASSERT_NO_ERROR(fs::getUniqueID(Twine(TempPath), F1));
+  ASSERT_NO_ERROR(fs::getUniqueID(Twine(TempPath), F2));
+  ASSERT_EQ(F1, F2);
+
+  // Different files should return different unique ids.
+  int FileDescriptor2;
+  SmallString<64> TempPath2;
+  ASSERT_NO_ERROR(
+    fs::unique_file("%%-%%-%%-%%.temp", FileDescriptor2, TempPath2));
+  
+  uint64_t D;
+  ASSERT_NO_ERROR(fs::getUniqueID(Twine(TempPath2), D));
+  ASSERT_NE(D, F1);
+  ::close(FileDescriptor2);
+
+  ASSERT_NO_ERROR(fs::remove(Twine(TempPath2)));
+
+  // Two paths representing the same file on disk should still provide the
+  // same unique id.  We can test this by making a hard link.
+  ASSERT_NO_ERROR(fs::create_hard_link(Twine(TempPath), Twine(TempPath2)));
+  uint64_t D2;
+  ASSERT_NO_ERROR(fs::getUniqueID(Twine(TempPath2), D2));
+  ASSERT_EQ(D2, F1);
+
+  ::close(FileDescriptor);
+}
 
 TEST_F(FileSystemTest, TempFiles) {
   // Create a temp file.

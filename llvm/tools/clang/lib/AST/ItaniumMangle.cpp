@@ -57,22 +57,28 @@ static const DeclContext *getEffectiveDeclContext(const Decl *D) {
         return ContextParam->getDeclContext();
   }
   
-  return D->getDeclContext();
+  const DeclContext *DC = D->getDeclContext();
+  if (const CapturedDecl *CD = dyn_cast<CapturedDecl>(DC))
+    return getEffectiveDeclContext(CD);
+
+  return DC;
 }
 
 static const DeclContext *getEffectiveParentContext(const DeclContext *DC) {
   return getEffectiveDeclContext(cast<Decl>(DC));
 }
-  
-static const CXXRecordDecl *GetLocalClassDecl(const NamedDecl *ND) {
-  const DeclContext *DC = dyn_cast<DeclContext>(ND);
-  if (!DC)
-    DC = getEffectiveDeclContext(ND);
+
+static bool isLocalContainerContext(const DeclContext *DC) {
+  return isa<FunctionDecl>(DC) || isa<ObjCMethodDecl>(DC) || isa<BlockDecl>(DC);
+}
+
+static const CXXRecordDecl *GetLocalClassDecl(const Decl *D) {
+  const DeclContext *DC = getEffectiveDeclContext(D);
   while (!DC->isNamespace() && !DC->isTranslationUnit()) {
-    const DeclContext *Parent = getEffectiveDeclContext(cast<Decl>(DC));
-    if (isa<FunctionDecl>(Parent))
-      return dyn_cast<CXXRecordDecl>(DC);
-    DC = Parent;
+    if (isLocalContainerContext(DC))
+      return dyn_cast<CXXRecordDecl>(D);
+    D = cast<Decl>(DC);
+    DC = getEffectiveDeclContext(D);
   }
   return 0;
 }
@@ -130,6 +136,9 @@ public:
                        raw_ostream &);
   void mangleCXXVTT(const CXXRecordDecl *RD,
                     raw_ostream &);
+  void mangleCXXVBTable(const CXXRecordDecl *Derived,
+                        ArrayRef<const CXXRecordDecl *> BasePath,
+                        raw_ostream &Out);
   void mangleCXXCtorVTable(const CXXRecordDecl *RD, int64_t Offset,
                            const CXXRecordDecl *Type,
                            raw_ostream &);
@@ -305,7 +314,9 @@ private:
   void mangleUnscopedTemplateName(const TemplateDecl *ND);
   void mangleUnscopedTemplateName(TemplateName);
   void mangleSourceName(const IdentifierInfo *II);
-  void mangleLocalName(const NamedDecl *ND);
+  void mangleLocalName(const Decl *D);
+  void mangleBlockForPrefix(const BlockDecl *Block);
+  void mangleUnqualifiedBlock(const BlockDecl *Block);
   void mangleLambda(const CXXRecordDecl *Lambda);
   void mangleNestedName(const NamedDecl *ND, const DeclContext *DC,
                         bool NoFunction=false);
@@ -550,7 +561,7 @@ void CXXNameMangler::mangleName(const NamedDecl *ND) {
   // is that of the containing namespace, or the translation unit.
   // FIXME: This is a hack; extern variables declared locally should have
   // a proper semantic declaration context!
-  if (isa<FunctionDecl>(DC) && ND->hasLinkage() && !isLambda(ND))
+  if (isLocalContainerContext(DC) && ND->hasLinkage() && !isLambda(ND))
     while (!DC->isNamespace() && !DC->isTranslationUnit())
       DC = getEffectiveParentContext(DC);
   else if (GetLocalClassDecl(ND)) {
@@ -573,7 +584,7 @@ void CXXNameMangler::mangleName(const NamedDecl *ND) {
     return;
   }
 
-  if (isa<FunctionDecl>(DC) || isa<ObjCMethodDecl>(DC)) {
+  if (isLocalContainerContext(DC)) {
     mangleLocalName(ND);
     return;
   }
@@ -825,6 +836,7 @@ void CXXNameMangler::mangleUnresolvedPrefix(NestedNameSpecifier *qualifier,
     switch (type->getTypeClass()) {
     case Type::Builtin:
     case Type::Complex:
+    case Type::Decayed:
     case Type::Pointer:
     case Type::BlockPointer:
     case Type::LValueReference:
@@ -1261,27 +1273,28 @@ void CXXNameMangler::mangleNestedName(const TemplateDecl *TD,
   Out << 'E';
 }
 
-void CXXNameMangler::mangleLocalName(const NamedDecl *ND) {
+void CXXNameMangler::mangleLocalName(const Decl *D) {
   // <local-name> := Z <function encoding> E <entity name> [<discriminator>]
   //              := Z <function encoding> E s [<discriminator>]
   // <local-name> := Z <function encoding> E d [ <parameter number> ] 
   //                 _ <entity name>
   // <discriminator> := _ <non-negative number>
-  const DeclContext *DC = getEffectiveDeclContext(ND);
-  if (isa<ObjCMethodDecl>(DC) && isa<FunctionDecl>(ND)) {
-    // Don't add objc method name mangling to locally declared function
-    mangleUnqualifiedName(ND);
-    return;
-  }
+  assert(isa<NamedDecl>(D) || isa<BlockDecl>(D));
+  const CXXRecordDecl *RD = GetLocalClassDecl(D);
+  const DeclContext *DC = getEffectiveDeclContext(RD ? RD : D);
 
   Out << 'Z';
 
-  if (const ObjCMethodDecl *MD = dyn_cast<ObjCMethodDecl>(DC)) {
-   mangleObjCMethodName(MD);
-  } else if (const CXXRecordDecl *RD = GetLocalClassDecl(ND)) {
-    mangleFunctionEncoding(cast<FunctionDecl>(getEffectiveDeclContext(RD)));
-    Out << 'E';
+  if (const ObjCMethodDecl *MD = dyn_cast<ObjCMethodDecl>(DC))
+    mangleObjCMethodName(MD);
+  else if (const BlockDecl *BD = dyn_cast<BlockDecl>(DC))
+    mangleBlockForPrefix(BD);
+  else
+    mangleFunctionEncoding(cast<FunctionDecl>(DC));
 
+  Out << 'E';
+
+  if (RD) {
     // The parameter number is omitted for the last parameter, 0 for the 
     // second-to-last parameter, 1 for the third-to-last parameter, etc. The 
     // <entity name> will of course contain a <closure-type-name>: Its 
@@ -1304,10 +1317,16 @@ void CXXNameMangler::mangleLocalName(const NamedDecl *ND) {
     }
     
     // Mangle the name relative to the closest enclosing function.
-    if (ND == RD) // equality ok because RD derived from ND above
-      mangleUnqualifiedName(ND);
-    else
-      mangleNestedName(ND, DC, true /*NoFunction*/);
+    // equality ok because RD derived from ND above
+    if (D == RD)  {
+      mangleUnqualifiedName(RD);
+    } else if (const BlockDecl *BD = dyn_cast<BlockDecl>(D)) {
+      manglePrefix(getEffectiveDeclContext(BD), true /*NoFunction*/);
+      mangleUnqualifiedBlock(BD);
+    } else {
+      const NamedDecl *ND = cast<NamedDecl>(D);
+      mangleNestedName(ND, getEffectiveDeclContext(ND), true /*NoFunction*/);
+    }
 
     if (!SkipDiscriminator) {
       unsigned disc;
@@ -1321,11 +1340,49 @@ void CXXNameMangler::mangleLocalName(const NamedDecl *ND) {
     
     return;
   }
-  else
-    mangleFunctionEncoding(cast<FunctionDecl>(DC));
 
-  Out << 'E';
-  mangleUnqualifiedName(ND);
+  if (const BlockDecl *BD = dyn_cast<BlockDecl>(D))
+    mangleUnqualifiedBlock(BD);
+  else
+    mangleUnqualifiedName(cast<NamedDecl>(D));
+}
+
+void CXXNameMangler::mangleBlockForPrefix(const BlockDecl *Block) {
+  if (GetLocalClassDecl(Block)) {
+    mangleLocalName(Block);
+    return;
+  }
+  const DeclContext *DC = getEffectiveDeclContext(Block);
+  if (isLocalContainerContext(DC)) {
+    mangleLocalName(Block);
+    return;
+  }
+  manglePrefix(getEffectiveDeclContext(Block));
+  mangleUnqualifiedBlock(Block);
+}
+
+void CXXNameMangler::mangleUnqualifiedBlock(const BlockDecl *Block) {
+  if (Decl *Context = Block->getBlockManglingContextDecl()) {
+    if ((isa<VarDecl>(Context) || isa<FieldDecl>(Context)) &&
+        Context->getDeclContext()->isRecord()) {
+      if (const IdentifierInfo *Name
+            = cast<NamedDecl>(Context)->getIdentifier()) {
+        mangleSourceName(Name);
+        Out << 'M';            
+      }
+    }
+  }
+
+  // If we have a block mangling number, use it.
+  unsigned Number = Block->getBlockManglingNumber();
+  // Otherwise, just make up a number. It doesn't matter what it is because
+  // the symbol in question isn't externally visible.
+  if (!Number)
+    Number = Context.getBlockId(Block, false);
+  Out << "Ub";
+  if (Number > 1)
+    Out << Number - 2;
+  Out << '_';
 }
 
 void CXXNameMangler::mangleLambda(const CXXRecordDecl *Lambda) {
@@ -1411,20 +1468,11 @@ void CXXNameMangler::manglePrefix(const DeclContext *DC, bool NoFunction) {
   if (DC->isTranslationUnit())
     return;
 
-  if (const BlockDecl *Block = dyn_cast<BlockDecl>(DC)) {
-    manglePrefix(getEffectiveParentContext(DC), NoFunction);    
-    SmallString<64> Name;
-    llvm::raw_svector_ostream NameStream(Name);
-    Context.mangleBlock(Block, NameStream);
-    NameStream.flush();
-    Out << Name.size() << Name;
+  if (NoFunction && isLocalContainerContext(DC))
     return;
-  } else if (isa<CapturedDecl>(DC)) {
-    // Skip CapturedDecl context.
-    manglePrefix(getEffectiveParentContext(DC), NoFunction);
-    return;
-  }
-  
+
+  assert(!isLocalContainerContext(DC));
+
   const NamedDecl *ND = cast<NamedDecl>(DC);  
   if (mangleSubstitution(ND))
     return;
@@ -1434,12 +1482,7 @@ void CXXNameMangler::manglePrefix(const DeclContext *DC, bool NoFunction) {
   if (const TemplateDecl *TD = isTemplate(ND, TemplateArgs)) {
     mangleTemplatePrefix(TD);
     mangleTemplateArgs(*TemplateArgs);
-  }
-  else if(NoFunction && (isa<FunctionDecl>(ND) || isa<ObjCMethodDecl>(ND)))
-    return;
-  else if (const ObjCMethodDecl *Method = dyn_cast<ObjCMethodDecl>(ND))
-    mangleObjCMethodName(Method);
-  else {
+  } else {
     manglePrefix(getEffectiveDeclContext(ND), NoFunction);
     mangleUnqualifiedName(ND);
   }
@@ -2164,8 +2207,19 @@ void CXXNameMangler::mangleType(const ObjCInterfaceType *T) {
 }
 
 void CXXNameMangler::mangleType(const ObjCObjectType *T) {
-  // We don't allow overloading by different protocol qualification,
-  // so mangling them isn't necessary.
+  if (!T->qual_empty()) {
+    // Mangle protocol qualifiers.
+    SmallString<64> QualStr;
+    llvm::raw_svector_ostream QualOS(QualStr);
+    QualOS << "objcproto";
+    ObjCObjectType::qual_iterator i = T->qual_begin(), e = T->qual_end();
+    for ( ; i != e; ++i) {
+      StringRef name = (*i)->getName();
+      QualOS << name.size() << name;
+    }
+    QualOS.flush();
+    Out << 'U' << QualStr.size() << QualStr;
+  }
   mangleType(T->getBaseType());
 }
 
@@ -2479,6 +2533,10 @@ recurse:
 
   case Expr::CXXDefaultInitExprClass:
     mangleExpression(cast<CXXDefaultInitExpr>(E)->getExpr(), Arity);
+    break;
+
+  case Expr::CXXStdInitializerListExprClass:
+    mangleExpression(cast<CXXStdInitializerListExpr>(E)->getSubExpr(), Arity);
     break;
 
   case Expr::SubstNonTypeTemplateParmExprClass:
@@ -3580,6 +3638,13 @@ void ItaniumMangleContext::mangleCXXVTT(const CXXRecordDecl *RD,
   CXXNameMangler Mangler(*this, Out);
   Mangler.getStream() << "_ZTT";
   Mangler.mangleNameOrStandardSubstitution(RD);
+}
+
+void
+ItaniumMangleContext::mangleCXXVBTable(const CXXRecordDecl *Derived,
+                                       ArrayRef<const CXXRecordDecl *> BasePath,
+                                       raw_ostream &Out) {
+  llvm_unreachable("The Itanium C++ ABI does not have virtual base tables!");
 }
 
 void ItaniumMangleContext::mangleCXXCtorVTable(const CXXRecordDecl *RD,

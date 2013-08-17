@@ -110,7 +110,6 @@ class NamedDecl : public Decl {
 
 private:
   NamedDecl *getUnderlyingDeclImpl();
-  void verifyLinkage() const;
 
 protected:
   NamedDecl(Kind DK, DeclContext *DC, SourceLocation L, DeclarationName N)
@@ -221,21 +220,16 @@ public:
   /// \brief Get the linkage from a semantic point of view. Entities in
   /// anonymous namespaces are external (in c++98).
   Linkage getFormalLinkage() const {
-    Linkage L = getLinkageInternal();
-    if (L == UniqueExternalLinkage)
-      return ExternalLinkage;
-    if (L == VisibleNoLinkage)
-      return NoLinkage;
-    return L;
+    return clang::getFormalLinkage(getLinkageInternal());
   }
 
   /// \brief True if this decl has external linkage.
   bool hasExternalFormalLinkage() const {
-    return getFormalLinkage() == ExternalLinkage;
+    return isExternalFormalLinkage(getLinkageInternal());
   }
+
   bool isExternallyVisible() const {
-    Linkage L = getLinkageInternal();
-    return L == ExternalLinkage || L == VisibleNoLinkage;
+    return clang::isExternallyVisible(getLinkageInternal());
   }
 
   /// \brief Determines the visibility of this entity.
@@ -817,7 +811,7 @@ public:
   bool hasLocalStorage() const {
     if (getStorageClass() == SC_None)
       // Second check is for C++11 [dcl.stc]p4.
-      return !isFileVarDecl() && getTSCSpec() != TSCS_thread_local;
+      return !isFileVarDecl() && getTSCSpec() == TSCS_unspecified;
 
     // Return true for:  Auto, Register.
     // Return false for: Extern, Static, PrivateExtern, OpenCLWorkGroupLocal.
@@ -845,6 +839,12 @@ public:
   ///  have local storage.  This includs all global variables as well
   ///  as static variables declared within a function.
   bool hasGlobalStorage() const { return !hasLocalStorage(); }
+
+  /// \brief Get the storage duration of this variable, per C++ [basid.stc].
+  StorageDuration getStorageDuration() const {
+    return hasLocalStorage() ? SD_Automatic :
+           getTSCSpec() ? SD_Thread : SD_Static;
+  }
 
   /// Compute the language linkage.
   LanguageLinkage getLanguageLinkage() const;
@@ -930,10 +930,6 @@ public:
   const VarDecl *getActingDefinition() const {
     return const_cast<VarDecl*>(this)->getActingDefinition();
   }
-
-  /// \brief Determine whether this is a tentative definition of a
-  /// variable in C.
-  bool isTentativeDefinitionNow() const;
 
   /// \brief Get the real (not just tentative) definition for this declaration.
   VarDecl *getDefinition(ASTContext &);
@@ -1022,20 +1018,6 @@ public:
   }
 
   void setInit(Expr *I);
-
-  /// \brief Determine whether this variable is a reference that
-  /// extends the lifetime of its temporary initializer.
-  ///
-  /// A reference extends the lifetime of its temporary initializer if
-  /// it's initializer is an rvalue that would normally go out of scope
-  /// at the end of the initializer (a full expression). In such cases,
-  /// the reference itself takes ownership of the temporary, which will
-  /// be destroyed when the reference goes out of scope. For example:
-  ///
-  /// \code
-  /// const int &r = 1.0; // creates a temporary of type 'int'
-  /// \endcode
-  bool extendsLifetimeOfTemporary() const;
 
   /// \brief Determine whether this variable's value can be used in a
   /// constant expression, according to the relevant language standard.
@@ -1337,11 +1319,7 @@ public:
     ParmVarDeclBits.HasInheritedDefaultArg = I;
   }
 
-  QualType getOriginalType() const {
-    if (getTypeSourceInfo())
-      return getTypeSourceInfo()->getType();
-    return getType();
-  }
+  QualType getOriginalType() const;
 
   /// \brief Determine whether this parameter is actually a function
   /// parameter pack.
@@ -2312,14 +2290,14 @@ public:
 /// Base class for declarations which introduce a typedef-name.
 class TypedefNameDecl : public TypeDecl, public Redeclarable<TypedefNameDecl> {
   virtual void anchor();
-  /// UnderlyingType - This is the type the typedef is set to.
-  TypeSourceInfo *TInfo;
+  typedef std::pair<TypeSourceInfo*, QualType> ModedTInfo;
+  llvm::PointerUnion<TypeSourceInfo*, ModedTInfo*> MaybeModedTInfo;
 
 protected:
   TypedefNameDecl(Kind DK, DeclContext *DC, SourceLocation StartLoc,
                   SourceLocation IdLoc, IdentifierInfo *Id,
                   TypeSourceInfo *TInfo)
-    : TypeDecl(DK, DC, IdLoc, Id, StartLoc), TInfo(TInfo) {}
+    : TypeDecl(DK, DC, IdLoc, Id, StartLoc), MaybeModedTInfo(TInfo) {}
 
   typedef Redeclarable<TypedefNameDecl> redeclarable_base;
   virtual TypedefNameDecl *getNextRedeclaration() {
@@ -2339,8 +2317,23 @@ public:
   using redeclarable_base::getPreviousDecl;
   using redeclarable_base::getMostRecentDecl;
 
+  bool isModed() const { return MaybeModedTInfo.is<ModedTInfo*>(); }
+
   TypeSourceInfo *getTypeSourceInfo() const {
-    return TInfo;
+    return isModed()
+      ? MaybeModedTInfo.get<ModedTInfo*>()->first
+      : MaybeModedTInfo.get<TypeSourceInfo*>();
+  }
+  QualType getUnderlyingType() const {
+    return isModed()
+      ? MaybeModedTInfo.get<ModedTInfo*>()->second
+      : MaybeModedTInfo.get<TypeSourceInfo*>()->getType();
+  }
+  void setTypeSourceInfo(TypeSourceInfo *newType) {
+    MaybeModedTInfo = newType;
+  }
+  void setModedTypeSourceInfo(TypeSourceInfo *unmodedTSI, QualType modedTy) {
+    MaybeModedTInfo = new (getASTContext()) ModedTInfo(unmodedTSI, modedTy);
   }
 
   /// Retrieves the canonical declaration of this typedef-name.
@@ -2349,13 +2342,6 @@ public:
   }
   const TypedefNameDecl *getCanonicalDecl() const {
     return getFirstDeclaration();
-  }
-
-  QualType getUnderlyingType() const {
-    return TInfo->getType();
-  }
-  void setTypeSourceInfo(TypeSourceInfo *newType) {
-    TInfo = newType;
   }
 
   // Implement isa/cast/dyncast/etc.
@@ -3129,13 +3115,17 @@ private:
   Capture *Captures;
   unsigned NumCaptures;
 
+  unsigned ManglingNumber;
+  Decl *ManglingContextDecl;
+
 protected:
   BlockDecl(DeclContext *DC, SourceLocation CaretLoc)
     : Decl(Block, DC, CaretLoc), DeclContext(Block),
       IsVariadic(false), CapturesCXXThis(false),
       BlockMissingReturnType(true), IsConversionFromLambda(false),
       ParamInfo(0), NumParams(0), Body(0),
-      SignatureAsWritten(0), Captures(0), NumCaptures(0) {}
+      SignatureAsWritten(0), Captures(0), NumCaptures(0),
+      ManglingNumber(0), ManglingContextDecl(0) {}
 
 public:
   static BlockDecl *Create(ASTContext &C, DeclContext *DC, SourceLocation L); 
@@ -3204,6 +3194,18 @@ public:
                    const Capture *begin,
                    const Capture *end,
                    bool capturesCXXThis);
+
+   unsigned getBlockManglingNumber() const {
+     return ManglingNumber;
+   }
+   Decl *getBlockManglingContextDecl() const {
+     return ManglingContextDecl;    
+   }
+
+  void setBlockMangling(unsigned Number, Decl *Ctx) {
+    ManglingNumber = Number;
+    ManglingContextDecl = Ctx;
+  }
 
   virtual SourceRange getSourceRange() const LLVM_READONLY;
 

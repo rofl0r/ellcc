@@ -42,7 +42,7 @@ public:
 
   /// \brief Replaces the whitespace in front of \p Tok. Only call once for
   /// each \c AnnotatedToken.
-  void replaceWhitespace(const AnnotatedToken &Tok, unsigned Newlines,
+  void replaceWhitespace(const FormatToken &Tok, unsigned Newlines,
                          unsigned Spaces, unsigned StartOfTokenColumn,
                          bool InPPDirective = false);
 
@@ -52,28 +52,22 @@ public:
   /// was not called.
   void addUntouchableToken(const FormatToken &Tok, bool InPPDirective);
 
-  /// \brief Inserts a line break into the middle of a token.
+  /// \brief Inserts or replaces whitespace in the middle of a token.
   ///
-  /// Will break at \p Offset inside \p Tok, putting \p PreviousPostfix before
-  /// the line break and \p CurrentPrefix before the rest of the token starts in
-  /// the next line.
+  /// Inserts \p PreviousPostfix, \p Newlines, \p Spaces and \p CurrentPrefix
+  /// (in this order) at \p Offset inside \p Tok, replacing \p ReplaceChars
+  /// characters.
   ///
-  /// \p InPPDirective and \p Spaces are used to generate the correct line
-  /// break.
-  void breakToken(const FormatToken &Tok, unsigned Offset,
-                  unsigned ReplaceChars, StringRef PreviousPostfix,
-                  StringRef CurrentPrefix, bool InPPDirective, unsigned Spaces);
+  /// When \p InPPDirective is true, escaped newlines are inserted. \p Spaces is
+  /// used to align backslashes correctly.
+  void replaceWhitespaceInToken(const FormatToken &Tok, unsigned Offset,
+                                unsigned ReplaceChars,
+                                StringRef PreviousPostfix,
+                                StringRef CurrentPrefix, bool InPPDirective,
+                                unsigned Newlines, unsigned Spaces);
 
   /// \brief Returns all the \c Replacements created during formatting.
   const tooling::Replacements &generateReplacements();
-
-  /// \brief Replaces \p ReplaceChars after \p SourceLoc with \p Text.
-  ///
-  /// FIXME: This is currently used to align comments outside of the \c
-  /// WhitespaceManager. Once this has been moved inside, get rid of this
-  /// method.
-  void addReplacement(const SourceLocation &SourceLoc, unsigned ReplaceChars,
-                      StringRef Text);
 
 private:
   /// \brief Represents a change before a token, a break inside a token,
@@ -159,8 +153,8 @@ private:
 
   /// \brief Stores \p Text as the replacement for the whitespace in \p Range.
   void storeReplacement(const SourceRange &Range, StringRef Text);
-  std::string getNewLineText(unsigned NewLines, unsigned Spaces);
-  std::string getNewLineText(unsigned NewLines, unsigned Spaces,
+  std::string getNewlineText(unsigned Newlines, unsigned Spaces);
+  std::string getNewlineText(unsigned Newlines, unsigned Spaces,
                              unsigned PreviousEndOfTokenColumn,
                              unsigned EscapedNewlineColumn);
   std::string getIndentText(unsigned Spaces);

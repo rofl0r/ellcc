@@ -1281,6 +1281,8 @@ HeaderFileInfoTrait::ReadData(internal_key_ref key, const unsigned char *d,
   using namespace clang::io;
   HeaderFileInfo HFI;
   unsigned Flags = *d++;
+  HFI.HeaderRole = static_cast<ModuleMap::ModuleHeaderRole>
+                   ((Flags >> 6) & 0x03);
   HFI.isImport = (Flags >> 5) & 0x01;
   HFI.isPragmaOnce = (Flags >> 4) & 0x01;
   HFI.DirInfo = (Flags >> 2) & 0x03;
@@ -1307,7 +1309,7 @@ HeaderFileInfoTrait::ReadData(internal_key_ref key, const unsigned char *d,
       FileManager &FileMgr = Reader.getFileManager();
       ModuleMap &ModMap =
           Reader.getPreprocessor().getHeaderSearchInfo().getModuleMap();
-      ModMap.addHeader(Mod, FileMgr.getFile(key.Filename), /*Excluded=*/false);
+      ModMap.addHeader(Mod, FileMgr.getFile(key.Filename), HFI.getHeaderRole());
     }
   }
 
@@ -1585,18 +1587,21 @@ void ASTReader::installPCHMacroDirectives(IdentifierInfo *II,
 /// \brief For the given macro definitions, check if they are both in system
 /// modules.
 static bool areDefinedInSystemModules(MacroInfo *PrevMI, MacroInfo *NewMI,
-                                       Module *NewOwner, ASTReader &Reader) {
+                                      Module *NewOwner, ASTReader &Reader) {
   assert(PrevMI && NewMI);
-  if (!NewOwner)
-    return false;
   Module *PrevOwner = 0;
   if (SubmoduleID PrevModID = PrevMI->getOwningModuleID())
     PrevOwner = Reader.getSubmodule(PrevModID);
-  if (!PrevOwner)
+  SourceManager &SrcMgr = Reader.getSourceManager();
+  bool PrevInSystem
+    = PrevOwner? PrevOwner->IsSystem
+               : SrcMgr.isInSystemHeader(PrevMI->getDefinitionLoc());
+  bool NewInSystem
+    = NewOwner? NewOwner->IsSystem
+              : SrcMgr.isInSystemHeader(NewMI->getDefinitionLoc());
+  if (PrevOwner && PrevOwner == NewOwner)
     return false;
-  if (PrevOwner == NewOwner)
-    return false;
-  return PrevOwner->IsSystem && NewOwner->IsSystem;
+  return PrevInSystem && NewInSystem;
 }
 
 void ASTReader::installImportedMacro(IdentifierInfo *II, MacroDirective *MD,
@@ -3764,6 +3769,21 @@ bool ASTReader::ReadSubmoduleBlock(ModuleFile &F) {
       break;      
     }
 
+    case SUBMODULE_PRIVATE_HEADER: {
+      if (First) {
+        Error("missing submodule metadata record at beginning of block");
+        return true;
+      }
+
+      if (!CurrentModule)
+        break;
+      
+      // We lazily associate headers with their modules via the HeaderInfoTable.
+      // FIXME: Re-evaluate this section; maybe only store InputFile IDs instead
+      // of complete filenames or remove it entirely.
+      break;      
+    }
+
     case SUBMODULE_TOPHEADER: {
       if (First) {
         Error("missing submodule metadata record at beginning of block");
@@ -4511,6 +4531,18 @@ QualType ASTReader::readTypeRecord(unsigned Index) {
     return Context.getPointerType(PointeeType);
   }
 
+  case TYPE_DECAYED: {
+    if (Record.size() != 1) {
+      Error("Incorrect encoding of decayed type");
+      return QualType();
+    }
+    QualType OriginalType = readType(*Loc.F, Record, Idx);
+    QualType DT = Context.getAdjustedParameterType(OriginalType);
+    if (!isa<DecayedType>(DT))
+      Error("Decayed type does not decay");
+    return DT;
+  }
+
   case TYPE_BLOCK_POINTER: {
     if (Record.size() != 1) {
       Error("Incorrect encoding of block pointer type");
@@ -4956,6 +4988,9 @@ void TypeLocReader::VisitComplexTypeLoc(ComplexTypeLoc TL) {
 }
 void TypeLocReader::VisitPointerTypeLoc(PointerTypeLoc TL) {
   TL.setStarLoc(ReadSourceLocation(Record, Idx));
+}
+void TypeLocReader::VisitDecayedTypeLoc(DecayedTypeLoc TL) {
+  // nothing to do
 }
 void TypeLocReader::VisitBlockPointerTypeLoc(BlockPointerTypeLoc TL) {
   TL.setCaretLoc(ReadSourceLocation(Record, Idx));
@@ -6993,9 +7028,16 @@ ASTReader::ReadCXXCtorInitializers(ModuleFile &F, const RecordData &Record,
                                                MemberOrEllipsisLoc, LParenLoc,
                                                Init, RParenLoc);
       } else {
-        BOMInit = CXXCtorInitializer::Create(Context, Member, MemberOrEllipsisLoc,
-                                             LParenLoc, Init, RParenLoc,
-                                             Indices.data(), Indices.size());
+        if (IndirectMember) {
+          assert(Indices.empty() && "Indirect field improperly initialized");
+          BOMInit = new (Context) CXXCtorInitializer(Context, IndirectMember,
+                                                     MemberOrEllipsisLoc, LParenLoc,
+                                                     Init, RParenLoc);
+        } else {
+          BOMInit = CXXCtorInitializer::Create(Context, Member, MemberOrEllipsisLoc,
+                                               LParenLoc, Init, RParenLoc,
+                                               Indices.data(), Indices.size());
+        }
       }
 
       if (IsWritten)
