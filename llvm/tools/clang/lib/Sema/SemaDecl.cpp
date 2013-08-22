@@ -35,6 +35,7 @@
 #include "clang/Sema/DeclSpec.h"
 #include "clang/Sema/DelayedDiagnostic.h"
 #include "clang/Sema/Initialization.h"
+#include "clang/Sema/SemaLambda.h"
 #include "clang/Sema/Lookup.h"
 #include "clang/Sema/ParsedTemplate.h"
 #include "clang/Sema/Scope.h"
@@ -2887,7 +2888,7 @@ void Sema::MergeVarDeclTypes(VarDecl *New, VarDecl *Old,
 /// definitions here, since the initializer hasn't been attached.
 ///
 void Sema::MergeVarDecl(VarDecl *New, LookupResult &Previous,
-                        bool IsVariableTemplate, bool MergeTypeWithPrevious) {
+                        bool MergeTypeWithPrevious) {
   // If the new decl is already invalid, don't do any other checking.
   if (New->isInvalidDecl())
     return;
@@ -2896,7 +2897,7 @@ void Sema::MergeVarDecl(VarDecl *New, LookupResult &Previous,
   VarDecl *Old = 0;
   if (Previous.isSingleResult() &&
       (Old = dyn_cast<VarDecl>(Previous.getFoundDecl()))) {
-    if (IsVariableTemplate)
+    if (New->getDescribedVarTemplate())
       Old = Old->getDescribedVarTemplate() ? Old : 0;
     else
       Old = Old->getDescribedVarTemplate() ? 0 : Old;
@@ -3039,6 +3040,11 @@ void Sema::MergeVarDecl(VarDecl *New, LookupResult &Previous,
 
   // Inherit access appropriately.
   New->setAccess(Old->getAccess());
+
+  if (VarTemplateDecl *VTD = New->getDescribedVarTemplate()) {
+    if (New->isStaticDataMember() && New->isOutOfLine())
+      VTD->setAccess(New->getAccess());
+  }
 }
 
 /// ParsedFreeStandingDeclSpec - This method is invoked when a declspec with
@@ -4893,10 +4899,9 @@ Sema::ActOnVariableDeclarator(Scope *S, Declarator &D, DeclContext *DC,
   bool IsVariableTemplateSpecialization = false;
   bool IsPartialSpecialization = false;
   bool IsVariableTemplate = false;
-  bool Invalid = false; // TODO: Can we remove this (error-prone)?
-  TemplateParameterList *TemplateParams = 0;
   VarTemplateDecl *PrevVarTemplate = 0;
-  VarDecl *NewVD;
+  VarDecl *NewVD = 0;
+  VarTemplateDecl *NewTemplate = 0;
   if (!getLangOpts().CPlusPlus) {
     NewVD = VarDecl::Create(Context, DC, D.getLocStart(),
                             D.getIdentifierLoc(), II,
@@ -4905,6 +4910,8 @@ Sema::ActOnVariableDeclarator(Scope *S, Declarator &D, DeclContext *DC,
     if (D.isInvalidType())
       NewVD->setInvalidDecl();
   } else {
+    bool Invalid = false;
+
     if (DC->isRecord() && !CurContext->isRecord()) {
       // This is an out-of-line definition of a static data member.
       switch (SC) {
@@ -4963,10 +4970,11 @@ Sema::ActOnVariableDeclarator(Scope *S, Declarator &D, DeclContext *DC,
 
     // Match up the template parameter lists with the scope specifier, then
     // determine whether we have a template or a template specialization.
-    TemplateParams = MatchTemplateParametersToScopeSpecifier(
-        D.getDeclSpec().getLocStart(), D.getIdentifierLoc(),
-        D.getCXXScopeSpec(), TemplateParamLists,
-        /*never a friend*/ false, IsExplicitSpecialization, Invalid);
+    TemplateParameterList *TemplateParams =
+        MatchTemplateParametersToScopeSpecifier(
+            D.getDeclSpec().getLocStart(), D.getIdentifierLoc(),
+            D.getCXXScopeSpec(), TemplateParamLists,
+            /*never a friend*/ false, IsExplicitSpecialization, Invalid);
     if (TemplateParams) {
       if (!TemplateParams->size() &&
           D.getName().getKind() != UnqualifiedId::IK_TemplateId) {
@@ -5090,13 +5098,24 @@ Sema::ActOnVariableDeclarator(Scope *S, Declarator &D, DeclContext *DC,
       NewVD = VarDecl::Create(Context, DC, D.getLocStart(),
                               D.getIdentifierLoc(), II, R, TInfo, SC);
 
+    // If this is supposed to be a variable template, create it as such.
+    if (IsVariableTemplate) {
+      NewTemplate =
+          VarTemplateDecl::Create(Context, DC, D.getIdentifierLoc(), Name,
+                                  TemplateParams, NewVD, PrevVarTemplate);
+      NewVD->setDescribedVarTemplate(NewTemplate);
+    }
+
     // If this decl has an auto type in need of deduction, make a note of the
     // Decl so we can diagnose uses of it in its own initializer.
     if (D.getDeclSpec().containsPlaceholderType() && R->getContainedAutoType())
       ParsingInitForAutoVars.insert(NewVD);
 
-    if (D.isInvalidType() || Invalid)
+    if (D.isInvalidType() || Invalid) {
       NewVD->setInvalidDecl();
+      if (NewTemplate)
+        NewTemplate->setInvalidDecl();
+    }
 
     SetNestedNameSpecifier(NewVD, D);
 
@@ -5120,6 +5139,8 @@ Sema::ActOnVariableDeclarator(Scope *S, Declarator &D, DeclContext *DC,
   // Set the lexical context. If the declarator has a C++ scope specifier, the
   // lexical context will be different from the semantic context.
   NewVD->setLexicalDeclContext(CurContext);
+  if (NewTemplate)
+    NewTemplate->setLexicalDeclContext(CurContext);
 
   if (DeclSpec::TSCS TSCS = D.getDeclSpec().getThreadStorageClassSpec()) {
     if (NewVD->hasLocalStorage()) {
@@ -5178,8 +5199,11 @@ Sema::ActOnVariableDeclarator(Scope *S, Declarator &D, DeclContext *DC,
         << 0 << NewVD->getDeclName()
         << SourceRange(D.getDeclSpec().getModulePrivateSpecLoc())
         << FixItHint::CreateRemoval(D.getDeclSpec().getModulePrivateSpecLoc());
-    else
+    else {
       NewVD->setModulePrivate();
+      if (NewTemplate)
+        NewTemplate->setModulePrivate();
+    }
   }
 
   // Handle attributes prior to checking for duplicates in MergeVarDecl
@@ -5238,7 +5262,6 @@ Sema::ActOnVariableDeclarator(Scope *S, Declarator &D, DeclContext *DC,
   }
 
   // Diagnose shadowed variables before filtering for scope.
-  // FIXME: Special treatment for static variable template members (?).
   if (!D.getCXXScopeSpec().isSet())
     CheckShadow(S, NewVD, Previous);
 
@@ -5285,15 +5308,12 @@ Sema::ActOnVariableDeclarator(Scope *S, Declarator &D, DeclContext *DC,
         LookupResult PrevDecl(*this, GetNameForDeclarator(D),
                               LookupOrdinaryName, ForRedeclaration);
         PrevDecl.addDecl(PrevVarTemplate->getTemplatedDecl());
-        D.setRedeclaration(
-            CheckVariableDeclaration(NewVD, PrevDecl, IsVariableTemplate));
+        D.setRedeclaration(CheckVariableDeclaration(NewVD, PrevDecl));
       } else
-        D.setRedeclaration(
-            CheckVariableDeclaration(NewVD, Previous, IsVariableTemplate));
+        D.setRedeclaration(CheckVariableDeclaration(NewVD, Previous));
     }
 
     // This is an explicit specialization of a static data member. Check it.
-    // FIXME: Special treatment for static variable template members (?).
     if (IsExplicitSpecialization && !NewVD->isInvalidDecl() &&
         CheckMemberSpecialization(NewVD, Previous))
       NewVD->setInvalidDecl();
@@ -5317,45 +5337,17 @@ Sema::ActOnVariableDeclarator(Scope *S, Declarator &D, DeclContext *DC,
     }
   }
 
-  // If this is not a variable template, return it now.
-  if (!IsVariableTemplate)
-    return NewVD;
-
-  // If this is supposed to be a variable template, create it as such.
-  VarTemplateDecl *NewTemplate =
-      VarTemplateDecl::Create(Context, DC, D.getIdentifierLoc(), Name,
-                              TemplateParams, NewVD, PrevVarTemplate);
-  NewVD->setDescribedVarTemplate(NewTemplate);
-
-  if (D.getDeclSpec().isModulePrivateSpecified())
-    NewTemplate->setModulePrivate();
-
   // If we are providing an explicit specialization of a static variable
   // template, make a note of that.
   if (PrevVarTemplate && PrevVarTemplate->getInstantiatedFromMemberTemplate())
-    NewTemplate->setMemberSpecialization();
+    PrevVarTemplate->setMemberSpecialization();
 
-  // Set the lexical context of this template
-  NewTemplate->setLexicalDeclContext(CurContext);
-  if (NewVD->isStaticDataMember() && NewVD->isOutOfLine())
-    NewTemplate->setAccess(NewVD->getAccess());
-
-  if (PrevVarTemplate)
-    mergeDeclAttributes(NewVD, PrevVarTemplate->getTemplatedDecl());
-
-  AddPushedVisibilityAttribute(NewVD);
-
-  PushOnScopeChains(NewTemplate, S);
-  AddToScope = false;
-
-  if (Invalid) {
-    NewTemplate->setInvalidDecl();
-    NewVD->setInvalidDecl();
+  if (NewTemplate) {
+    ActOnDocumentableDecl(NewTemplate);
+    return NewTemplate;
   }
 
-  ActOnDocumentableDecl(NewTemplate);
-
-  return NewTemplate;
+  return NewVD;
 }
 
 /// \brief Diagnose variable or built-in function shadowing.  Implements
@@ -5721,9 +5713,7 @@ void Sema::CheckVariableDeclarationType(VarDecl *NewVD) {
 /// Sets NewVD->isInvalidDecl() if an error was encountered.
 ///
 /// Returns true if the variable declaration is a redeclaration.
-bool Sema::CheckVariableDeclaration(VarDecl *NewVD,
-                                    LookupResult &Previous,
-                                    bool IsVariableTemplate) {
+bool Sema::CheckVariableDeclaration(VarDecl *NewVD, LookupResult &Previous) {
   CheckVariableDeclarationType(NewVD);
 
   // If the decl is already known invalid, don't check it.
@@ -5773,7 +5763,7 @@ bool Sema::CheckVariableDeclaration(VarDecl *NewVD,
   filterNonConflictingPreviousDecls(Context, NewVD, Previous);
 
   if (!Previous.empty()) {
-    MergeVarDecl(NewVD, Previous, IsVariableTemplate, MergeTypeWithPrevious);
+    MergeVarDecl(NewVD, Previous, MergeTypeWithPrevious);
     return true;
   }
   return false;
@@ -8920,6 +8910,7 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
   const DeclSpec &DS = D.getDeclSpec();
 
   // Verify C99 6.7.5.3p2: The only SCS allowed is 'register'.
+
   // C++03 [dcl.stc]p2 also permits 'auto'.
   VarDecl::StorageClass StorageClass = SC_None;
   if (DS.getStorageClassSpec() == DeclSpec::SCS_register) {
@@ -9026,6 +9017,14 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
   if (New->hasAttr<BlocksAttr>()) {
     Diag(New->getLocation(), diag::err_block_on_nonlocal);
   }
+
+  // Handle 'auto' within a generic lambda.
+  QualType ParamType = New->getType();
+  if (getLangOpts().CPlusPlus1y && ParamType->getContainedAutoType()) { 
+    assert(getCurLambda() && 
+                  "'auto' in parameter type only allowed in lambdas!");
+    New = ActOnLambdaAutoParameter(New);
+  } 
   return New;
 }
 
@@ -9279,9 +9278,38 @@ Decl *Sema::ActOnStartOfFunctionDef(Scope *FnBodyScope, Decl *D) {
     FD = FunTmpl->getTemplatedDecl();
   else
     FD = cast<FunctionDecl>(D);
+  // If we are instantiating a generic lambda call operator, push
+  // a LambdaScopeInfo onto the function stack.  But use the information
+  // that's already been calculated (ActOnLambdaExpr) when analyzing the
+  // template version, to prime the current LambdaScopeInfo. 
+  if (getLangOpts().CPlusPlus1y 
+                        && isGenericLambdaCallOperatorSpecialization(D)) {
+    CXXMethodDecl *CallOperator = cast<CXXMethodDecl>(D);
+    CXXRecordDecl *LambdaClass = CallOperator->getParent();
+    LambdaExpr    *LE = LambdaClass->getLambdaExpr();
+    assert(LE && 
+     "No LambdaExpr of closure class when instantiating a generic lambda!");
+    assert(ActiveTemplateInstantiations.size() &&
+      "There should be an active template instantiation on the stack " 
+      "when instantiating a generic lambda!");
+    PushLambdaScope();
+    LambdaScopeInfo *LSI = getCurLambda();
+    LSI->CallOperator = CallOperator;
+    LSI->Lambda = LambdaClass;
+    LSI->ReturnType = CallOperator->getResultType();
 
-  // Enter a new function scope
-  PushFunctionScope();
+    if (LE->getCaptureDefault() == LCD_None)
+      LSI->ImpCaptureStyle = CapturingScopeInfo::ImpCap_None;
+    else if (LE->getCaptureDefault() == LCD_ByCopy)
+      LSI->ImpCaptureStyle = CapturingScopeInfo::ImpCap_LambdaByval;
+    else if (LE->getCaptureDefault() == LCD_ByRef)
+      LSI->ImpCaptureStyle = CapturingScopeInfo::ImpCap_LambdaByref;
+    
+    LSI->IntroducerRange = LE->getIntroducerRange();
+  }
+  else
+    // Enter a new function scope
+    PushFunctionScope();
 
   // See if this is a redefinition.
   if (!FD->isLateTemplateParsed())

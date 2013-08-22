@@ -589,6 +589,10 @@ namespace {
     AutoType *VisitAttributedType(const AttributedType *T) {
       return Visit(T->getModifiedType());
     }
+    AutoType *VisitPackExpansionType(const PackExpansionType *T) {
+      return Visit(T->getPattern());
+    }
+
   };
 }
 
@@ -1126,7 +1130,7 @@ bool QualType::isTriviallyCopyableType(ASTContext &Context) const {
 
 
 
-bool Type::isLiteralType(ASTContext &Ctx) const {
+bool Type::isLiteralType(const ASTContext &Ctx) const {
   if (isDependentType())
     return false;
 
@@ -1541,7 +1545,7 @@ StringRef BuiltinType::getName(const PrintingPolicy &Policy) const {
   llvm_unreachable("Invalid builtin type.");
 }
 
-QualType QualType::getNonLValueExprType(ASTContext &Context) const {
+QualType QualType::getNonLValueExprType(const ASTContext &Context) const {
   if (const ReferenceType *RefType = getTypePtr()->getAs<ReferenceType>())
     return RefType->getPointeeType();
   
@@ -1657,7 +1661,7 @@ FunctionProtoType::FunctionProtoType(QualType result, ArrayRef<QualType> args,
 }
 
 FunctionProtoType::NoexceptResult
-FunctionProtoType::getNoexceptSpec(ASTContext &ctx) const {
+FunctionProtoType::getNoexceptSpec(const ASTContext &ctx) const {
   ExceptionSpecificationType est = getExceptionSpecType();
   if (est == EST_BasicNoexcept)
     return NR_Nothrow;

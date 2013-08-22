@@ -308,7 +308,7 @@ private:
   /// \returns the index of the last instrucion in the BB from \p VL.
   int getLastIndex(ArrayRef<Value *> VL);
 
-  /// \returns the Instrucion in the bundle \p VL.
+  /// \returns the Instruction in the bundle \p VL.
   Instruction *getLastInstruction(ArrayRef<Value *> VL);
 
   /// \returns a vector from a collection of scalars in \p VL.
@@ -1592,8 +1592,7 @@ struct SLPVectorizer : public FunctionPass {
       return false;
 
     // Don't vectorize when the attribute NoImplicitFloat is used.
-    if (F.getAttributes().hasAttribute(AttributeSet::FunctionIndex,
-                                       Attribute::NoImplicitFloat))
+    if (F.hasFnAttribute(Attribute::NoImplicitFloat))
       return false;
 
     DEBUG(dbgs() << "SLP: Analyzing blocks in " << F.getName() << ".\n");
@@ -1875,6 +1874,8 @@ bool SLPVectorizer::tryToVectorize(BinaryOperator *V, BoUpSLP &R) {
 bool SLPVectorizer::vectorizeChainsInBlock(BasicBlock *BB, BoUpSLP &R) {
   bool Changed = false;
   SmallVector<Value *, 4> Incoming;
+  SmallSet<Instruction *, 16> VisitedInstrs;
+
   // Collect the incoming values from the PHIs.
   for (BasicBlock::iterator instr = BB->begin(), ie = BB->end(); instr != ie;
        ++instr) {
@@ -1883,9 +1884,21 @@ bool SLPVectorizer::vectorizeChainsInBlock(BasicBlock *BB, BoUpSLP &R) {
     if (!P)
       break;
 
+    // We may go through BB multiple times so skip the one we have checked.
+    if (VisitedInstrs.count(instr))
+      continue;
+    VisitedInstrs.insert(instr);
+
     // Stop constructing the list when you reach a different type.
     if (Incoming.size() && P->getType() != Incoming[0]->getType()) {
-      Changed |= tryToVectorizeList(Incoming, R);
+      if (tryToVectorizeList(Incoming, R)) {
+        // We would like to start over since some instructions are deleted
+        // and the iterator may become invalid value.
+        Changed = true;
+        instr = BB->begin();
+        ie = BB->end();
+      }
+
       Incoming.clear();
     }
 
@@ -1895,14 +1908,20 @@ bool SLPVectorizer::vectorizeChainsInBlock(BasicBlock *BB, BoUpSLP &R) {
   if (Incoming.size() > 1)
     Changed |= tryToVectorizeList(Incoming, R);
 
-  llvm::Instruction *I;
-  for (BasicBlock::iterator it = BB->begin(), e = BB->end(); it != e;) {
-    I = it++;
-    if (isa<DbgInfoIntrinsic>(I))
+  VisitedInstrs.clear();
+
+  for (BasicBlock::iterator it = BB->begin(), e = BB->end(); it != e; it++) {
+
+    // We may go through BB multiple times so skip the one we have checked.
+    if (VisitedInstrs.count(it))
+      continue;
+    VisitedInstrs.insert(it);
+
+    if (isa<DbgInfoIntrinsic>(it))
       continue;
 
     // Try to vectorize reductions that use PHINodes.
-    if (PHINode *P = dyn_cast<PHINode>(I)) {
+    if (PHINode *P = dyn_cast<PHINode>(it)) {
       // Check that the PHI is a reduction PHI.
       if (P->getNumIncomingValues() != 2)
         return Changed;
@@ -1919,20 +1938,38 @@ bool SLPVectorizer::vectorizeChainsInBlock(BasicBlock *BB, BoUpSLP &R) {
       if (Inst == P)
         Inst = BI->getOperand(1);
 
-      Changed |= tryToVectorize(dyn_cast<BinaryOperator>(Inst), R);
+      if (tryToVectorize(dyn_cast<BinaryOperator>(Inst), R)) {
+        // We would like to start over since some instructions are deleted
+        // and the iterator may become invalid value.
+        Changed = true;
+        it = BB->begin();
+        e = BB->end();
+      }
       continue;
     }
 
     // Try to vectorize trees that start at compare instructions.
-    if (CmpInst *CI = dyn_cast<CmpInst>(I)) {
+    if (CmpInst *CI = dyn_cast<CmpInst>(it)) {
       if (tryToVectorizePair(CI->getOperand(0), CI->getOperand(1), R)) {
-        Changed |= true;
+        Changed = true;
+        // We would like to start over since some instructions are deleted
+        // and the iterator may become invalid value.
+        it = BB->begin();
+        e = BB->end();
         continue;
       }
-      for (int i = 0; i < 2; ++i)
-        if (BinaryOperator *BI = dyn_cast<BinaryOperator>(CI->getOperand(i)))
-          Changed |=
-              tryToVectorizePair(BI->getOperand(0), BI->getOperand(1), R);
+
+      for (int i = 0; i < 2; ++i) {
+         if (BinaryOperator *BI = dyn_cast<BinaryOperator>(CI->getOperand(i))) {
+            if (tryToVectorizePair(BI->getOperand(0), BI->getOperand(1), R)) {
+              Changed = true;
+              // We would like to start over since some instructions are deleted
+              // and the iterator may become invalid value.
+              it = BB->begin();
+              e = BB->end();
+            }
+         }
+      }
       continue;
     }
   }

@@ -212,6 +212,16 @@ let isCall = 1, Defs = [R0D, R1D, R2D, R3D, R4D, R5D, R14D,
                      "basr\t%r14, $R2", [(z_call ADDR64:$R2)]>;
 }
 
+// Sibling calls.  Indirect sibling calls must be via R1, since R2 upwards
+// are argument registers and since branching to R0 is a no-op.
+let isCall = 1, isTerminator = 1, isReturn = 1, isBarrier = 1,
+    isCodeGenOnly = 1, R1 = 15 in {
+  def CallJG : InstRIL<0xC04, (outs), (ins pcrel32call:$I2),
+                       "jg\t$I2", [(z_sibcall pcrel32call:$I2)]>;
+  let R2 = 1, Uses = [R1D] in
+    def CallBR : InstRR<0x07, (outs), (ins), "br\t%r1", [(z_sibcall R1D)]>;
+}
+
 // Define the general form of the call instructions for the asm parser.
 // These instructions don't hard-code %r14 as the return address register.
 def AsmBRAS  : InstRI<0xA75, (outs), (ins GR64:$R1, brtarget16:$I2),
@@ -524,8 +534,28 @@ let neverHasSideEffects = 1, isAsCheapAsAMove = 1, isMoveImm = 1,
 }
 
 //===----------------------------------------------------------------------===//
-// Negation
+// Absolute and Negation
 //===----------------------------------------------------------------------===//
+
+let Defs = [CC] in {
+  let CCValues = 0xF, CompareZeroCCMask = 0x8 in {
+    def LPR  : UnaryRR <"lp",  0x10,   z_iabs32, GR32, GR32>;
+    def LPGR : UnaryRRE<"lpg", 0xB900, z_iabs64, GR64, GR64>;
+  }
+  let CCValues = 0xE, CompareZeroCCMask = 0xE in
+    def LPGFR : UnaryRRE<"lpgf", 0xB910, null_frag, GR64, GR32>;
+}
+defm : SXU<z_iabs64, LPGFR>;
+
+let Defs = [CC] in {
+  let CCValues = 0xF, CompareZeroCCMask = 0x8 in {
+    def LNR  : UnaryRR <"ln",  0x11,   z_inegabs32, GR32, GR32>;
+    def LNGR : UnaryRRE<"lng", 0xB901, z_inegabs64, GR64, GR64>;
+  }
+  let CCValues = 0xE, CompareZeroCCMask = 0xE in
+    def LNGFR : UnaryRRE<"lngf", 0xB911, null_frag, GR64, GR32>;
+}
+defm : SXU<z_inegabs64, LNGFR>;
 
 let Defs = [CC] in {
   let CCValues = 0xF, CompareZeroCCMask = 0x8 in {

@@ -722,7 +722,7 @@ void Sema::ActOnEndOfTranslationUnit() {
           else {
             if (FD->getStorageClass() == SC_Static &&
                 !FD->isInlineSpecified() &&
-                !SourceMgr.isFromMainFile(
+                !SourceMgr.isInMainFile(
                    SourceMgr.getExpansionLoc(FD->getLocation())))
               Diag(DiagD->getLocation(), diag::warn_unneeded_static_internal_decl)
                 << DiagD->getDeclName();
@@ -743,7 +743,7 @@ void Sema::ActOnEndOfTranslationUnit() {
         if (DiagD->isReferenced()) {
           Diag(DiagD->getLocation(), diag::warn_unneeded_internal_decl)
                 << /*variable*/1 << DiagD->getDeclName();
-        } else if (getSourceManager().isFromMainFile(DiagD->getLocation())) {
+        } else if (SourceMgr.isInMainFile(DiagD->getLocation())) {
           // If the declaration is in a header which is included into multiple
           // TUs, it will declare one variable per TU, and one of the other
           // variables may be used. So, only warn if the declaration is in the
@@ -1007,10 +1007,17 @@ void Sema::PushBlockScope(Scope *BlockScope, BlockDecl *Block) {
                                               BlockScope, Block));
 }
 
-void Sema::PushLambdaScope(CXXRecordDecl *Lambda,
-                           CXXMethodDecl *CallOperator) {
-  FunctionScopes.push_back(new LambdaScopeInfo(getDiagnostics(), Lambda,
-                                               CallOperator));
+void Sema::PushLambdaScope() {
+  FunctionScopes.push_back(new LambdaScopeInfo(getDiagnostics()));
+}
+
+void Sema::RecordParsingTemplateParameterDepth(unsigned Depth) {
+  if (LambdaScopeInfo *const LSI = getCurLambda()) {
+    LSI->AutoTemplateParameterDepth = Depth;
+    return;
+  } 
+  assert(false && 
+      "Remove assertion if intentionally called in a non-lambda context.");
 }
 
 void Sema::PopFunctionScopeInfo(const AnalysisBasedWarnings::Policy *WP,
@@ -1066,6 +1073,16 @@ LambdaScopeInfo *Sema::getCurLambda() {
 
   return dyn_cast<LambdaScopeInfo>(FunctionScopes.back());
 }
+// We have a generic lambda if we parsed auto parameters, or we have 
+// an associated template parameter list.
+LambdaScopeInfo *Sema::getCurGenericLambda() {
+  if (LambdaScopeInfo *LSI =  getCurLambda()) {
+    return (LSI->AutoTemplateParams.size() ||
+                    LSI->GLTemplateParameterList) ? LSI : 0;
+  }
+  return 0;
+}
+
 
 void Sema::ActOnComment(SourceRange Comment) {
   if (!LangOpts.RetainCommentsFromSystemHeaders &&
@@ -1306,8 +1323,7 @@ bool Sema::tryToRecoverWithCall(ExprResult &E, const PartialDiagnostic &PD,
     // arguments and that it returns something of a reasonable type,
     // so we can emit a fixit and carry on pretending that E was
     // actually a CallExpr.
-    SourceLocation ParenInsertionLoc =
-      PP.getLocForEndOfToken(Range.getEnd());
+    SourceLocation ParenInsertionLoc = PP.getLocForEndOfToken(Range.getEnd());
     Diag(Loc, PD)
       << /*zero-arg*/ 1 << Range
       << (IsCallableWithAppend(E.get())
@@ -1317,8 +1333,8 @@ bool Sema::tryToRecoverWithCall(ExprResult &E, const PartialDiagnostic &PD,
 
     // FIXME: Try this before emitting the fixit, and suppress diagnostics
     // while doing so.
-    E = ActOnCallExpr(0, E.take(), ParenInsertionLoc,
-                      None, ParenInsertionLoc.getLocWithOffset(1));
+    E = ActOnCallExpr(0, E.take(), Range.getEnd(), None,
+                      Range.getEnd().getLocWithOffset(1));
     return true;
   }
 

@@ -2391,7 +2391,7 @@ DeclResult Sema::ActOnVarTemplateSpecialization(
     // If we are providing an explicit specialization of a member variable
     // template specialization, make a note of that.
     if (PrevPartial && PrevPartial->getInstantiatedFromMember())
-      Partial->setMemberSpecialization();
+      PrevPartial->setMemberSpecialization();
 
     // Check that all of the template parameters of the variable template
     // partial specialization are deducible from the template
@@ -2477,6 +2477,9 @@ DeclResult Sema::ActOnVarTemplateSpecialization(
                           ForRedeclaration);
     PrevSpec.addDecl(PrevDecl);
     D.setRedeclaration(CheckVariableDeclaration(Specialization, PrevSpec));
+  } else if (Specialization->isStaticDataMember() &&
+             Specialization->isOutOfLine()) {
+    Specialization->setAccess(VarTemplate->getAccess());
   }
 
   // Link instantiations of static data members back to the template from
@@ -4165,14 +4168,6 @@ CheckTemplateArgumentAddressOfObjectOrFunction(Sema &S,
   if (!DRE) {
     S.Diag(Arg->getLocStart(), diag::err_template_arg_not_decl_ref)
     << Arg->getSourceRange();
-    S.Diag(Param->getLocation(), diag::note_template_param_here);
-    return true;
-  }
-
-  if (!isa<ValueDecl>(DRE->getDecl())) {
-    S.Diag(Arg->getLocStart(),
-           diag::err_template_arg_not_object_or_func_form)
-      << Arg->getSourceRange();
     S.Diag(Param->getLocation(), diag::note_template_param_here);
     return true;
   }

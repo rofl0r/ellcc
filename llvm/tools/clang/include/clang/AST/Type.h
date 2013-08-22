@@ -818,7 +818,7 @@ public:
   /// an lvalue. It removes a top-level reference (since there are no
   /// expressions of reference type) and deletes top-level cvr-qualifiers
   /// from non-class types (in C++) or all types (in C).
-  QualType getNonLValueExprType(ASTContext &Context) const;
+  QualType getNonLValueExprType(const ASTContext &Context) const;
 
   /// getDesugaredType - Return the specified type with any "sugar" removed from
   /// the type.  This takes off typedefs, typeof's etc.  If the outer level of
@@ -1456,7 +1456,7 @@ public:
 
   /// isLiteralType - Return true if this is a literal type
   /// (C++11 [basic.types]p10)
-  bool isLiteralType(ASTContext &Ctx) const;
+  bool isLiteralType(const ASTContext &Ctx) const;
 
   /// \brief Test if this type is a standard-layout type.
   /// (C++0x [basic.type]p9)
@@ -2970,7 +2970,7 @@ public:
     NR_Nothrow      ///< The noexcept specifier evaluates to true.
   };
   /// \brief Get the meaning of the noexcept spec on this function, if any.
-  NoexceptResult getNoexceptSpec(ASTContext &Ctx) const;
+  NoexceptResult getNoexceptSpec(const ASTContext &Ctx) const;
   unsigned getNumExceptions() const { return NumExceptions; }
   QualType getExceptionType(unsigned i) const {
     assert(i < NumExceptions && "Invalid exception number!");
@@ -3001,7 +3001,7 @@ public:
       return 0;
     return reinterpret_cast<FunctionDecl * const *>(arg_type_end())[1];
   }
-  bool isNothrow(ASTContext &Ctx) const {
+  bool isNothrow(const ASTContext &Ctx) const {
     ExceptionSpecificationType EST = getExceptionSpecType();
     assert(EST != EST_Unevaluated && EST != EST_Uninstantiated);
     if (EST == EST_DynamicNone || EST == EST_BasicNoexcept)
@@ -3614,10 +3614,11 @@ public:
 /// is no deduced type and an auto type is canonical. In the latter case, it is
 /// also a dependent type.
 class AutoType : public Type, public llvm::FoldingSetNode {
-  AutoType(QualType DeducedType, bool IsDecltypeAuto, bool IsDependent)
+  AutoType(QualType DeducedType, bool IsDecltypeAuto, 
+           bool IsDependent, bool IsParameterPack)
     : Type(Auto, DeducedType.isNull() ? QualType(this, 0) : DeducedType,
            /*Dependent=*/IsDependent, /*InstantiationDependent=*/IsDependent,
-           /*VariablyModified=*/false, /*ContainsParameterPack=*/false) {
+           /*VariablyModified=*/false, /*ContainsParameterPack=*/IsParameterPack) {
     assert((DeducedType.isNull() || !IsDependent) &&
            "auto deduced to dependent type");
     AutoTypeBits.IsDecltypeAuto = IsDecltypeAuto;
@@ -3641,14 +3642,17 @@ public:
   }
 
   void Profile(llvm::FoldingSetNodeID &ID) {
-    Profile(ID, getDeducedType(), isDecltypeAuto(), isDependentType());
+    Profile(ID, getDeducedType(), isDecltypeAuto(), 
+		    isDependentType(), containsUnexpandedParameterPack());
   }
 
   static void Profile(llvm::FoldingSetNodeID &ID, QualType Deduced,
-                      bool IsDecltypeAuto, bool IsDependent) {
+                      bool IsDecltypeAuto, bool IsDependent, 
+                      bool IsParameterPack) {
     ID.AddPointer(Deduced.getAsOpaquePtr());
     ID.AddBoolean(IsDecltypeAuto);
     ID.AddBoolean(IsDependent);
+    ID.AddBoolean(IsParameterPack);
   }
 
   static bool classof(const Type *T) {

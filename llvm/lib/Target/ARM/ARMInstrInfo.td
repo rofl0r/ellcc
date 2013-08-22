@@ -710,6 +710,11 @@ def imm0_65535_expr : Operand<i32> {
   let ParserMatchClass = Imm0_65535ExprAsmOperand;
 }
 
+def Imm256_65535ExprAsmOperand: ImmAsmOperand { let Name = "Imm256_65535Expr"; }
+def imm256_65535_expr : Operand<i32> {
+  let ParserMatchClass = Imm256_65535ExprAsmOperand;
+}
+
 /// imm24b - True if the 32-bit immediate is encodable in 24 bits.
 def Imm24bitAsmOperand: ImmAsmOperand { let Name = "Imm24bit"; }
 def imm24b : Operand<i32>, ImmLeaf<i32, [{
@@ -4141,56 +4146,65 @@ def BCCZi64 : PseudoInst<(outs),
 
 
 // Conditional moves
-// FIXME: should be able to write a pattern for ARMcmov, but can't use
-// a two-value operand where a dag node expects two operands. :(
 let neverHasSideEffects = 1 in {
 
 let isCommutable = 1, isSelect = 1 in
-def MOVCCr : ARMPseudoInst<(outs GPR:$Rd), (ins GPR:$false, GPR:$Rm, pred:$p),
+def MOVCCr : ARMPseudoInst<(outs GPR:$Rd),
+                           (ins GPR:$false, GPR:$Rm, cmovpred:$p),
                            4, IIC_iCMOVr,
-  [/*(set GPR:$Rd, (ARMcmov GPR:$false, GPR:$Rm, imm:$cc, CCR:$ccr))*/]>,
-      RegConstraint<"$false = $Rd">, Sched<[WriteALU]>;
+                           [(set GPR:$Rd, (ARMcmov GPR:$false, GPR:$Rm,
+                                                   cmovpred:$p))]>,
+             RegConstraint<"$false = $Rd">, Sched<[WriteALU]>;
 
 def MOVCCsi : ARMPseudoInst<(outs GPR:$Rd),
-                           (ins GPR:$false, so_reg_imm:$shift, pred:$p),
-                           4, IIC_iCMOVsr,
-  [/*(set GPR:$Rd, (ARMcmov GPR:$false, so_reg_imm:$shift,
-                            imm:$cc, CCR:$ccr))*/]>,
+                            (ins GPR:$false, so_reg_imm:$shift, cmovpred:$p),
+                            4, IIC_iCMOVsr,
+                            [(set GPR:$Rd,
+                                  (ARMcmov GPR:$false, so_reg_imm:$shift,
+                                           cmovpred:$p))]>,
       RegConstraint<"$false = $Rd">, Sched<[WriteALU]>;
 def MOVCCsr : ARMPseudoInst<(outs GPR:$Rd),
-                           (ins GPR:$false, so_reg_reg:$shift, pred:$p),
+                            (ins GPR:$false, so_reg_reg:$shift, cmovpred:$p),
                            4, IIC_iCMOVsr,
-  [/*(set GPR:$Rd, (ARMcmov GPR:$false, so_reg_reg:$shift,
-                            imm:$cc, CCR:$ccr))*/]>,
+  [(set GPR:$Rd, (ARMcmov GPR:$false, so_reg_reg:$shift,
+                            cmovpred:$p))]>,
       RegConstraint<"$false = $Rd">, Sched<[WriteALU]>;
 
 
 let isMoveImm = 1 in
-def MOVCCi16 : ARMPseudoInst<(outs GPR:$Rd),
-                             (ins GPR:$false, imm0_65535_expr:$imm, pred:$p),
-                             4, IIC_iMOVi,
-                             []>,
+def MOVCCi16
+    : ARMPseudoInst<(outs GPR:$Rd),
+                    (ins GPR:$false, imm0_65535_expr:$imm, cmovpred:$p),
+                    4, IIC_iMOVi,
+                    [(set GPR:$Rd, (ARMcmov GPR:$false, imm0_65535:$imm,
+                                            cmovpred:$p))]>,
       RegConstraint<"$false = $Rd">, Requires<[IsARM, HasV6T2]>,
       Sched<[WriteALU]>;
 
 let isMoveImm = 1 in
 def MOVCCi : ARMPseudoInst<(outs GPR:$Rd),
-                           (ins GPR:$false, so_imm:$imm, pred:$p),
+                           (ins GPR:$false, so_imm:$imm, cmovpred:$p),
                            4, IIC_iCMOVi,
-   [/*(set GPR:$Rd, (ARMcmov GPR:$false, so_imm:$imm, imm:$cc, CCR:$ccr))*/]>,
+                           [(set GPR:$Rd, (ARMcmov GPR:$false, so_imm:$imm,
+                                                   cmovpred:$p))]>,
       RegConstraint<"$false = $Rd">, Sched<[WriteALU]>;
 
 // Two instruction predicate mov immediate.
 let isMoveImm = 1 in
-def MOVCCi32imm : ARMPseudoInst<(outs GPR:$Rd),
-                                (ins GPR:$false, i32imm:$src, pred:$p),
-                  8, IIC_iCMOVix2, []>, RegConstraint<"$false = $Rd">;
+def MOVCCi32imm
+    : ARMPseudoInst<(outs GPR:$Rd),
+                    (ins GPR:$false, i32imm:$src, cmovpred:$p),
+                    8, IIC_iCMOVix2,
+                    [(set GPR:$Rd, (ARMcmov GPR:$false, imm:$src,
+                                            cmovpred:$p))]>,
+      RegConstraint<"$false = $Rd">, Requires<[HasV6T2]>;
 
 let isMoveImm = 1 in
 def MVNCCi : ARMPseudoInst<(outs GPR:$Rd),
-                           (ins GPR:$false, so_imm:$imm, pred:$p),
+                           (ins GPR:$false, so_imm:$imm, cmovpred:$p),
                            4, IIC_iCMOVi,
- [/*(set GPR:$Rd, (ARMcmov GPR:$false, so_imm_not:$imm, imm:$cc, CCR:$ccr))*/]>,
+                           [(set GPR:$Rd, (ARMcmov GPR:$false, so_imm_not:$imm,
+                                                   cmovpred:$p))]>,
                 RegConstraint<"$false = $Rd">, Sched<[WriteALU]>;
 
 } // neverHasSideEffects

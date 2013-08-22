@@ -320,9 +320,9 @@ option(CLANG_INCLUDE_TESTS
        ${LLVM_INCLUDE_TESTS})
 
 # TODO: docs.
-add_subdirectory(test)
 
 if( CLANG_INCLUDE_TESTS )
+  add_subdirectory(test)
   add_subdirectory(unittests)
 endif()
 
@@ -337,3 +337,6 @@ endif()
 
 set(BUG_REPORT_URL "http://llvm.org/bugs/" CACHE STRING
   "Default URL where bug reports are to be submitted.")
+
+option(CLANG_ORDER_FILE
+  "Order file to use when compiling clang in order to improve startup time." "")

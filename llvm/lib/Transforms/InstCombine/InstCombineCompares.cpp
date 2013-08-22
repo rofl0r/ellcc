@@ -226,7 +226,8 @@ static void ComputeUnsignedMinMaxValuesFromKnownBits(const APInt &KnownZero,
 Instruction *InstCombiner::
 FoldCmpLoadFromIndexedGlobal(GetElementPtrInst *GEP, GlobalVariable *GV,
                              CmpInst &ICI, ConstantInt *AndCst) {
-  if (!GEP->isInBounds())
+  // We need TD information to know the pointer size unless this is inbounds.
+  if (!GEP->isInBounds() && TD == 0)
     return 0;
 
   Constant *Init = GV->getInitializer();
@@ -389,6 +390,13 @@ FoldCmpLoadFromIndexedGlobal(GetElementPtrInst *GEP, GlobalVariable *GV,
   // Now that we've scanned the entire array, emit our new comparison(s).  We
   // order the state machines in complexity of the generated code.
   Value *Idx = GEP->getOperand(2);
+
+  // If the index is larger than the pointer size of the target, truncate the
+  // index down like the GEP would do implicitly.  We don't have to do this for
+  // an inbounds GEP because the index can't be out of range.
+  if (!GEP->isInBounds() &&
+      Idx->getType()->getPrimitiveSizeInBits() > TD->getPointerSizeInBits())
+    Idx = Builder->CreateTrunc(Idx, TD->getIntPtrType(Idx->getContext()));
 
   // If the comparison is only true for one or two elements, emit direct
   // comparisons.
@@ -555,16 +563,18 @@ static Value *EvaluateGEPOffsetExpression(User *GEP, InstCombiner &IC) {
     }
   }
 
+
+
   // Okay, we know we have a single variable index, which must be a
   // pointer/array/vector index.  If there is no offset, life is simple, return
   // the index.
-  unsigned IntPtrWidth = TD.getPointerSizeInBits();
+  Type *IntPtrTy = TD.getIntPtrType(GEP->getOperand(0)->getType());
+  unsigned IntPtrWidth = IntPtrTy->getIntegerBitWidth();
   if (Offset == 0) {
     // Cast to intptrty in case a truncation occurs.  If an extension is needed,
     // we don't need to bother extending: the extension won't affect where the
     // computation crosses zero.
     if (VariableIdx->getType()->getPrimitiveSizeInBits() > IntPtrWidth) {
-      Type *IntPtrTy = TD.getIntPtrType(VariableIdx->getContext());
       VariableIdx = IC.Builder->CreateTrunc(VariableIdx, IntPtrTy);
     }
     return VariableIdx;
@@ -586,7 +596,6 @@ static Value *EvaluateGEPOffsetExpression(User *GEP, InstCombiner &IC) {
     return 0;
 
   // Okay, we can do this evaluation.  Start by converting the index to intptr.
-  Type *IntPtrTy = TD.getIntPtrType(VariableIdx->getContext());
   if (VariableIdx->getType() != IntPtrTy)
     VariableIdx = IC.Builder->CreateIntCast(VariableIdx, IntPtrTy,
                                             true /*Signed*/);
@@ -2470,7 +2479,7 @@ Instruction *InstCombiner::visitICmpInst(ICmpInst &I) {
       case Instruction::IntToPtr:
         // icmp pred inttoptr(X), null -> icmp pred X, 0
         if (RHSC->isNullValue() && TD &&
-            TD->getIntPtrType(RHSC->getContext()) ==
+            TD->getIntPtrType(RHSC->getType()) ==
                LHSI->getOperand(0)->getType())
           return new ICmpInst(I.getPredicate(), LHSI->getOperand(0),
                         Constant::getNullValue(LHSI->getOperand(0)->getType()));

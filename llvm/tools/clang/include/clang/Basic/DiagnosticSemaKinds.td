@@ -2189,9 +2189,6 @@ def warn_use_while_consumed : Warning<
 def warn_use_of_temp_while_consumed : Warning<
   "invocation of method '%0' on a temporary object while it is in the "
   "'consumed' state">, InGroup<Consumed>, DefaultIgnore;
-def warn_uniqueness_attribute_wrong_decl_type : Warning<
-  "%0 attribute only applies to methods">,
-  InGroup<Consumed>, DefaultIgnore;
 
 // ConsumedStrict warnings
 def warn_use_in_unknown_state : Warning<
@@ -2952,9 +2949,6 @@ def err_template_arg_ref_bind_ignores_quals : Error<
   "ignores qualifiers">;
 def err_template_arg_not_decl_ref : Error<
   "non-type template argument does not refer to any declaration">;
-def err_template_arg_not_object_or_func_form : Error<
-  "non-type template argument does not directly refer to an object or "
-  "function">;
 def err_template_arg_not_address_of : Error<
   "non-type template argument for template parameter of pointer type %0 must "
   "have its address taken">;
@@ -5056,6 +5050,10 @@ let CategoryName = "Lambda Issue" in {
     "cannot deduce type for lambda capture %0 from initializer list">;
 }
 
+// C++1y Generic Lambdas
+def err_glambda_not_fully_implemented : Error<
+  "unimplemented generic lambda feature: %0">;
+    
 def err_return_in_captured_stmt : Error<
   "cannot return from %0">;
 def err_capture_block_variable : Error<
@@ -6640,6 +6638,8 @@ def err_module_private_local : Error<
 def err_module_private_local_class : Error<
   "local %select{struct|interface|union|class|enum}0 cannot be declared "
   "__module_private__">;
+def err_module_private_declaration : Error<
+  "declaration of %0 must be imported from module '%1' before it is required">;
 def err_module_private_definition : Error<
   "definition of %0 must be imported from module '%1' before it is required">;
 }

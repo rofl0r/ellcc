@@ -229,7 +229,7 @@ static void diagnoseUseOfInternalDeclInInlineFunction(Sema &S,
   // This last can give us false negatives, but it's better than warning on
   // wrappers for simple C library functions.
   const FunctionDecl *UsedFn = dyn_cast<FunctionDecl>(D);
-  bool DowngradeWarning = S.getSourceManager().isFromMainFile(Loc);
+  bool DowngradeWarning = S.getSourceManager().isInMainFile(Loc);
   if (!DowngradeWarning && UsedFn)
     DowngradeWarning = UsedFn->isInlined() || UsedFn->hasAttr<ConstAttr>();
 
@@ -2759,14 +2759,14 @@ ExprResult Sema::ActOnPredefinedExpr(SourceLocation Loc, tok::TokenKind Kind) {
   // Pre-defined identifiers are of type char[x], where x is the length of the
   // string.
 
-  Decl *currentDecl = getCurFunctionOrMethodDecl();
-  // Blocks and lambdas can occur at global scope. Don't emit a warning.
-  if (!currentDecl) {
-    if (const BlockScopeInfo *BSI = getCurBlock())
-      currentDecl = BSI->TheDecl;
-    else if (const LambdaScopeInfo *LSI = getCurLambda())
-      currentDecl = LSI->CallOperator;
-  }
+  // Pick the current block, lambda or function.
+  Decl *currentDecl;
+  if (const BlockScopeInfo *BSI = getCurBlock())
+    currentDecl = BSI->TheDecl;
+  else if (const LambdaScopeInfo *LSI = getCurLambda())
+    currentDecl = LSI->CallOperator;
+  else
+    currentDecl = getCurFunctionOrMethodDecl();
 
   if (!currentDecl) {
     Diag(Loc, diag::ext_predef_outside_function);
@@ -9115,14 +9115,16 @@ EmitDiagnosticForLogicalAndInLogicalOr(Sema &Self, SourceLocation OpLoc,
 /// 'true'.
 static bool EvaluatesAsTrue(Sema &S, Expr *E) {
   bool Res;
-  return E->EvaluateAsBooleanCondition(Res, S.getASTContext()) && Res;
+  return !E->isValueDependent() &&
+         E->EvaluateAsBooleanCondition(Res, S.getASTContext()) && Res;
 }
 
 /// \brief Returns true if the given expression can be evaluated as a constant
 /// 'false'.
 static bool EvaluatesAsFalse(Sema &S, Expr *E) {
   bool Res;
-  return E->EvaluateAsBooleanCondition(Res, S.getASTContext()) && !Res;
+  return !E->isValueDependent() &&
+         E->EvaluateAsBooleanCondition(Res, S.getASTContext()) && !Res;
 }
 
 /// \brief Look for '&&' in the left hand of a '||' expr.

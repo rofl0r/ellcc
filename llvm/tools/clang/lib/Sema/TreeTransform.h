@@ -782,7 +782,10 @@ public:
     // Note, IsDependent is always false here: we implicitly convert an 'auto'
     // which has been deduced to a dependent type into an undeduced 'auto', so
     // that we'll retry deduction after the transformation.
-    return SemaRef.Context.getAutoType(Deduced, IsDecltypeAuto);
+    // FIXME: Can we assume the same about IsParameterPack?
+    return SemaRef.Context.getAutoType(Deduced, IsDecltypeAuto, 
+                                       /*IsDependent*/ false, 
+                                       /*IsParameterPack*/ false);
   }
 
   /// \brief Build a new template specialization type.
@@ -1384,9 +1387,8 @@ public:
   ///
   /// By default, performs semantic analysis to build the new statement.
   /// Subclasses may override this routine to provide different behavior.
-  StmtResult RebuildCXXTryStmt(SourceLocation TryLoc,
-                               Stmt *TryBlock,
-                               MultiStmtArg Handlers) {
+  StmtResult RebuildCXXTryStmt(SourceLocation TryLoc, Stmt *TryBlock,
+                               ArrayRef<Stmt *> Handlers) {
     return getSema().ActOnCXXTryBlock(TryLoc, TryBlock, Handlers);
   }
 
@@ -3494,7 +3496,9 @@ TreeTransform<Derived>::TransformQualifiedType(TypeLocBuilder &TLB,
         Qs.removeObjCLifetime();
         Deduced = SemaRef.Context.getQualifiedType(Deduced.getUnqualifiedType(),
                                                    Qs);
-        Result = SemaRef.Context.getAutoType(Deduced, AutoTy->isDecltypeAuto());
+        Result = SemaRef.Context.getAutoType(Deduced, AutoTy->isDecltypeAuto(), 
+                                AutoTy->isDependentType(), 
+                                AutoTy->containsUnexpandedParameterPack());
         TLB.TypeWasModifiedSafely(Result);
       } else {
         // Otherwise, complain about the addition of a qualifier to an
@@ -8193,6 +8197,14 @@ TreeTransform<Derived>::TransformCXXTemporaryObjectExpr(
 template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformLambdaExpr(LambdaExpr *E) {
+ 
+  // FIXME: Implement nested generic lambda transformations.
+  if (E->isGenericLambda()) {
+    getSema().Diag(E->getIntroducerRange().getBegin(), 
+      diag::err_glambda_not_fully_implemented) 
+      << " nested lambdas not implemented yet";
+    return ExprError();
+  }
   // Transform the type of the lambda parameters and start the definition of
   // the lambda itself.
   TypeSourceInfo *MethodTy
@@ -8215,7 +8227,10 @@ TreeTransform<Derived>::TransformLambdaExpr(LambdaExpr *E) {
         E->getCallOperator()->param_size(),
         0, ParamTypes, &Params))
     return ExprError();
-
+  getSema().PushLambdaScope();
+  LambdaScopeInfo *LSI = getSema().getCurLambda();
+  // TODO: Fix for nested lambdas
+  LSI->GLTemplateParameterList = 0;
   // Build the call operator.
   CXXMethodDecl *CallOperator
     = getSema().startLambdaDefinition(Class, E->getIntroducerRange(),
@@ -8250,9 +8265,9 @@ TreeTransform<Derived>::TransformLambdaScope(LambdaExpr *E,
   // Introduce the context of the call operator.
   Sema::ContextRAII SavedContext(getSema(), CallOperator);
 
+  LambdaScopeInfo *const LSI = getSema().getCurLambda();
   // Enter the scope of the lambda.
-  sema::LambdaScopeInfo *LSI
-    = getSema().enterLambdaScope(CallOperator, E->getIntroducerRange(),
+  getSema().buildLambdaScope(LSI, CallOperator, E->getIntroducerRange(),
                                  E->getCaptureDefault(),
                                  E->getCaptureDefaultLoc(),
                                  E->hasExplicitParameters(),

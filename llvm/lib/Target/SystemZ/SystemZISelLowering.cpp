@@ -128,9 +128,11 @@ SystemZTargetLowering::SystemZTargetLowering(SystemZTargetMachine &tm)
       setOperationAction(ISD::CTLZ_ZERO_UNDEF, VT, Expand);
       setOperationAction(ISD::ROTR,            VT, Expand);
 
-      // Use *MUL_LOHI where possible and a wider multiplication otherwise.
+      // Use *MUL_LOHI where possible instead of MULH*.
       setOperationAction(ISD::MULHS, VT, Expand);
       setOperationAction(ISD::MULHU, VT, Expand);
+      setOperationAction(ISD::SMUL_LOHI, VT, Custom);
+      setOperationAction(ISD::UMUL_LOHI, VT, Custom);
 
       // We have instructions for signed but not unsigned FP conversion.
       setOperationAction(ISD::FP_TO_UINT, VT, Expand);
@@ -164,14 +166,6 @@ SystemZTargetLowering::SystemZTargetLowering(SystemZTargetMachine &tm)
 
   // Give LowerOperation the chance to replace 64-bit ORs with subregs.
   setOperationAction(ISD::OR, MVT::i64, Custom);
-
-  // The architecture has 32-bit SMUL_LOHI and UMUL_LOHI (MR and MLR),
-  // but they aren't really worth using.  There is no 64-bit SMUL_LOHI,
-  // but there is a 64-bit UMUL_LOHI: MLGR.
-  setOperationAction(ISD::SMUL_LOHI, MVT::i32, Expand);
-  setOperationAction(ISD::SMUL_LOHI, MVT::i64, Expand);
-  setOperationAction(ISD::UMUL_LOHI, MVT::i32, Expand);
-  setOperationAction(ISD::UMUL_LOHI, MVT::i64, Custom);
 
   // FIXME: Can we support these natively?
   setOperationAction(ISD::SRL_PARTS, MVT::i64, Expand);
@@ -208,6 +202,15 @@ SystemZTargetLowering::SystemZTargetLowering(SystemZTargetMachine &tm)
     if (isTypeLegal(VT)) {
       // We can use FI for FRINT.
       setOperationAction(ISD::FRINT, VT, Legal);
+
+      // We can use the extended form of FI for other rounding operations.
+      if (Subtarget.hasFPExtension()) {
+        setOperationAction(ISD::FNEARBYINT, VT, Legal);
+        setOperationAction(ISD::FFLOOR, VT, Legal);
+        setOperationAction(ISD::FCEIL, VT, Legal);
+        setOperationAction(ISD::FTRUNC, VT, Legal);
+        setOperationAction(ISD::FROUND, VT, Legal);
+      }
 
       // No special instructions for these.
       setOperationAction(ISD::FSIN, VT, Expand);
@@ -303,6 +306,22 @@ bool SystemZTargetLowering::isLegalAddressingMode(const AddrMode &AM,
 
   // Indexing is OK but no scale factor can be applied.
   return AM.Scale == 0 || AM.Scale == 1;
+}
+
+bool SystemZTargetLowering::isTruncateFree(Type *FromType, Type *ToType) const {
+  if (!FromType->isIntegerTy() || !ToType->isIntegerTy())
+    return false;
+  unsigned FromBits = FromType->getPrimitiveSizeInBits();
+  unsigned ToBits = ToType->getPrimitiveSizeInBits();
+  return FromBits > ToBits;
+}
+
+bool SystemZTargetLowering::isTruncateFree(EVT FromVT, EVT ToVT) const {
+  if (!FromVT.isInteger() || !ToVT.isInteger())
+    return false;
+  unsigned FromBits = FromVT.getSizeInBits();
+  unsigned ToBits = ToVT.getSizeInBits();
+  return FromBits > ToBits;
 }
 
 //===----------------------------------------------------------------------===//
@@ -527,6 +546,17 @@ LowerAsmOperandForConstraint(SDValue Op, std::string &Constraint,
 
 #include "SystemZGenCallingConv.inc"
 
+bool SystemZTargetLowering::allowTruncateForTailCall(Type *FromType,
+                                                     Type *ToType) const {
+  return isTruncateFree(FromType, ToType);
+}
+
+bool SystemZTargetLowering::mayBeEmittedAsTailCall(CallInst *CI) const {
+  if (!CI->isTailCall())
+    return false;
+  return true;
+}
+
 // Value is a value that has been passed to us in the location described by VA
 // (and so has type VA.getLocVT()).  Convert Value to VA.getValVT(), chaining
 // any loads onto Chain.
@@ -689,6 +719,23 @@ LowerFormalArguments(SDValue Chain, CallingConv::ID CallConv, bool IsVarArg,
   return Chain;
 }
 
+static bool canUseSiblingCall(CCState ArgCCInfo,
+                              SmallVectorImpl<CCValAssign> &ArgLocs) {
+  // Punt if there are any indirect or stack arguments, or if the call
+  // needs the call-saved argument register R6.
+  for (unsigned I = 0, E = ArgLocs.size(); I != E; ++I) {
+    CCValAssign &VA = ArgLocs[I];
+    if (VA.getLocInfo() == CCValAssign::Indirect)
+      return false;
+    if (!VA.isRegLoc())
+      return false;
+    unsigned Reg = VA.getLocReg();
+    if (Reg == SystemZ::R6W || Reg == SystemZ::R6D)
+      return false;
+  }
+  return true;
+}
+
 SDValue
 SystemZTargetLowering::LowerCall(CallLoweringInfo &CLI,
                                  SmallVectorImpl<SDValue> &InVals) const {
@@ -699,26 +746,29 @@ SystemZTargetLowering::LowerCall(CallLoweringInfo &CLI,
   SmallVectorImpl<ISD::InputArg> &Ins = CLI.Ins;
   SDValue Chain = CLI.Chain;
   SDValue Callee = CLI.Callee;
-  bool &isTailCall = CLI.IsTailCall;
+  bool &IsTailCall = CLI.IsTailCall;
   CallingConv::ID CallConv = CLI.CallConv;
   bool IsVarArg = CLI.IsVarArg;
   MachineFunction &MF = DAG.getMachineFunction();
   EVT PtrVT = getPointerTy();
-
-  // SystemZ target does not yet support tail call optimization.
-  isTailCall = false;
 
   // Analyze the operands of the call, assigning locations to each operand.
   SmallVector<CCValAssign, 16> ArgLocs;
   CCState ArgCCInfo(CallConv, IsVarArg, MF, TM, ArgLocs, *DAG.getContext());
   ArgCCInfo.AnalyzeCallOperands(Outs, CC_SystemZ);
 
+  // We don't support GuaranteedTailCallOpt, only automatically-detected
+  // sibling calls.
+  if (IsTailCall && !canUseSiblingCall(ArgCCInfo, ArgLocs))
+    IsTailCall = false;
+
   // Get a count of how many bytes are to be pushed on the stack.
   unsigned NumBytes = ArgCCInfo.getNextStackOffset();
 
   // Mark the start of the call.
-  Chain = DAG.getCALLSEQ_START(Chain, DAG.getConstant(NumBytes, PtrVT, true),
-                               DL);
+  if (!IsTailCall)
+    Chain = DAG.getCALLSEQ_START(Chain, DAG.getConstant(NumBytes, PtrVT, true),
+                                 DL);
 
   // Copy argument values to their designated locations.
   SmallVector<std::pair<unsigned, SDValue>, 9> RegsToPass;
@@ -767,22 +817,27 @@ SystemZTargetLowering::LowerCall(CallLoweringInfo &CLI,
     Chain = DAG.getNode(ISD::TokenFactor, DL, MVT::Other,
                         &MemOpChains[0], MemOpChains.size());
 
-  // Build a sequence of copy-to-reg nodes, chained and glued together.
-  SDValue Glue;
-  for (unsigned I = 0, E = RegsToPass.size(); I != E; ++I) {
-    Chain = DAG.getCopyToReg(Chain, DL, RegsToPass[I].first,
-                             RegsToPass[I].second, Glue);
-    Glue = Chain.getValue(1);
-  }
-
   // Accept direct calls by converting symbolic call addresses to the
-  // associated Target* opcodes.
+  // associated Target* opcodes.  Force %r1 to be used for indirect
+  // tail calls.
+  SDValue Glue;
   if (GlobalAddressSDNode *G = dyn_cast<GlobalAddressSDNode>(Callee)) {
     Callee = DAG.getTargetGlobalAddress(G->getGlobal(), DL, PtrVT);
     Callee = DAG.getNode(SystemZISD::PCREL_WRAPPER, DL, PtrVT, Callee);
   } else if (ExternalSymbolSDNode *E = dyn_cast<ExternalSymbolSDNode>(Callee)) {
     Callee = DAG.getTargetExternalSymbol(E->getSymbol(), PtrVT);
     Callee = DAG.getNode(SystemZISD::PCREL_WRAPPER, DL, PtrVT, Callee);
+  } else if (IsTailCall) {
+    Chain = DAG.getCopyToReg(Chain, DL, SystemZ::R1D, Callee, Glue);
+    Glue = Chain.getValue(1);
+    Callee = DAG.getRegister(SystemZ::R1D, Callee.getValueType());
+  }
+
+  // Build a sequence of copy-to-reg nodes, chained and glued together.
+  for (unsigned I = 0, E = RegsToPass.size(); I != E; ++I) {
+    Chain = DAG.getCopyToReg(Chain, DL, RegsToPass[I].first,
+                             RegsToPass[I].second, Glue);
+    Glue = Chain.getValue(1);
   }
 
   // The first call operand is the chain and the second is the target address.
@@ -802,6 +857,8 @@ SystemZTargetLowering::LowerCall(CallLoweringInfo &CLI,
 
   // Emit the call.
   SDVTList NodeTys = DAG.getVTList(MVT::Other, MVT::Glue);
+  if (IsTailCall)
+    return DAG.getNode(SystemZISD::SIBCALL, DL, NodeTys, &Ops[0], Ops.size());
   Chain = DAG.getNode(SystemZISD::CALL, DL, NodeTys, &Ops[0], Ops.size());
   Glue = Chain.getValue(1);
 
@@ -1077,6 +1134,20 @@ static SDValue emitCmp(SelectionDAG &DAG, SDValue CmpOp0, SDValue CmpOp1,
   SDLoc DL(CmpOp0);
   return DAG.getNode((IsUnsigned ? SystemZISD::UCMP : SystemZISD::CMP),
                      DL, MVT::Glue, CmpOp0, CmpOp1);
+}
+
+// Implement a 32-bit *MUL_LOHI operation by extending both operands to
+// 64 bits.  Extend is the extension type to use.  Store the high part
+// in Hi and the low part in Lo.
+static void lowerMUL_LOHI32(SelectionDAG &DAG, SDLoc DL,
+                            unsigned Extend, SDValue Op0, SDValue Op1,
+                            SDValue &Hi, SDValue &Lo) {
+  Op0 = DAG.getNode(Extend, DL, MVT::i64, Op0);
+  Op1 = DAG.getNode(Extend, DL, MVT::i64, Op1);
+  SDValue Mul = DAG.getNode(ISD::MUL, DL, MVT::i64, Op0, Op1);
+  Hi = DAG.getNode(ISD::SRL, DL, MVT::i64, Mul, DAG.getConstant(32, MVT::i64));
+  Hi = DAG.getNode(ISD::TRUNCATE, DL, MVT::i32, Hi);
+  Lo = DAG.getNode(ISD::TRUNCATE, DL, MVT::i32, Mul);
 }
 
 // Lower a binary operation that produces two VT results, one in each
@@ -1364,18 +1435,64 @@ lowerDYNAMIC_STACKALLOC(SDValue Op, SelectionDAG &DAG) const {
   return DAG.getMergeValues(Ops, 2, DL);
 }
 
+SDValue SystemZTargetLowering::lowerSMUL_LOHI(SDValue Op,
+                                              SelectionDAG &DAG) const {
+  EVT VT = Op.getValueType();
+  SDLoc DL(Op);
+  SDValue Ops[2];
+  if (is32Bit(VT))
+    // Just do a normal 64-bit multiplication and extract the results.
+    // We define this so that it can be used for constant division.
+    lowerMUL_LOHI32(DAG, DL, ISD::SIGN_EXTEND, Op.getOperand(0),
+                    Op.getOperand(1), Ops[1], Ops[0]);
+  else {
+    // Do a full 128-bit multiplication based on UMUL_LOHI64:
+    //
+    //   (ll * rl) + ((lh * rl) << 64) + ((ll * rh) << 64)
+    //
+    // but using the fact that the upper halves are either all zeros
+    // or all ones:
+    //
+    //   (ll * rl) - ((lh & rl) << 64) - ((ll & rh) << 64)
+    //
+    // and grouping the right terms together since they are quicker than the
+    // multiplication:
+    //
+    //   (ll * rl) - (((lh & rl) + (ll & rh)) << 64)
+    SDValue C63 = DAG.getConstant(63, MVT::i64);
+    SDValue LL = Op.getOperand(0);
+    SDValue RL = Op.getOperand(1);
+    SDValue LH = DAG.getNode(ISD::SRA, DL, VT, LL, C63);
+    SDValue RH = DAG.getNode(ISD::SRA, DL, VT, RL, C63);
+    // UMUL_LOHI64 returns the low result in the odd register and the high
+    // result in the even register.  SMUL_LOHI is defined to return the
+    // low half first, so the results are in reverse order.
+    lowerGR128Binary(DAG, DL, VT, SystemZ::AEXT128_64, SystemZISD::UMUL_LOHI64,
+                     LL, RL, Ops[1], Ops[0]);
+    SDValue NegLLTimesRH = DAG.getNode(ISD::AND, DL, VT, LL, RH);
+    SDValue NegLHTimesRL = DAG.getNode(ISD::AND, DL, VT, LH, RL);
+    SDValue NegSum = DAG.getNode(ISD::ADD, DL, VT, NegLLTimesRH, NegLHTimesRL);
+    Ops[1] = DAG.getNode(ISD::SUB, DL, VT, Ops[1], NegSum);
+  }
+  return DAG.getMergeValues(Ops, 2, DL);
+}
+
 SDValue SystemZTargetLowering::lowerUMUL_LOHI(SDValue Op,
                                               SelectionDAG &DAG) const {
   EVT VT = Op.getValueType();
   SDLoc DL(Op);
-  assert(!is32Bit(VT) && "Only support 64-bit UMUL_LOHI");
-
-  // UMUL_LOHI64 returns the low result in the odd register and the high
-  // result in the even register.  UMUL_LOHI is defined to return the
-  // low half first, so the results are in reverse order.
   SDValue Ops[2];
-  lowerGR128Binary(DAG, DL, VT, SystemZ::AEXT128_64, SystemZISD::UMUL_LOHI64,
-                   Op.getOperand(0), Op.getOperand(1), Ops[1], Ops[0]);
+  if (is32Bit(VT))
+    // Just do a normal 64-bit multiplication and extract the results.
+    // We define this so that it can be used for constant division.
+    lowerMUL_LOHI32(DAG, DL, ISD::ZERO_EXTEND, Op.getOperand(0),
+                    Op.getOperand(1), Ops[1], Ops[0]);
+  else
+    // UMUL_LOHI64 returns the low result in the odd register and the high
+    // result in the even register.  UMUL_LOHI is defined to return the
+    // low half first, so the results are in reverse order.
+    lowerGR128Binary(DAG, DL, VT, SystemZ::AEXT128_64, SystemZISD::UMUL_LOHI64,
+                     Op.getOperand(0), Op.getOperand(1), Ops[1], Ops[0]);
   return DAG.getMergeValues(Ops, 2, DL);
 }
 
@@ -1643,6 +1760,8 @@ SDValue SystemZTargetLowering::LowerOperation(SDValue Op,
     return lowerVACOPY(Op, DAG);
   case ISD::DYNAMIC_STACKALLOC:
     return lowerDYNAMIC_STACKALLOC(Op, DAG);
+  case ISD::SMUL_LOHI:
+    return lowerSMUL_LOHI(Op, DAG);
   case ISD::UMUL_LOHI:
     return lowerUMUL_LOHI(Op, DAG);
   case ISD::SDIVREM:
@@ -1689,6 +1808,7 @@ const char *SystemZTargetLowering::getTargetNodeName(unsigned Opcode) const {
   switch (Opcode) {
     OPCODE(RET_FLAG);
     OPCODE(CALL);
+    OPCODE(SIBCALL);
     OPCODE(PCREL_WRAPPER);
     OPCODE(CMP);
     OPCODE(UCMP);
@@ -2290,19 +2410,19 @@ SystemZTargetLowering::emitStringWrapper(MachineInstr *MI,
   MachineBasicBlock *LoopMBB = emitBlockAfter(StartMBB);
 
   //  StartMBB:
-  //   R0W = %CharReg
   //   # fall through to LoopMMB
-  BuildMI(MBB, DL, TII->get(TargetOpcode::COPY), SystemZ::R0W).addReg(CharReg);
   MBB->addSuccessor(LoopMBB);
 
   //  LoopMBB:
   //   %This1Reg = phi [ %Start1Reg, StartMBB ], [ %End1Reg, LoopMBB ]
   //   %This2Reg = phi [ %Start2Reg, StartMBB ], [ %End2Reg, LoopMBB ]
+  //   R0W = %CharReg
   //   %End1Reg, %End2Reg = CLST %This1Reg, %This2Reg -- uses R0W
   //   JO LoopMBB
   //   # fall through to DoneMMB
+  //
+  // The load of R0W can be hoisted by post-RA LICM.
   MBB = LoopMBB;
-  MBB->addLiveIn(SystemZ::R0W);
 
   BuildMI(MBB, DL, TII->get(SystemZ::PHI), This1Reg)
     .addReg(Start1Reg).addMBB(StartMBB)
@@ -2310,6 +2430,7 @@ SystemZTargetLowering::emitStringWrapper(MachineInstr *MI,
   BuildMI(MBB, DL, TII->get(SystemZ::PHI), This2Reg)
     .addReg(Start2Reg).addMBB(StartMBB)
     .addReg(End2Reg).addMBB(LoopMBB);
+  BuildMI(MBB, DL, TII->get(TargetOpcode::COPY), SystemZ::R0W).addReg(CharReg);
   BuildMI(MBB, DL, TII->get(Opcode))
     .addReg(End1Reg, RegState::Define).addReg(End2Reg, RegState::Define)
     .addReg(This1Reg).addReg(This2Reg);

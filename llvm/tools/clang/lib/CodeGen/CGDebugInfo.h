@@ -116,7 +116,8 @@ class CGDebugInfo {
   llvm::DIType CreateType(const FunctionType *Ty, llvm::DIFile F);
   llvm::DIType CreateType(const RecordType *Ty, bool Declaration);
   llvm::DIType CreateTypeDefinition(const RecordType *Ty);
-  llvm::DIType CreateLimitedType(const RecordType *Ty);
+  llvm::DICompositeType CreateLimitedType(const RecordType *Ty);
+  void CollectContainingType(const CXXRecordDecl *RD, llvm::DICompositeType CT);
   llvm::DIType CreateType(const ObjCInterfaceType *Ty, llvm::DIFile F);
   llvm::DIType CreateType(const ObjCObjectType *Ty, llvm::DIFile F);
   llvm::DIType CreateType(const VectorType *Ty, llvm::DIFile F);
@@ -290,7 +291,7 @@ public:
 
   void completeType(const RecordDecl *RD);
   void completeRequiredType(const RecordDecl *RD);
-
+  void completeClassData(const RecordDecl *RD);
 
 private:
   /// EmitDeclare - Emit call to llvm.dbg.declare for a variable declaration.
@@ -308,7 +309,8 @@ private:
   llvm::DIScope getCurrentContextDescriptor(const Decl *Decl);
 
   /// \brief Create a forward decl for a RecordType in a given context.
-  llvm::DIType getOrCreateRecordFwdDecl(const RecordDecl *, llvm::DIDescriptor);
+  llvm::DICompositeType getOrCreateRecordFwdDecl(const RecordDecl *,
+                                                 llvm::DIDescriptor);
 
   /// createContextChain - Create a set of decls for the context chain.
   llvm::DIDescriptor createContextChain(const Decl *Decl);
@@ -353,10 +355,10 @@ private:
   /// declaration for the given method definition.
   llvm::DISubprogram getFunctionDeclaration(const Decl *D);
 
-  /// getStaticDataMemberDeclaration - Return debug info descriptor to
-  /// describe in-class static data member declaration for the given
-  /// out-of-class definition.
-  llvm::DIDerivedType getStaticDataMemberDeclaration(const VarDecl *D);
+  /// Return debug info descriptor to describe in-class static data member
+  /// declaration for the given out-of-class definition.
+  llvm::DIDerivedType
+  getOrCreateStaticDataMemberDeclarationOrNull(const VarDecl *D);
 
   /// getFunctionName - Get function name for the given FunctionDecl. If the
   /// name is constructred on demand (e.g. C++ destructor) then the name

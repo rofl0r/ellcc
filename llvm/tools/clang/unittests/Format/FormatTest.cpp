@@ -1518,6 +1518,40 @@ TEST_F(FormatTest, FormatsEnum) {
   verifyFormat("enum X f() {\n  a();\n  return 42;\n}");
 }
 
+TEST_F(FormatTest, FormatsEnumStruct) {
+  verifyFormat("enum struct {\n"
+               "  Zero,\n"
+               "  One = 1,\n"
+               "  Two = One + 1,\n"
+               "  Three = (One + Two),\n"
+               "  Four = (Zero && (One ^ Two)) | (One << Two),\n"
+               "  Five = (One, Two, Three, Four, 5)\n"
+               "};");
+  verifyFormat("enum struct Enum {};");
+  verifyFormat("enum struct {};");
+  verifyFormat("enum struct X E {\n} d;");
+  verifyFormat("enum struct __attribute__((...)) E {\n} d;");
+  verifyFormat("enum struct __declspec__((...)) E {\n} d;");
+  verifyFormat("enum struct X f() {\n  a();\n  return 42;\n}");
+}
+
+TEST_F(FormatTest, FormatsEnumClass) {
+  verifyFormat("enum class {\n"
+               "  Zero,\n"
+               "  One = 1,\n"
+               "  Two = One + 1,\n"
+               "  Three = (One + Two),\n"
+               "  Four = (Zero && (One ^ Two)) | (One << Two),\n"
+               "  Five = (One, Two, Three, Four, 5)\n"
+               "};");
+  verifyFormat("enum class Enum {};");
+  verifyFormat("enum class {};");
+  verifyFormat("enum class X E {\n} d;");
+  verifyFormat("enum class __attribute__((...)) E {\n} d;");
+  verifyFormat("enum class __declspec__((...)) E {\n} d;");
+  verifyFormat("enum class X f() {\n  a();\n  return 42;\n}");
+}
+
 TEST_F(FormatTest, FormatsBitfields) {
   verifyFormat("struct Bitfields {\n"
                "  unsigned sClass : 8;\n"
@@ -2523,6 +2557,10 @@ TEST_F(FormatTest, BreaksFunctionDeclarations) {
   // 1) break amongst arguments.
   verifyFormat("Aaaaaaaaaaaaaa bbbbbbbbbbbbbb(Cccccccccccccc cccccccccccccc,\n"
                "                              Cccccccccccccc cccccccccccccc);");
+  verifyFormat(
+      "template <class TemplateIt>\n"
+      "SomeReturnType SomeFunction(TemplateIt begin, TemplateIt end,\n"
+      "                            TemplateIt *stop) {}");
 
   // 2) break after return type.
   verifyFormat(
@@ -3490,6 +3528,14 @@ TEST_F(FormatTest, UnderstandsUnaryOperators) {
   verifyFormat("int a = i /* confusing comment */++;");
 }
 
+TEST_F(FormatTest, IndentsRelativeToUnaryOperators) {
+  verifyFormat("if (!aaaaaaaaaa( // break\n"
+               "         aaaaa)) {\n"
+               "}");
+  verifyFormat("aaaaaaaaaa(!aaaaaaaaaa( // break\n"
+               "                aaaaa));");
+}
+
 TEST_F(FormatTest, UndestandsOverloadedOperators) {
   verifyFormat("bool operator<();");
   verifyFormat("bool operator>();");
@@ -3859,11 +3905,10 @@ TEST_F(FormatTest, BreaksLongDeclarations) {
                "SomeLoooooooooooooooooooooongType<\n"
                "    typename some_namespace::SomeOtherType<A>::Type>\n"
                "Function() {}");
-  verifyFormat(
-      "aaaaaaaaaaaaaaaa::aaaaaaaaaaaaaaaa<aaaaaaaaaaaaa, aaaaaaaaaaaa>\n"
-      "    aaaaaaaaaaaaaaaaaaaaaaa;",
-      getGoogleStyle());
 
+  verifyGoogleFormat(
+      "aaaaaaaaaaaaaaaa::aaaaaaaaaaaaaaaa<aaaaaaaaaaaaa, aaaaaaaaaaaa>\n"
+      "    aaaaaaaaaaaaaaaaaaaaaaa;");
   verifyGoogleFormat(
       "TypeSpecDecl* TypeSpecDecl::Create(ASTContext& C, DeclContext* DC,\n"
       "                                   SourceLocation L) {}");
@@ -5421,6 +5466,88 @@ TEST_F(FormatTest, ConfigurableUseOfTab) {
                    "}"));
 }
 
+TEST_F(FormatTest, ConfigurableSpaceAfterControlStatementKeyword) {
+  FormatStyle NoSpace = getLLVMStyle();
+  NoSpace.SpaceAfterControlStatementKeyword = false;
+
+  verifyFormat("while(true)\n"
+               "  continue;", NoSpace);
+  verifyFormat("for(;;)\n"
+               "  continue;", NoSpace);
+  verifyFormat("if(true)\n"
+               "  f();\n"
+               "else if(true)\n"
+               "  f();", NoSpace);
+  verifyFormat("do {\n"
+               "  do_something();\n"
+               "} while(something());", NoSpace);
+  verifyFormat("switch(x) {\n"
+               "default:\n"
+               "  break;\n"
+               "}", NoSpace);
+}
+
+TEST_F(FormatTest, ConfigurableSpacesInParentheses) {
+  FormatStyle Spaces = getLLVMStyle();
+
+  Spaces.SpacesInParentheses = true;
+  verifyFormat("call( x, y, z );", Spaces);
+  verifyFormat("while ( (bool)1 )\n"
+               "  continue;", Spaces);
+  verifyFormat("for ( ;; )\n"
+               "  continue;", Spaces);
+  verifyFormat("if ( true )\n"
+               "  f();\n"
+               "else if ( true )\n"
+               "  f();", Spaces);
+  verifyFormat("do {\n"
+               "  do_something( (int)i );\n"
+               "} while ( something() );", Spaces);
+  verifyFormat("switch ( x ) {\n"
+               "default:\n"
+               "  break;\n"
+               "}", Spaces);
+
+  Spaces.SpacesInParentheses = false;
+  Spaces.SpacesInCStyleCastParentheses = true;
+  verifyFormat("Type *A = ( Type * )P;", Spaces);
+  verifyFormat("Type *A = ( vector<Type *, int *> )P;", Spaces);
+  verifyFormat("x = ( int32 )y;", Spaces);
+  verifyFormat("int a = ( int )(2.0f);", Spaces);
+  verifyFormat("#define AA(X) sizeof((( X * )NULL)->a)", Spaces);
+  verifyFormat("my_int a = ( my_int )sizeof(int);", Spaces);
+  verifyFormat("#define x (( int )-1)", Spaces);
+
+  Spaces.SpacesInParentheses = false;
+  Spaces.SpaceInEmptyParentheses = true;
+  verifyFormat("call(x, y, z);", Spaces);
+  verifyFormat("call( )", Spaces);
+
+  // Run the first set of tests again with
+  // Spaces.SpacesInParentheses = false,
+  // Spaces.SpaceInEmptyParentheses = true and
+  // Spaces.SpacesInCStyleCastParentheses = true
+  Spaces.SpacesInParentheses = false,
+  Spaces.SpaceInEmptyParentheses = true;
+  Spaces.SpacesInCStyleCastParentheses = true;
+  verifyFormat("call(x, y, z);", Spaces);
+  verifyFormat("while (( bool )1)\n"
+               "  continue;", Spaces);
+  verifyFormat("for (;;)\n"
+               "  continue;", Spaces);
+  verifyFormat("if (true)\n"
+               "  f( );\n"
+               "else if (true)\n"
+               "  f( );", Spaces);
+  verifyFormat("do {\n"
+               "  do_something(( int )i);\n"
+               "} while (something( ));", Spaces);
+  verifyFormat("switch (x) {\n"
+               "default:\n"
+               "  break;\n"
+               "}", Spaces);
+}
+
 TEST_F(FormatTest, LinuxBraceBreaking) {
   FormatStyle BreakBeforeBrace = getLLVMStyle();
   BreakBeforeBrace.BreakBeforeBraces = FormatStyle::BS_Linux;
@@ -5658,6 +5785,10 @@ TEST_F(FormatTest, ParsesConfiguration) {
   CHECK_PARSE_BOOL(Cpp11BracedListStyle);
   CHECK_PARSE_BOOL(UseTab);
   CHECK_PARSE_BOOL(IndentFunctionDeclarationAfterType);
+  CHECK_PARSE_BOOL(SpacesInParentheses);
+  CHECK_PARSE_BOOL(SpaceInEmptyParentheses);
+  CHECK_PARSE_BOOL(SpacesInCStyleCastParentheses);
+  CHECK_PARSE_BOOL(SpaceAfterControlStatementKeyword);
 
   CHECK_PARSE("AccessModifierOffset: -1234", AccessModifierOffset, -1234);
   CHECK_PARSE("ConstructorInitializerIndentWidth: 1234",
