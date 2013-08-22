@@ -585,6 +585,9 @@ namespace {
 
         // Lexicographically compare n-ary expressions.
         unsigned LNumOps = LC->getNumOperands(), RNumOps = RC->getNumOperands();
+        if (LNumOps != RNumOps)
+          return (int)LNumOps - (int)RNumOps;
+
         for (unsigned i = 0; i != LNumOps; ++i) {
           if (i >= RNumOps)
             return 1;
@@ -758,7 +761,7 @@ static const SCEV *BinomialCoefficient(const SCEV *It, unsigned K,
   unsigned CalculationBits = W + T;
 
   // Calculate 2^T, at width T+W.
-  APInt DivFactor = APInt(CalculationBits, 1).shl(T);
+  APInt DivFactor = APInt::getOneBitSet(CalculationBits, T);
 
   // Calculate the multiplicative inverse of K! / 2^T;
   // this multiplication factor will perform the exact division by
@@ -1380,7 +1383,7 @@ const SCEV *ScalarEvolution::getAnyExtendExpr(const SCEV *Op,
 ///
 static bool
 CollectAddOperandsWithScales(DenseMap<const SCEV *, APInt> &M,
-                             SmallVector<const SCEV *, 8> &NewOps,
+                             SmallVectorImpl<const SCEV *> &NewOps,
                              APInt &AccumulatedConstant,
                              const SCEV *const *Ops, size_t NumOperands,
                              const APInt &Scale,
@@ -2715,13 +2718,51 @@ const SCEV *ScalarEvolution::getCouldNotCompute() {
   return &CouldNotCompute;
 }
 
+namespace {
+  // Helper class working with SCEVTraversal to figure out if a SCEV contains
+  // a SCEVUnknown with null value-pointer. FindInvalidSCEVUnknown::FindOne
+  // is set iff if find such SCEVUnknown.
+  //
+  struct FindInvalidSCEVUnknown {
+    bool FindOne;
+    FindInvalidSCEVUnknown() { FindOne = false; }
+    bool follow(const SCEV *S) {
+      switch (S->getSCEVType()) {
+      case scConstant:
+        return false;
+      case scUnknown:
+        if (!cast<SCEVUnknown>(S)->getValue())
+          FindOne = true;
+        return false;
+      default:
+        return true;
+      }
+    }
+    bool isDone() const { return FindOne; }
+  };
+}
+
+bool ScalarEvolution::checkValidity(const SCEV *S) const {
+  FindInvalidSCEVUnknown F;
+  SCEVTraversal<FindInvalidSCEVUnknown> ST(F);
+  ST.visitAll(S);
+
+  return !F.FindOne;
+}
+
 /// getSCEV - Return an existing SCEV if it exists, otherwise analyze the
 /// expression and create a new one.
 const SCEV *ScalarEvolution::getSCEV(Value *V) {
   assert(isSCEVable(V->getType()) && "Value is not SCEVable!");
 
-  ValueExprMapType::const_iterator I = ValueExprMap.find_as(V);
-  if (I != ValueExprMap.end()) return I->second;
+  ValueExprMapType::iterator I = ValueExprMap.find_as(V);
+  if (I != ValueExprMap.end()) {
+    const SCEV *S = I->second;
+    if (checkValidity(S))
+      return S;
+    else
+      ValueExprMap.erase(I);
+  }
   const SCEV *S = createSCEV(V);
 
   // The process of creating a SCEV for V may have caused other SCEVs
@@ -3551,7 +3592,7 @@ ScalarEvolution::getSignedRange(const SCEV *S) {
     if (!U->getValue()->getType()->isIntegerTy() && !TD)
       return setSignedRange(U, ConservativeResult);
     unsigned NS = ComputeNumSignBits(U->getValue(), TD);
-    if (NS == 1)
+    if (NS <= 1)
       return setSignedRange(U, ConservativeResult);
     return setSignedRange(U, ConservativeResult.intersectWith(
       ConstantRange(APInt::getSignedMinValue(BitWidth).ashr(NS - 1),
@@ -3751,7 +3792,7 @@ const SCEV *ScalarEvolution::createSCEV(Value *V) {
         break;
 
       Constant *X = ConstantInt::get(getContext(),
-        APInt(BitWidth, 1).shl(SA->getZExtValue()));
+        APInt::getOneBitSet(BitWidth, SA->getZExtValue()));
       return getMulExpr(getSCEV(U->getOperand(0)), getSCEV(X));
     }
     break;
@@ -3769,7 +3810,7 @@ const SCEV *ScalarEvolution::createSCEV(Value *V) {
         break;
 
       Constant *X = ConstantInt::get(getContext(),
-        APInt(BitWidth, 1).shl(SA->getZExtValue()));
+        APInt::getOneBitSet(BitWidth, SA->getZExtValue()));
       return getUDivExpr(getSCEV(U->getOperand(0)), getSCEV(X));
     }
     break;

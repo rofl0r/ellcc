@@ -55,6 +55,18 @@ class NoCapture<int argNo> : IntrinsicProperty {
   int ArgNo = argNo;
 }
 
+// ReadOnly - The specified argument pointer is not written to through the
+// pointer by the intrinsic.
+class ReadOnly<int argNo> : IntrinsicProperty {
+  int ArgNo = argNo;
+}
+
+// ReadNone - The specified argument pointer is not dereferenced by the
+// intrinsic.
+class ReadNone<int argNo> : IntrinsicProperty {
+  int ArgNo = argNo;
+}
+
 def IntrNoReturn : IntrinsicProperty;
 
 //===----------------------------------------------------------------------===//
@@ -153,6 +165,7 @@ def llvm_v4i64_ty      : LLVMType<v4i64>;    //  4 x i64
 def llvm_v8i64_ty      : LLVMType<v8i64>;    //  8 x i64
 def llvm_v16i64_ty     : LLVMType<v16i64>;   // 16 x i64
 
+def llvm_v8f16_ty      : LLVMType<v8f16>;    //  8 x half (__fp16)
 def llvm_v2f32_ty      : LLVMType<v2f32>;    //  2 x float
 def llvm_v4f32_ty      : LLVMType<v4f32>;    //  4 x float
 def llvm_v8f32_ty      : LLVMType<v8f32>;    //  8 x float
@@ -246,6 +259,8 @@ def int_readcyclecounter : Intrinsic<[llvm_i64_ty]>;
 // Stack Protector Intrinsic - The stackprotector intrinsic writes the stack
 // guard to the correct place on the stack frame.
 def int_stackprotector : Intrinsic<[], [llvm_ptr_ty, llvm_ptrptr_ty], []>;
+def int_stackprotectorcheck : Intrinsic<[], [llvm_ptrptr_ty],
+                                        [IntrReadWriteArgMem]>;
 
 //===------------------- Standard C Library Intrinsics --------------------===//
 //
@@ -253,11 +268,13 @@ def int_stackprotector : Intrinsic<[], [llvm_ptr_ty, llvm_ptrptr_ty], []>;
 def int_memcpy  : Intrinsic<[],
                              [llvm_anyptr_ty, llvm_anyptr_ty, llvm_anyint_ty,
                               llvm_i32_ty, llvm_i1_ty],
-                            [IntrReadWriteArgMem, NoCapture<0>, NoCapture<1>]>;
+                            [IntrReadWriteArgMem, NoCapture<0>, NoCapture<1>,
+                             ReadOnly<1>]>;
 def int_memmove : Intrinsic<[],
                             [llvm_anyptr_ty, llvm_anyptr_ty, llvm_anyint_ty,
                              llvm_i32_ty, llvm_i1_ty],
-                            [IntrReadWriteArgMem, NoCapture<0>, NoCapture<1>]>;
+                            [IntrReadWriteArgMem, NoCapture<0>, NoCapture<1>,
+                             ReadOnly<1>]>;
 def int_memset  : Intrinsic<[],
                             [llvm_anyptr_ty, llvm_i8_ty, llvm_anyint_ty,
                              llvm_i32_ty, llvm_i1_ty],
@@ -284,6 +301,7 @@ let Properties = [IntrReadMem] in {
   def int_trunc : Intrinsic<[llvm_anyfloat_ty], [LLVMMatchType<0>]>;
   def int_rint  : Intrinsic<[llvm_anyfloat_ty], [LLVMMatchType<0>]>;
   def int_nearbyint : Intrinsic<[llvm_anyfloat_ty], [LLVMMatchType<0>]>;
+  def int_round : Intrinsic<[llvm_anyfloat_ty], [LLVMMatchType<0>]>;
 }
 
 let Properties = [IntrNoMem] in {
@@ -480,6 +498,7 @@ def int_convertuu  : Intrinsic<[llvm_anyint_ty],
 include "llvm/IR/IntrinsicsPowerPC.td"
 include "llvm/IR/IntrinsicsX86.td"
 include "llvm/IR/IntrinsicsARM.td"
+include "llvm/IR/IntrinsicsAArch64.td"
 include "llvm/IR/IntrinsicsXCore.td"
 include "llvm/IR/IntrinsicsHexagon.td"
 include "llvm/IR/IntrinsicsNVVM.td"

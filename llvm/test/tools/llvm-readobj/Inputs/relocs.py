@@ -1071,7 +1071,6 @@ craftElf("relocs.obj.elf-aarch64",  "aarch64",                     Relocs_Elf_AA
 craftElf("relocs.obj.elf-arm",      "arm-unknown-unknown",         Relocs_Elf_ARM.entries(), "b sym")
 craftElf("relocs.obj.elf-mips",     "mips-unknown-linux",          Relocs_Elf_Mips.entries(), "lui $2, %hi(sym)")
 craftElf("relocs.obj.elf-mips64el", "mips64el-unknown-linux",        Relocs_Elf_Mips.entries(), "lui $2, %hi(sym)")
-#craftElf("relocs.obj.elf-mblaze",   "mblaze-unknown-unknown",      Relocs_Elf_MBlaze.entries(), ...)
 #craftElf("relocs.obj.elf-hexagon",  "hexagon-unknown-unknown",     Relocs_Elf_Hexagon.entries(), ...)
 
 craftCoff("relocs.obj.coff-i386",   "i386-pc-win32",   Relocs_Coff_i386.entries(),   "mov foo@imgrel(%ebx, %ecx, 4), %eax")

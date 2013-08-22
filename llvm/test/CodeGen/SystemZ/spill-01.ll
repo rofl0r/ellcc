@@ -28,7 +28,7 @@ declare void @foo()
 
 ; This function shouldn't spill anything
 define void @f1(i32 *%ptr0) {
-; CHECK: f1:
+; CHECK-LABEL: f1:
 ; CHECK: stmg
 ; CHECK: aghi %r15, -160
 ; CHECK-NOT: %r15
@@ -67,7 +67,7 @@ define void @f1(i32 *%ptr0) {
 ; Test a case where at least one i32 load and at least one i32 store
 ; need spills.
 define void @f2(i32 *%ptr0) {
-; CHECK: f2:
+; CHECK-LABEL: f2:
 ; CHECK: mvc [[OFFSET1:16[04]]](4,%r15), [[OFFSET2:[0-9]+]]({{%r[0-9]+}})
 ; CHECK: brasl %r14, foo@PLT
 ; CHECK: mvc [[OFFSET2]](4,{{%r[0-9]+}}), [[OFFSET1]](%r15)
@@ -109,7 +109,7 @@ define void @f2(i32 *%ptr0) {
 ; Test a case where at least one i64 load and at least one i64 store
 ; need spills.
 define void @f3(i64 *%ptr0) {
-; CHECK: f3:
+; CHECK-LABEL: f3:
 ; CHECK: mvc 160(8,%r15), [[OFFSET:[0-9]+]]({{%r[0-9]+}})
 ; CHECK: brasl %r14, foo@PLT
 ; CHECK: mvc [[OFFSET]](8,{{%r[0-9]+}}), 160(%r15)
@@ -154,7 +154,7 @@ define void @f3(i64 *%ptr0) {
 ; (and are at the time of writing), but it would really be better to use
 ; MVC for all 10.
 define void @f4(float *%ptr0) {
-; CHECK: f4:
+; CHECK-LABEL: f4:
 ; CHECK: mvc [[OFFSET1:16[04]]](4,%r15), [[OFFSET2:[0-9]+]]({{%r[0-9]+}})
 ; CHECK: brasl %r14, foo@PLT
 ; CHECK: mvc [[OFFSET2]](4,{{%r[0-9]+}}), [[OFFSET1]](%r15)
@@ -198,7 +198,7 @@ define void @f4(float *%ptr0) {
 
 ; Similarly for f64.
 define void @f5(double *%ptr0) {
-; CHECK: f5:
+; CHECK-LABEL: f5:
 ; CHECK: mvc 160(8,%r15), [[OFFSET:[0-9]+]]({{%r[0-9]+}})
 ; CHECK: brasl %r14, foo@PLT
 ; CHECK: mvc [[OFFSET]](8,{{%r[0-9]+}}), 160(%r15)
@@ -242,7 +242,7 @@ define void @f5(double *%ptr0) {
 
 ; Repeat f2 with atomic accesses.  We shouldn't use MVC here.
 define void @f6(i32 *%ptr0) {
-; CHECK: f6:
+; CHECK-LABEL: f6:
 ; CHECK-NOT: mvc
 ; CHECK: br %r14
   %ptr1 = getelementptr i32 *%ptr0, i64 2
@@ -281,7 +281,7 @@ define void @f6(i32 *%ptr0) {
 
 ; ...likewise volatile accesses.
 define void @f7(i32 *%ptr0) {
-; CHECK: f7:
+; CHECK-LABEL: f7:
 ; CHECK-NOT: mvc
 ; CHECK: br %r14
   %ptr1 = getelementptr i32 *%ptr0, i64 2
@@ -320,7 +320,7 @@ define void @f7(i32 *%ptr0) {
 
 ; Check that LRL and STRL are not converted.
 define void @f8() {
-; CHECK: f8:
+; CHECK-LABEL: f8:
 ; CHECK-NOT: mvc
 ; CHECK: br %r14
   %val0 = load i32 *@g0
@@ -352,7 +352,7 @@ define void @f8() {
 
 ; Likewise LGRL and STGRL.
 define void @f9() {
-; CHECK: f9:
+; CHECK-LABEL: f9:
 ; CHECK-NOT: mvc
 ; CHECK: br %r14
   %val0 = load i64 *@h0
@@ -378,6 +378,170 @@ define void @f9() {
   store i64 %val7, i64 *@h7
   store i64 %val8, i64 *@h8
   store i64 %val9, i64 *@h9
+
+  ret void
+}
+
+; This showed a problem with the way stack coloring updated instructions.
+; The copy from %val9 to %newval8 can be done using an MVC, which then
+; has two frame index operands.  Stack coloring chose a valid renumbering
+; [FI0, FI1] -> [FI1, FI2], but applied it in the form FI0 -> FI1 -> FI2,
+; so that both operands ended up being the same.
+define void @f10() {
+; CHECK-LABEL: f10:
+; CHECK: lgrl [[REG:%r[0-9]+]], h9
+; CHECK: stg [[REG]], [[VAL9:[0-9]+]](%r15)
+; CHECK: brasl %r14, foo@PLT
+; CHECK: brasl %r14, foo@PLT
+; CHECK: mvc [[NEWVAL8:[0-9]+]](8,%r15), [[VAL9]](%r15)
+; CHECK: brasl %r14, foo@PLT
+; CHECK: lg [[REG:%r[0-9]+]], [[NEWVAL8]](%r15)
+; CHECK: stgrl [[REG]], h8
+; CHECK: br %r14
+entry:
+  %val0 = load volatile i64 *@h0
+  %val1 = load volatile i64 *@h1
+  %val2 = load volatile i64 *@h2
+  %val3 = load volatile i64 *@h3
+  %val4 = load volatile i64 *@h4
+  %val5 = load volatile i64 *@h5
+  %val6 = load volatile i64 *@h6
+  %val7 = load volatile i64 *@h7
+  %val8 = load volatile i64 *@h8
+  %val9 = load volatile i64 *@h9
+
+  call void @foo()
+
+  store volatile i64 %val0, i64 *@h0
+  store volatile i64 %val1, i64 *@h1
+  store volatile i64 %val2, i64 *@h2
+  store volatile i64 %val3, i64 *@h3
+  store volatile i64 %val4, i64 *@h4
+  store volatile i64 %val5, i64 *@h5
+  store volatile i64 %val6, i64 *@h6
+  store volatile i64 %val7, i64 *@h7
+
+  %check = load volatile i64 *@h0
+  %cond = icmp eq i64 %check, 0
+  br i1 %cond, label %skip, label %fallthru
+
+fallthru:
+  call void @foo()
+
+  store volatile i64 %val0, i64 *@h0
+  store volatile i64 %val1, i64 *@h1
+  store volatile i64 %val2, i64 *@h2
+  store volatile i64 %val3, i64 *@h3
+  store volatile i64 %val4, i64 *@h4
+  store volatile i64 %val5, i64 *@h5
+  store volatile i64 %val6, i64 *@h6
+  store volatile i64 %val7, i64 *@h7
+  store volatile i64 %val8, i64 *@h8
+  br label %skip
+
+skip:
+  %newval8 = phi i64 [ %val8, %entry ], [ %val9, %fallthru ]
+  call void @foo()
+
+  store volatile i64 %val0, i64 *@h0
+  store volatile i64 %val1, i64 *@h1
+  store volatile i64 %val2, i64 *@h2
+  store volatile i64 %val3, i64 *@h3
+  store volatile i64 %val4, i64 *@h4
+  store volatile i64 %val5, i64 *@h5
+  store volatile i64 %val6, i64 *@h6
+  store volatile i64 %val7, i64 *@h7
+  store volatile i64 %newval8, i64 *@h8
+  store volatile i64 %val9, i64 *@h9
+
+  ret void
+}
+
+; This used to generate a no-op MVC.  It is very sensitive to spill heuristics.
+define void @f11() {
+; CHECK-LABEL: f11:
+; CHECK-NOT: mvc [[OFFSET:[0-9]+]](8,%r15), [[OFFSET]](%r15)
+; CHECK: br %r14
+entry:
+  %val0 = load volatile i64 *@h0
+  %val1 = load volatile i64 *@h1
+  %val2 = load volatile i64 *@h2
+  %val3 = load volatile i64 *@h3
+  %val4 = load volatile i64 *@h4
+  %val5 = load volatile i64 *@h5
+  %val6 = load volatile i64 *@h6
+  %val7 = load volatile i64 *@h7
+
+  %altval0 = load volatile i64 *@h0
+  %altval1 = load volatile i64 *@h1
+
+  call void @foo()
+
+  store volatile i64 %val0, i64 *@h0
+  store volatile i64 %val1, i64 *@h1
+  store volatile i64 %val2, i64 *@h2
+  store volatile i64 %val3, i64 *@h3
+  store volatile i64 %val4, i64 *@h4
+  store volatile i64 %val5, i64 *@h5
+  store volatile i64 %val6, i64 *@h6
+  store volatile i64 %val7, i64 *@h7
+
+  %check = load volatile i64 *@h0
+  %cond = icmp eq i64 %check, 0
+  br i1 %cond, label %a1, label %b1
+
+a1:
+  call void @foo()
+  br label %join1
+
+b1:
+  call void @foo()
+  br label %join1
+
+join1:
+  %newval0 = phi i64 [ %val0, %a1 ], [ %altval0, %b1 ]
+
+  call void @foo()
+
+  store volatile i64 %val1, i64 *@h1
+  store volatile i64 %val2, i64 *@h2
+  store volatile i64 %val3, i64 *@h3
+  store volatile i64 %val4, i64 *@h4
+  store volatile i64 %val5, i64 *@h5
+  store volatile i64 %val6, i64 *@h6
+  store volatile i64 %val7, i64 *@h7
+  br i1 %cond, label %a2, label %b2
+
+a2:
+  call void @foo()
+  br label %join2
+
+b2:
+  call void @foo()
+  br label %join2
+
+join2:
+  %newval1 = phi i64 [ %val1, %a2 ], [ %altval1, %b2 ]
+
+  call void @foo()
+
+  store volatile i64 %val2, i64 *@h2
+  store volatile i64 %val3, i64 *@h3
+  store volatile i64 %val4, i64 *@h4
+  store volatile i64 %val5, i64 *@h5
+  store volatile i64 %val6, i64 *@h6
+  store volatile i64 %val7, i64 *@h7
+
+  call void @foo()
+
+  store volatile i64 %newval0, i64 *@h0
+  store volatile i64 %newval1, i64 *@h1
+  store volatile i64 %val2, i64 *@h2
+  store volatile i64 %val3, i64 *@h3
+  store volatile i64 %val4, i64 *@h4
+  store volatile i64 %val5, i64 *@h5
+  store volatile i64 %val6, i64 *@h6
+  store volatile i64 %val7, i64 *@h7
 
   ret void
 }

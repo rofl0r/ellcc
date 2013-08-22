@@ -29,6 +29,7 @@ namespace llvm {
   class MDNode;
   class StringRef;
   class DIBasicType;
+  class DICompileUnit;
   class DICompositeType;
   class DIDerivedType;
   class DIDescriptor;
@@ -53,7 +54,6 @@ namespace llvm {
     private:
     Module &M;
     LLVMContext & VMContext;
-    MDNode *TheCU;
 
     MDNode *TempEnumTypes;
     MDNode *TempRetainTypes;
@@ -81,7 +81,6 @@ namespace llvm {
 
     public:
     explicit DIBuilder(Module &M);
-    const MDNode *getCU() { return TheCU; }
     enum ComplexAddrKind { OpPlus=1, OpDeref };
 
     /// finalize - Construct any deferred debug info descriptors.
@@ -103,10 +102,11 @@ namespace llvm {
     ///                 Objective-C.
     /// @param SplitName The name of the file that we'll split debug info out
     ///                  into.
-    void createCompileUnit(unsigned Lang, StringRef File, StringRef Dir,
-                           StringRef Producer, bool isOptimized,
-                           StringRef Flags, unsigned RV,
-                           StringRef SplitName = StringRef());
+    DICompileUnit createCompileUnit(unsigned Lang, StringRef File,
+                                    StringRef Dir, StringRef Producer,
+                                    bool isOptimized, StringRef Flags,
+                                    unsigned RV,
+                                    StringRef SplitName = StringRef());
 
     /// createFile - Create a file descriptor to hold debugging information
     /// for a file.
@@ -419,9 +419,11 @@ namespace llvm {
     DIType createObjectPointerType(DIType Ty);
 
     /// createForwardDecl - Create a temporary forward-declared type.
-    DIType createForwardDecl(unsigned Tag, StringRef Name, DIDescriptor Scope,
-                             DIFile F, unsigned Line, unsigned RuntimeLang = 0,
-                             uint64_t SizeInBits = 0, uint64_t AlignInBits = 0);
+    DICompositeType createForwardDecl(unsigned Tag, StringRef Name,
+                                      DIDescriptor Scope, DIFile F,
+                                      unsigned Line, unsigned RuntimeLang = 0,
+                                      uint64_t SizeInBits = 0,
+                                      uint64_t AlignInBits = 0);
 
     /// retainType - Retain DIType in a module even if it is not referenced
     /// through debug info anchors.

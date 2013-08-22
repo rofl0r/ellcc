@@ -337,8 +337,13 @@ static bool ExtractLoops(BugDriver &BD,
                                     false, Error, Failure);
     if (!New)
       return false;
+
     // Delete the original and set the new program.
-    delete BD.swapProgramIn(New);
+    Module *Old = BD.swapProgramIn(New);
+    for (unsigned i = 0, e = MiscompiledFunctions.size(); i != e; ++i)
+      MiscompiledFunctions[i] = cast<Function>(VMap[MiscompiledFunctions[i]]);
+    delete Old;
+
     if (Failure) {
       BD.switchToInterpreter(AI);
 
@@ -366,21 +371,51 @@ static bool ExtractLoops(BugDriver &BD,
 
     outs() << "  Testing after loop extraction:\n";
     // Clone modules, the tester function will free them.
-    Module *TOLEBackup = CloneModule(ToOptimizeLoopExtracted);
-    Module *TNOBackup  = CloneModule(ToNotOptimize);
+    Module *TOLEBackup = CloneModule(ToOptimizeLoopExtracted, VMap);
+    Module *TNOBackup  = CloneModule(ToNotOptimize, VMap);
+
+    for (unsigned i = 0, e = MiscompiledFunctions.size(); i != e; ++i)
+      MiscompiledFunctions[i] = cast<Function>(VMap[MiscompiledFunctions[i]]);
+
     Failure = TestFn(BD, ToOptimizeLoopExtracted, ToNotOptimize, Error);
     if (!Error.empty())
       return false;
+
+    ToOptimizeLoopExtracted = TOLEBackup;
+    ToNotOptimize = TNOBackup;
+
     if (!Failure) {
       outs() << "*** Loop extraction masked the problem.  Undoing.\n";
       // If the program is not still broken, then loop extraction did something
       // that masked the error.  Stop loop extraction now.
-      delete TOLEBackup;
-      delete TNOBackup;
+
+      std::vector<std::pair<std::string, FunctionType*> > MisCompFunctions;
+      for (unsigned i = 0, e = MiscompiledFunctions.size(); i != e; ++i) {
+        Function *F = MiscompiledFunctions[i];
+        MisCompFunctions.push_back(std::make_pair(F->getName(),
+                                                  F->getFunctionType()));
+      }
+
+      std::string ErrorMsg;
+      if (Linker::LinkModules(ToNotOptimize, ToOptimizeLoopExtracted, 
+                              Linker::DestroySource, &ErrorMsg)){
+        errs() << BD.getToolName() << ": Error linking modules together:"
+               << ErrorMsg << '\n';
+        exit(1);
+      }
+
+      MiscompiledFunctions.clear();
+      for (unsigned i = 0, e = MisCompFunctions.size(); i != e; ++i) {
+        Function *NewF = ToNotOptimize->getFunction(MisCompFunctions[i].first);
+
+        assert(NewF && "Function not found??");
+        MiscompiledFunctions.push_back(NewF);
+      }
+
+      delete ToOptimizeLoopExtracted;
+      BD.setNewProgram(ToNotOptimize);
       return MadeChange;
     }
-    ToOptimizeLoopExtracted = TOLEBackup;
-    ToNotOptimize = TNOBackup;
 
     outs() << "*** Loop extraction successful!\n";
 
@@ -928,8 +963,8 @@ static bool TestCodeGenerator(BugDriver &BD, Module *Test, Module *Safe,
 
   SmallString<128> TestModuleBC;
   int TestModuleFD;
-  error_code EC = sys::fs::unique_file("bugpoint.test-%%%%%%%.bc", TestModuleFD,
-                                       TestModuleBC);
+  error_code EC = sys::fs::createTemporaryFile("bugpoint.test", "bc",
+                                               TestModuleFD, TestModuleBC);
   if (EC) {
     errs() << BD.getToolName() << "Error making unique filename: "
            << EC.message() << "\n";
@@ -947,8 +982,8 @@ static bool TestCodeGenerator(BugDriver &BD, Module *Test, Module *Safe,
   // Make the shared library
   SmallString<128> SafeModuleBC;
   int SafeModuleFD;
-  EC = sys::fs::unique_file("bugpoint.safe-%%%%%%%.bc", SafeModuleFD,
-                            SafeModuleBC);
+  EC = sys::fs::createTemporaryFile("bugpoint.safe", "bc", SafeModuleFD,
+                                    SafeModuleBC);
   if (EC) {
     errs() << BD.getToolName() << "Error making unique filename: "
            << EC.message() << "\n";
@@ -1022,8 +1057,8 @@ bool BugDriver::debugCodeGenerator(std::string *Error) {
 
   SmallString<128> TestModuleBC;
   int TestModuleFD;
-  error_code EC = sys::fs::unique_file("bugpoint.test-%%%%%%%.bc", TestModuleFD,
-                                       TestModuleBC);
+  error_code EC = sys::fs::createTemporaryFile("bugpoint.test", "bc",
+                                               TestModuleFD, TestModuleBC);
   if (EC) {
     errs() << getToolName() << "Error making unique filename: "
            << EC.message() << "\n";
@@ -1040,8 +1075,8 @@ bool BugDriver::debugCodeGenerator(std::string *Error) {
   // Make the shared library
   SmallString<128> SafeModuleBC;
   int SafeModuleFD;
-  EC = sys::fs::unique_file("bugpoint.safe-%%%%%%%.bc", SafeModuleFD,
-                            SafeModuleBC);
+  EC = sys::fs::createTemporaryFile("bugpoint.safe", "bc", SafeModuleFD,
+                                    SafeModuleBC);
   if (EC) {
     errs() << getToolName() << "Error making unique filename: "
            << EC.message() << "\n";

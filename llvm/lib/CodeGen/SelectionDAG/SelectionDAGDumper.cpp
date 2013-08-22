@@ -92,9 +92,6 @@ std::string SDNode::getOperationName(const SelectionDAG *G) const {
   case ISD::RETURNADDR:                 return "RETURNADDR";
   case ISD::FRAMEADDR:                  return "FRAMEADDR";
   case ISD::FRAME_TO_ARGS_OFFSET:       return "FRAME_TO_ARGS_OFFSET";
-  case ISD::EXCEPTIONADDR:              return "EXCEPTIONADDR";
-  case ISD::LSDAADDR:                   return "LSDAADDR";
-  case ISD::EHSELECTION:                return "EHSELECTION";
   case ISD::EH_RETURN:                  return "EH_RETURN";
   case ISD::EH_SJLJ_SETJMP:             return "EH_SJLJ_SETJMP";
   case ISD::EH_SJLJ_LONGJMP:            return "EH_SJLJ_LONGJMP";
@@ -145,6 +142,7 @@ std::string SDNode::getOperationName(const SelectionDAG *G) const {
   case ISD::FCEIL:                      return "fceil";
   case ISD::FRINT:                      return "frint";
   case ISD::FNEARBYINT:                 return "fnearbyint";
+  case ISD::FROUND:                     return "fround";
   case ISD::FEXP:                       return "fexp";
   case ISD::FEXP2:                      return "fexp2";
   case ISD::FLOG:                       return "flog";

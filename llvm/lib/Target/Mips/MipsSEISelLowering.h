@@ -22,6 +22,8 @@ namespace llvm {
   public:
     explicit MipsSETargetLowering(MipsTargetMachine &TM);
 
+    void addMSAType(MVT::SimpleValueType Ty);
+
     virtual bool allowsUnalignedMemoryAccesses(EVT VT, bool *Fast) const;
 
     virtual SDValue LowerOperation(SDValue Op, SelectionDAG &DAG) const;
@@ -38,8 +40,8 @@ namespace llvm {
 
     virtual const TargetRegisterClass *getRepRegClassFor(MVT VT) const {
       if (VT == MVT::Untyped)
-        return Subtarget->hasDSP() ? &Mips::ACRegsDSPRegClass :
-                                     &Mips::ACRegsRegClass;
+        return Subtarget->hasDSP() ? &Mips::ACC64DSPRegClass :
+                                     &Mips::ACC64RegClass;
 
       return TargetLowering::getRepRegClassFor(VT);
     }

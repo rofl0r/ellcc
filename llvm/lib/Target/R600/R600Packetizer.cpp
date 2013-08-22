@@ -161,6 +161,10 @@ public:
       return true;
     if (MI->getOpcode() == AMDGPU::GROUP_BARRIER)
       return true;
+    // XXX: This can be removed once the packetizer properly handles all the
+    // LDS instruction group restrictions.
+    if (TII->isLDSInstr(MI->getOpcode()))
+      return true;
     return false;
   }
 
@@ -304,7 +308,8 @@ bool R600Packetizer::runOnMachineFunction(MachineFunction &Fn) {
     MachineBasicBlock::iterator End = MBB->end();
     MachineBasicBlock::iterator MI = MBB->begin();
     while (MI != End) {
-      if (MI->isKill()) {
+      if (MI->isKill() ||
+          (MI->getOpcode() == AMDGPU::CF_ALU && !MI->getOperand(8).getImm())) {
         MachineBasicBlock::iterator DeleteMI = MI;
         ++MI;
         MBB->erase(DeleteMI);

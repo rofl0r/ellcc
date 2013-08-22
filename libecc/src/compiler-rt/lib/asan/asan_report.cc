@@ -45,6 +45,11 @@ void AppendToErrorMessageBuffer(const char *buffer) {
 
 // ---------------------- Decorator ------------------------------ {{{1
 bool PrintsToTtyCached() {
+  // FIXME: Add proper Windows support to AnsiColorDecorator and re-enable color
+  // printing on Windows.
+  if (SANITIZER_WINDOWS)
+    return 0;
+
   static int cached = 0;
   static bool prints_to_tty;
   if (!cached) {  // Ok wrt threads since we are printing only from one thread.
@@ -759,6 +764,6 @@ void __asan_describe_address(uptr addr) {
 #if !SANITIZER_SUPPORTS_WEAK_HOOKS
 // Provide default implementation of __asan_on_error that does nothing
 // and may be overriden by user.
-SANITIZER_WEAK_ATTRIBUTE SANITIZER_INTERFACE_ATTRIBUTE NOINLINE
+SANITIZER_INTERFACE_ATTRIBUTE SANITIZER_WEAK_ATTRIBUTE NOINLINE
 void __asan_on_error() {}
 #endif

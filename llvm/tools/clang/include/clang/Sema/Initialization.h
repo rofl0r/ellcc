@@ -35,6 +35,7 @@ class ParmVarDecl;
 class Sema;
 class TypeLoc;
 class VarDecl;
+class ObjCMethodDecl;
   
 /// \brief Describes an entity that is being initialized.
 class InitializedEntity {
@@ -78,7 +79,13 @@ public:
     EK_LambdaCapture,
     /// \brief The entity being initialized is the initializer for a compound
     /// literal.
-    EK_CompoundLiteralInit
+    EK_CompoundLiteralInit,
+    /// \brief The entity being implicitly initialized back to the formal
+    /// result type.
+    EK_RelatedResult,
+    /// \brief The entity being initialized is a function parameter; function
+    /// is member of group of audited CF APIs.
+    EK_Parameter_CF_Audited
   };
   
 private:
@@ -116,6 +123,10 @@ private:
     /// \brief When Kind == EK_Variable, or EK_Member, the VarDecl or
     /// FieldDecl, respectively.
     DeclaratorDecl *VariableOrMember;
+    
+    /// \brief When Kind == EK_RelatedResult, the ObjectiveC method where
+    /// result type was implicitly changed to accomodate ARC semantics.
+    ObjCMethodDecl *MethodDecl;
 
     /// \brief When Kind == EK_Parameter, the ParmVarDecl, with the
     /// low bit indicating whether the parameter is "consumed".
@@ -254,10 +265,19 @@ public:
     Result.TypeInfo = TypeInfo;
     return Result;
   }
+  
+  /// \brief Create the initialization entity for a related result.
+  static InitializedEntity InitializeRelatedResult(ObjCMethodDecl *MD,
+                                                   QualType Type) {
+    InitializedEntity Result(EK_RelatedResult, SourceLocation(), Type);
+    Result.MethodDecl = MD;
+    return Result;
+  }
+
 
   /// \brief Create the initialization entity for a base class subobject.
   static InitializedEntity InitializeBase(ASTContext &Context,
-                                          CXXBaseSpecifier *Base,
+                                          const CXXBaseSpecifier *Base,
                                           bool IsInheritedVirtualBase);
 
   /// \brief Create the initialization entity for a delegated constructor.
@@ -326,22 +346,29 @@ public:
   /// \brief Retrieve the variable, parameter, or field being
   /// initialized.
   DeclaratorDecl *getDecl() const;
+  
+  /// \brief Retrieve the ObjectiveC method being initialized.
+  ObjCMethodDecl *getMethodDecl() const { return MethodDecl; }
 
   /// \brief Determine whether this initialization allows the named return 
   /// value optimization, which also applies to thrown objects.
   bool allowsNRVO() const;
 
+  bool isParameterKind() const {
+    return (getKind() == EK_Parameter  ||
+            getKind() == EK_Parameter_CF_Audited);
+  }
   /// \brief Determine whether this initialization consumes the
   /// parameter.
   bool isParameterConsumed() const {
-    assert(getKind() == EK_Parameter && "Not a parameter");
+    assert(isParameterKind() && "Not a parameter");
     return (Parameter & 1);
   }
                                   
   /// \brief Retrieve the base specifier.
-  CXXBaseSpecifier *getBaseSpecifier() const {
+  const CXXBaseSpecifier *getBaseSpecifier() const {
     assert(getKind() == EK_Base && "Not a base specifier");
-    return reinterpret_cast<CXXBaseSpecifier *>(Base & ~0x1);
+    return reinterpret_cast<const CXXBaseSpecifier *>(Base & ~0x1);
   }
 
   /// \brief Return whether the base is an inherited virtual base.
@@ -383,6 +410,10 @@ public:
   SourceLocation getCaptureLoc() const {
     assert(getKind() == EK_LambdaCapture && "Not a lambda capture!");
     return SourceLocation::getFromRawEncoding(Capture.Location);
+  }
+  
+  void setParameterCFAudited() {
+    Kind = EK_Parameter_CF_Audited;
   }
 
   /// Dump a representation of the initialized entity to standard error,
@@ -859,8 +890,8 @@ public:
 
   /// \brief Determine whether the initialization sequence is invalid.
   bool Failed() const { return SequenceKind == FailedSequence; }
-  
-  typedef SmallVector<Step, 4>::const_iterator step_iterator;
+
+  typedef SmallVectorImpl<Step>::const_iterator step_iterator;
   step_iterator step_begin() const { return Steps.begin(); }
   step_iterator step_end()   const { return Steps.end(); }
 

@@ -17,10 +17,14 @@ class InstSI <dag outs, dag ins, string asm, list<dag> pattern> :
   field bits<1> VM_CNT = 0;
   field bits<1> EXP_CNT = 0;
   field bits<1> LGKM_CNT = 0;
+  field bits<1> MIMG = 0;
+  field bits<1> SMRD = 0;
 
   let TSFlags{0} = VM_CNT;
   let TSFlags{1} = EXP_CNT;
   let TSFlags{2} = LGKM_CNT;
+  let TSFlags{3} = MIMG;
+  let TSFlags{4} = SMRD;
 }
 
 class Enc32 <dag outs, dag ins, string asm, list<dag> pattern> :
@@ -140,6 +144,7 @@ class SMRD <bits<5> op, bits<1> imm, dag outs, dag ins, string asm,
   let Inst{31-27} = 0x18; //encoding
 
   let LGKM_CNT = 1;
+  let SMRD = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -281,6 +286,30 @@ class VINTRP <bits <2> op, dag outs, dag ins, string asm, list<dag> pattern> :
 
 let Uses = [EXEC] in {
 
+class DS <bits<8> op, dag outs, dag ins, string asm, list<dag> pattern> :
+    Enc64 <outs, ins, asm, pattern> {
+
+  bits<8> vdst;
+  bits<1> gds;
+  bits<8> addr;
+  bits<8> data0;
+  bits<8> data1;
+  bits<8> offset0;
+  bits<8> offset1;
+
+  let Inst{7-0} = offset0;
+  let Inst{15-8} = offset1;
+  let Inst{17} = gds;
+  let Inst{25-18} = op;
+  let Inst{31-26} = 0x36; //encoding
+  let Inst{39-32} = addr;
+  let Inst{47-40} = data0;
+  let Inst{55-48} = data1;
+  let Inst{63-56} = vdst;
+
+  let LGKM_CNT = 1;
+}
+
 class MUBUF <bits<7> op, dag outs, dag ins, string asm, list<dag> pattern> :
     Enc64<outs, ins, asm, pattern> {
 
@@ -390,6 +419,7 @@ class MIMG <bits<7> op, dag outs, dag ins, string asm, list<dag> pattern> :
 
   let VM_CNT = 1;
   let EXP_CNT = 1;
+  let MIMG = 1;
 }
 
 def EXP : Enc64<

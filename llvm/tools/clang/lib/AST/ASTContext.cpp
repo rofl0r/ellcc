@@ -133,8 +133,14 @@ RawComment *ASTContext::getRawCommentForDeclNoCache(const Decl *D) const {
       isa<RedeclarableTemplateDecl>(D) ||
       isa<ClassTemplateSpecializationDecl>(D))
     DeclLoc = D->getLocStart();
-  else
+  else {
     DeclLoc = D->getLocation();
+    // If location of the typedef name is in a macro, it is because being
+    // declared via a macro. Try using declaration's starting location
+    // as the "declaration location".
+    if (DeclLoc.isMacroID() && isa<TypedefDecl>(D))
+      DeclLoc = D->getLocStart();
+  }
 
   // If the declaration doesn't map directly to a location in a file, we
   // can't find the comment.
@@ -176,7 +182,8 @@ RawComment *ASTContext::getRawCommentForDeclNoCache(const Decl *D) const {
   // First check whether we have a trailing comment.
   if (Comment != RawComments.end() &&
       (*Comment)->isDocumentation() && (*Comment)->isTrailingComment() &&
-      (isa<FieldDecl>(D) || isa<EnumConstantDecl>(D) || isa<VarDecl>(D))) {
+      (isa<FieldDecl>(D) || isa<EnumConstantDecl>(D) || isa<VarDecl>(D) ||
+       isa<ObjCMethodDecl>(D) || isa<ObjCPropertyDecl>(D))) {
     std::pair<FileID, unsigned> CommentBeginDecomp
       = SourceMgr.getDecomposedLoc((*Comment)->getSourceRange().getBegin());
     // Check that Doxygen trailing comment comes after the declaration, starts
@@ -221,7 +228,7 @@ RawComment *ASTContext::getRawCommentForDeclNoCache(const Decl *D) const {
 
   // There should be no other declarations or preprocessor directives between
   // comment and declaration.
-  if (Text.find_first_of(",;{}#@") != StringRef::npos)
+  if (Text.find_first_of(";{}#@") != StringRef::npos)
     return NULL;
 
   return *Comment;
@@ -1035,13 +1042,20 @@ void ASTContext::eraseDeclAttrs(const Decl *D) {
   }
 }
 
+// FIXME: Remove ?
 MemberSpecializationInfo *
 ASTContext::getInstantiatedFromStaticDataMember(const VarDecl *Var) {
   assert(Var->isStaticDataMember() && "Not a static data member");
-  llvm::DenseMap<const VarDecl *, MemberSpecializationInfo *>::iterator Pos
-    = InstantiatedFromStaticDataMember.find(Var);
-  if (Pos == InstantiatedFromStaticDataMember.end())
-    return 0;
+  return getTemplateOrSpecializationInfo(Var)
+      .dyn_cast<MemberSpecializationInfo *>();
+}
+
+ASTContext::TemplateOrSpecializationInfo
+ASTContext::getTemplateOrSpecializationInfo(const VarDecl *Var) {
+  llvm::DenseMap<const VarDecl *, TemplateOrSpecializationInfo>::iterator Pos =
+      TemplateOrInstantiation.find(Var);
+  if (Pos == TemplateOrInstantiation.end())
+    return TemplateOrSpecializationInfo();
 
   return Pos->second;
 }
@@ -1052,10 +1066,16 @@ ASTContext::setInstantiatedFromStaticDataMember(VarDecl *Inst, VarDecl *Tmpl,
                                           SourceLocation PointOfInstantiation) {
   assert(Inst->isStaticDataMember() && "Not a static data member");
   assert(Tmpl->isStaticDataMember() && "Not a static data member");
-  assert(!InstantiatedFromStaticDataMember[Inst] &&
-         "Already noted what static data member was instantiated from");
-  InstantiatedFromStaticDataMember[Inst] 
-    = new (*this) MemberSpecializationInfo(Tmpl, TSK, PointOfInstantiation);
+  setTemplateOrSpecializationInfo(Inst, new (*this) MemberSpecializationInfo(
+                                            Tmpl, TSK, PointOfInstantiation));
+}
+
+void
+ASTContext::setTemplateOrSpecializationInfo(VarDecl *Inst,
+                                            TemplateOrSpecializationInfo TSI) {
+  assert(!TemplateOrInstantiation[Inst] &&
+         "Already noted what the variable was instantiated from");
+  TemplateOrInstantiation[Inst] = TSI;
 }
 
 FunctionDecl *ASTContext::getClassScopeSpecializationPattern(
@@ -1219,12 +1239,7 @@ const llvm::fltSemantics &ASTContext::getFloatTypeSemantics(QualType T) const {
   }
 }
 
-/// getDeclAlign - Return a conservative estimate of the alignment of the
-/// specified decl.  Note that bitfields do not have a valid alignment, so
-/// this method will assert on them.
-/// If @p RefAsPointee, references are treated like their underlying type
-/// (for alignof), else they're treated like pointers (for CodeGen).
-CharUnits ASTContext::getDeclAlign(const Decl *D, bool RefAsPointee) const {
+CharUnits ASTContext::getDeclAlign(const Decl *D, bool ForAlignof) const {
   unsigned Align = Target->getCharWidth();
 
   bool UseAlignAttrOnly = false;
@@ -1257,7 +1272,7 @@ CharUnits ASTContext::getDeclAlign(const Decl *D, bool RefAsPointee) const {
   } else if (const ValueDecl *VD = dyn_cast<ValueDecl>(D)) {
     QualType T = VD->getType();
     if (const ReferenceType* RT = T->getAs<ReferenceType>()) {
-      if (RefAsPointee)
+      if (ForAlignof)
         T = RT->getPointeeType();
       else
         T = getPointerType(RT->getPointeeType());
@@ -1265,14 +1280,15 @@ CharUnits ASTContext::getDeclAlign(const Decl *D, bool RefAsPointee) const {
     if (!T->isIncompleteType() && !T->isFunctionType()) {
       // Adjust alignments of declarations with array type by the
       // large-array alignment on the target.
-      unsigned MinWidth = Target->getLargeArrayMinWidth();
-      const ArrayType *arrayType;
-      if (MinWidth && (arrayType = getAsArrayType(T))) {
-        if (isa<VariableArrayType>(arrayType))
-          Align = std::max(Align, Target->getLargeArrayAlign());
-        else if (isa<ConstantArrayType>(arrayType) &&
-                 MinWidth <= getTypeSize(cast<ConstantArrayType>(arrayType)))
-          Align = std::max(Align, Target->getLargeArrayAlign());
+      if (const ArrayType *arrayType = getAsArrayType(T)) {
+        unsigned MinWidth = Target->getLargeArrayMinWidth();
+        if (!ForAlignof && MinWidth) {
+          if (isa<VariableArrayType>(arrayType))
+            Align = std::max(Align, Target->getLargeArrayAlign());
+          else if (isa<ConstantArrayType>(arrayType) &&
+                   MinWidth <= getTypeSize(cast<ConstantArrayType>(arrayType)))
+            Align = std::max(Align, Target->getLargeArrayAlign());
+        }
 
         // Walk through any array types while we're at it.
         T = getBaseElementType(arrayType);
@@ -1394,6 +1410,10 @@ ASTContext::getTypeInfoImpl(const Type *T) const {
 #define ABSTRACT_TYPE(Class, Base)
 #define NON_CANONICAL_TYPE(Class, Base)
 #define DEPENDENT_TYPE(Class, Base) case Type::Class:
+#define NON_CANONICAL_UNLESS_DEPENDENT_TYPE(Class, Base)                       \
+  case Type::Class:                                                            \
+  assert(!T->isDependentType() && "should not see dependent types here");      \
+  return getTypeInfo(cast<Class##Type>(T)->desugar().getTypePtr());
 #include "clang/AST/TypeNodes.def"
     llvm_unreachable("Should not see dependent types");
 
@@ -1644,38 +1664,12 @@ ASTContext::getTypeInfoImpl(const Type *T) const {
     break;
   }
 
-  case Type::TypeOfExpr:
-    return getTypeInfo(cast<TypeOfExprType>(T)->getUnderlyingExpr()->getType()
-                         .getTypePtr());
-
-  case Type::TypeOf:
-    return getTypeInfo(cast<TypeOfType>(T)->getUnderlyingType().getTypePtr());
-
-  case Type::Decltype:
-    return getTypeInfo(cast<DecltypeType>(T)->getUnderlyingExpr()->getType()
-                        .getTypePtr());
-
-  case Type::UnaryTransform:
-    return getTypeInfo(cast<UnaryTransformType>(T)->getUnderlyingType());
-
   case Type::Elaborated:
     return getTypeInfo(cast<ElaboratedType>(T)->getNamedType().getTypePtr());
 
   case Type::Attributed:
     return getTypeInfo(
                   cast<AttributedType>(T)->getEquivalentType().getTypePtr());
-
-  case Type::TemplateSpecialization: {
-    assert(getCanonicalType(T) != T &&
-           "Cannot request the size of a dependent type");
-    const TemplateSpecializationType *TST = cast<TemplateSpecializationType>(T);
-    // A type alias template specialization may refer to a typedef with the
-    // aligned attribute on it.
-    if (TST->isTypeAlias())
-      return getTypeInfo(TST->getAliasedType().getTypePtr());
-    else
-      return getTypeInfo(getCanonicalType(T));
-  }
 
   case Type::Atomic: {
     // Start with the base type information.
@@ -4533,7 +4527,7 @@ QualType ASTContext::getBlockDescriptorType() const {
     UnsignedLongTy,
   };
 
-  const char *FieldNames[] = {
+  static const char *const FieldNames[] = {
     "reserved",
     "Size"
   };
@@ -4574,7 +4568,7 @@ QualType ASTContext::getBlockDescriptorExtendedType() const {
     getPointerType(VoidPtrTy)
   };
 
-  const char *FieldNames[] = {
+  static const char *const FieldNames[] = {
     "reserved",
     "Size",
     "CopyFuncPtr",
@@ -5434,6 +5428,20 @@ void ASTContext::getObjCEncodingForTypeImpl(QualType T, std::string& S,
       // We encode the underlying type which comes out as
       // {...};
       S += '^';
+      if (FD && OPT->getInterfaceDecl()) {
+        // Prevent recursive encoding of fields in some rare cases.
+        ObjCInterfaceDecl *OI = OPT->getInterfaceDecl();
+        SmallVector<const ObjCIvarDecl*, 32> Ivars;
+        DeepCollectObjCIvars(OI, true, Ivars);
+        for (unsigned i = 0, e = Ivars.size(); i != e; ++i) {
+          if (cast<FieldDecl>(Ivars[i]) == FD) {
+            S += '{';
+            S += OI->getIdentifier()->getName();
+            S += '}';
+            return;
+          }
+        }
+      }
       getObjCEncodingForTypeImpl(PointeeTy, S,
                                  false, ExpandPointedToStructures,
                                  NULL,
@@ -7544,6 +7552,11 @@ static QualType DecodeTypeFromStr(const char *&Str, const ASTContext &Context,
            "Bad modifiers used with 'v'!");
     Type = Context.VoidTy;
     break;
+  case 'h':
+    assert(HowLong == 0 && !Signed && !Unsigned &&
+           "Bad modifiers used with 'f'!");
+    Type = Context.HalfTy;
+    break;
   case 'f':
     assert(HowLong == 0 && !Signed && !Unsigned &&
            "Bad modifiers used with 'f'!");
@@ -7809,8 +7822,9 @@ GVALinkage ASTContext::GetGVALinkageForFunction(const FunctionDecl *FD) {
 
   if (!FD->isInlined())
     return External;
-    
-  if (!getLangOpts().CPlusPlus || FD->hasAttr<GNUInlineAttr>()) {
+
+  if ((!getLangOpts().CPlusPlus && !getLangOpts().MicrosoftMode) ||
+      FD->hasAttr<GNUInlineAttr>()) {
     // GNU or C99 inline semantics. Determine whether this symbol should be
     // externally visible.
     if (FD->isInlineDefinitionExternallyVisible())
@@ -7974,40 +7988,35 @@ MangleContext *ASTContext::createMangleContext() {
 CXXABI::~CXXABI() {}
 
 size_t ASTContext::getSideTableAllocatedMemory() const {
-  return ASTRecordLayouts.getMemorySize()
-    + llvm::capacity_in_bytes(ObjCLayouts)
-    + llvm::capacity_in_bytes(KeyFunctions)
-    + llvm::capacity_in_bytes(ObjCImpls)
-    + llvm::capacity_in_bytes(BlockVarCopyInits)
-    + llvm::capacity_in_bytes(DeclAttrs)
-    + llvm::capacity_in_bytes(InstantiatedFromStaticDataMember)
-    + llvm::capacity_in_bytes(InstantiatedFromUsingDecl)
-    + llvm::capacity_in_bytes(InstantiatedFromUsingShadowDecl)
-    + llvm::capacity_in_bytes(InstantiatedFromUnnamedFieldDecl)
-    + llvm::capacity_in_bytes(OverriddenMethods)
-    + llvm::capacity_in_bytes(Types)
-    + llvm::capacity_in_bytes(VariableArrayTypes)
-    + llvm::capacity_in_bytes(ClassScopeSpecializationPattern);
+  return ASTRecordLayouts.getMemorySize() +
+         llvm::capacity_in_bytes(ObjCLayouts) +
+         llvm::capacity_in_bytes(KeyFunctions) +
+         llvm::capacity_in_bytes(ObjCImpls) +
+         llvm::capacity_in_bytes(BlockVarCopyInits) +
+         llvm::capacity_in_bytes(DeclAttrs) +
+         llvm::capacity_in_bytes(TemplateOrInstantiation) +
+         llvm::capacity_in_bytes(InstantiatedFromUsingDecl) +
+         llvm::capacity_in_bytes(InstantiatedFromUsingShadowDecl) +
+         llvm::capacity_in_bytes(InstantiatedFromUnnamedFieldDecl) +
+         llvm::capacity_in_bytes(OverriddenMethods) +
+         llvm::capacity_in_bytes(Types) +
+         llvm::capacity_in_bytes(VariableArrayTypes) +
+         llvm::capacity_in_bytes(ClassScopeSpecializationPattern);
 }
 
-void ASTContext::addUnnamedTag(const TagDecl *Tag) {
-  // FIXME: This mangling should be applied to function local classes too
-  if (!Tag->getName().empty() || Tag->getTypedefNameForAnonDecl() ||
-      !isa<CXXRecordDecl>(Tag->getParent()))
-    return;
-
-  std::pair<llvm::DenseMap<const DeclContext *, unsigned>::iterator, bool> P =
-    UnnamedMangleContexts.insert(std::make_pair(Tag->getParent(), 0));
-  UnnamedMangleNumbers.insert(std::make_pair(Tag, P.first->second++));
+void ASTContext::setManglingNumber(const NamedDecl *ND, unsigned Number) {
+  if (Number > 1)
+    MangleNumbers[ND] = Number;
 }
 
-int ASTContext::getUnnamedTagManglingNumber(const TagDecl *Tag) const {
-  llvm::DenseMap<const TagDecl *, unsigned>::const_iterator I =
-    UnnamedMangleNumbers.find(Tag);
-  return I != UnnamedMangleNumbers.end() ? I->second : -1;
+unsigned ASTContext::getManglingNumber(const NamedDecl *ND) const {
+  llvm::DenseMap<const NamedDecl *, unsigned>::const_iterator I =
+    MangleNumbers.find(ND);
+  return I != MangleNumbers.end() ? I->second : 1;
 }
 
-MangleNumberingContext &ASTContext::getManglingNumberContext(DeclContext *DC) {
+MangleNumberingContext &
+ASTContext::getManglingNumberContext(const DeclContext *DC) {
   return MangleNumberingContexts[DC];
 }
 
@@ -8141,4 +8150,36 @@ ASTContext::getParents(const ast_type_traits::DynTypedNode &Node) {
     return ParentVector();
   }
   return I->second;
+}
+
+bool
+ASTContext::ObjCMethodsAreEqual(const ObjCMethodDecl *MethodDecl,
+                                const ObjCMethodDecl *MethodImpl) {
+  // No point trying to match an unavailable/deprecated mothod.
+  if (MethodDecl->hasAttr<UnavailableAttr>()
+      || MethodDecl->hasAttr<DeprecatedAttr>())
+    return false;
+  if (MethodDecl->getObjCDeclQualifier() !=
+      MethodImpl->getObjCDeclQualifier())
+    return false;
+  if (!hasSameType(MethodDecl->getResultType(),
+                   MethodImpl->getResultType()))
+    return false;
+  
+  if (MethodDecl->param_size() != MethodImpl->param_size())
+    return false;
+  
+  for (ObjCMethodDecl::param_const_iterator IM = MethodImpl->param_begin(),
+       IF = MethodDecl->param_begin(), EM = MethodImpl->param_end(),
+       EF = MethodDecl->param_end();
+       IM != EM && IF != EF; ++IM, ++IF) {
+    const ParmVarDecl *DeclVar = (*IF);
+    const ParmVarDecl *ImplVar = (*IM);
+    if (ImplVar->getObjCDeclQualifier() != DeclVar->getObjCDeclQualifier())
+      return false;
+    if (!hasSameType(DeclVar->getType(), ImplVar->getType()))
+      return false;
+  }
+  return (MethodDecl->isVariadic() == MethodImpl->isVariadic());
+  
 }

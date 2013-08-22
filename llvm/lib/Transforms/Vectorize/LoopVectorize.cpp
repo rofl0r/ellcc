@@ -1220,7 +1220,8 @@ void InnerLoopVectorizer::vectorizeMemoryInstruction(Instruction *Instr,
         PartPtr = Builder.CreateGEP(PartPtr, Builder.getInt32(1 - VF));
       }
 
-      Value *VecPtr = Builder.CreateBitCast(PartPtr, DataTy->getPointerTo(AddressSpace));
+      Value *VecPtr = Builder.CreateBitCast(PartPtr,
+                                            DataTy->getPointerTo(AddressSpace));
       Builder.CreateStore(StoredVal[Part], VecPtr)->setAlignment(Alignment);
     }
     return;
@@ -1240,7 +1241,8 @@ void InnerLoopVectorizer::vectorizeMemoryInstruction(Instruction *Instr,
       PartPtr = Builder.CreateGEP(PartPtr, Builder.getInt32(1 - VF));
     }
 
-    Value *VecPtr = Builder.CreateBitCast(PartPtr, DataTy->getPointerTo(AddressSpace));
+    Value *VecPtr = Builder.CreateBitCast(PartPtr,
+                                          DataTy->getPointerTo(AddressSpace));
     Value *LI = Builder.CreateLoad(VecPtr, "wide.load");
     cast<LoadInst>(LI)->setAlignment(Alignment);
     Entry[Part] = Reverse ? reverseVector(LI) :  LI;
@@ -1476,6 +1478,22 @@ InnerLoopVectorizer::createEmptyLoop(LoopVectorizationLegality *Legal) {
   BasicBlock *ScalarPH =
   MiddleBlock->splitBasicBlock(MiddleBlock->getTerminator(), "scalar.ph");
 
+  // Create and register the new vector loop.
+  Loop* Lp = new Loop();
+  Loop *ParentLoop = OrigLoop->getParentLoop();
+
+  // Insert the new loop into the loop nest and register the new basic blocks
+  // before calling any utilities such as SCEV that require valid LoopInfo.
+  if (ParentLoop) {
+    ParentLoop->addChildLoop(Lp);
+    ParentLoop->addBasicBlockToLoop(ScalarPH, LI->getBase());
+    ParentLoop->addBasicBlockToLoop(VectorPH, LI->getBase());
+    ParentLoop->addBasicBlockToLoop(MiddleBlock, LI->getBase());
+  } else {
+    LI->addTopLevelLoop(Lp);
+  }
+  Lp->addBasicBlockToLoop(VecBody, LI->getBase());
+
   // Use this IR builder to create the loop instructions (Phi, Br, Cmp)
   // inside the loop.
   Builder.SetInsertPoint(VecBody->getFirstInsertionPt());
@@ -1530,6 +1548,8 @@ InnerLoopVectorizer::createEmptyLoop(LoopVectorizationLegality *Legal) {
     // Create a new block containing the memory check.
     BasicBlock *CheckBlock = BypassBlock->splitBasicBlock(MemRuntimeCheck,
                                                           "vector.memcheck");
+    if (ParentLoop)
+      ParentLoop->addBasicBlockToLoop(CheckBlock, LI->getBase());
     LoopBypassBlocks.push_back(CheckBlock);
 
     // Replace the branch into the memory check block with a conditional branch
@@ -1697,24 +1717,6 @@ InnerLoopVectorizer::createEmptyLoop(LoopVectorizationLegality *Legal) {
   // Get ready to start creating new instructions into the vectorized body.
   Builder.SetInsertPoint(VecBody->getFirstInsertionPt());
 
-  // Create and register the new vector loop.
-  Loop* Lp = new Loop();
-  Loop *ParentLoop = OrigLoop->getParentLoop();
-
-  // Insert the new loop into the loop nest and register the new basic blocks.
-  if (ParentLoop) {
-    ParentLoop->addChildLoop(Lp);
-    for (unsigned I = 1, E = LoopBypassBlocks.size(); I != E; ++I)
-      ParentLoop->addBasicBlockToLoop(LoopBypassBlocks[I], LI->getBase());
-    ParentLoop->addBasicBlockToLoop(ScalarPH, LI->getBase());
-    ParentLoop->addBasicBlockToLoop(VectorPH, LI->getBase());
-    ParentLoop->addBasicBlockToLoop(MiddleBlock, LI->getBase());
-  } else {
-    LI->addTopLevelLoop(Lp);
-  }
-
-  Lp->addBasicBlockToLoop(VecBody, LI->getBase());
-
   // Save the state.
   LoopVectorPreHeader = VectorPH;
   LoopScalarPreHeader = ScalarPH;
@@ -1770,9 +1772,12 @@ getIntrinsicIDForCall(CallInst *CI, const TargetLibraryInfo *TLI) {
     case Intrinsic::trunc:
     case Intrinsic::rint:
     case Intrinsic::nearbyint:
+    case Intrinsic::round:
     case Intrinsic::pow:
     case Intrinsic::fma:
     case Intrinsic::fmuladd:
+    case Intrinsic::lifetime_start:
+    case Intrinsic::lifetime_end:
       return II->getIntrinsicID();
     default:
       return Intrinsic::not_intrinsic;
@@ -1846,6 +1851,10 @@ getIntrinsicIDForCall(CallInst *CI, const TargetLibraryInfo *TLI) {
   case LibFunc::nearbyintf:
   case LibFunc::nearbyintl:
     return Intrinsic::nearbyint;
+  case LibFunc::round:
+  case LibFunc::roundf:
+  case LibFunc::roundl:
+    return Intrinsic::round;
   case LibFunc::pow:
   case LibFunc::powf:
   case LibFunc::powl:
@@ -1911,7 +1920,8 @@ Value *createMinMaxOp(IRBuilder<> &Builder,
   }
 
   Value *Cmp;
-  if (RK == LoopVectorizationLegality::MRK_FloatMin || RK == LoopVectorizationLegality::MRK_FloatMax)
+  if (RK == LoopVectorizationLegality::MRK_FloatMin ||
+      RK == LoopVectorizationLegality::MRK_FloatMax)
     Cmp = Builder.CreateFCmp(P, Left, Right, "rdx.minmax.cmp");
   else
     Cmp = Builder.CreateICmp(P, Left, Right, "rdx.minmax.cmp");
@@ -2488,15 +2498,23 @@ InnerLoopVectorizer::vectorizeBlockInLoop(LoopVectorizationLegality *Legal,
       CallInst *CI = cast<CallInst>(it);
       Intrinsic::ID ID = getIntrinsicIDForCall(CI, TLI);
       assert(ID && "Not an intrinsic call!");
-      for (unsigned Part = 0; Part < UF; ++Part) {
-        SmallVector<Value*, 4> Args;
-        for (unsigned i = 0, ie = CI->getNumArgOperands(); i != ie; ++i) {
-          VectorParts &Arg = getVectorValue(CI->getArgOperand(i));
-          Args.push_back(Arg[Part]);
+      switch (ID) {
+      case Intrinsic::lifetime_end:
+      case Intrinsic::lifetime_start:
+        scalarizeInstruction(it);
+        break;
+      default:
+        for (unsigned Part = 0; Part < UF; ++Part) {
+          SmallVector<Value *, 4> Args;
+          for (unsigned i = 0, ie = CI->getNumArgOperands(); i != ie; ++i) {
+            VectorParts &Arg = getVectorValue(CI->getArgOperand(i));
+            Args.push_back(Arg[Part]);
+          }
+          Type *Tys[] = { VectorType::get(CI->getType()->getScalarType(), VF) };
+          Function *F = Intrinsic::getDeclaration(M, ID, Tys);
+          Entry[Part] = Builder.CreateCall(F, Args);
         }
-        Type *Tys[] = { VectorType::get(CI->getType()->getScalarType(), VF) };
-        Function *F = Intrinsic::getDeclaration(M, ID, Tys);
-        Entry[Part] = Builder.CreateCall(F, Args);
+        break;
       }
       break;
     }
@@ -2781,7 +2799,8 @@ bool LoopVectorizationLegality::canVectorizeInstrs() {
           continue;
         }
         if (AddReductionVar(Phi, RK_FloatMinMax)) {
-          DEBUG(dbgs() << "LV: Found an float MINMAX reduction PHI."<< *Phi <<"\n");
+          DEBUG(dbgs() << "LV: Found an float MINMAX reduction PHI."<< *Phi <<
+                "\n");
           continue;
         }
 
@@ -3223,13 +3242,14 @@ static bool isInBoundsGep(Value *Ptr) {
 /// \brief Check whether the access through \p Ptr has a constant stride.
 static int isStridedPtr(ScalarEvolution *SE, DataLayout *DL, Value *Ptr,
                         const Loop *Lp) {
-  const Type *PtrTy = Ptr->getType();
-  assert(PtrTy->isPointerTy() && "Unexpected non ptr");
+  const Type *Ty = Ptr->getType();
+  assert(Ty->isPointerTy() && "Unexpected non ptr");
 
   // Make sure that the pointer does not point to aggregate types.
-  if (cast<PointerType>(Ptr->getType())->getElementType()->isAggregateType()) {
-    DEBUG(dbgs() << "LV: Bad stride - Not a pointer to a scalar type" << *Ptr
-          << "\n");
+  const PointerType *PtrTy = cast<PointerType>(Ty);
+  if (PtrTy->getElementType()->isAggregateType()) {
+    DEBUG(dbgs() << "LV: Bad stride - Not a pointer to a scalar type" << *Ptr <<
+          "\n");
     return 0;
   }
 
@@ -3243,16 +3263,21 @@ static int isStridedPtr(ScalarEvolution *SE, DataLayout *DL, Value *Ptr,
 
   // The accesss function must stride over the innermost loop.
   if (Lp != AR->getLoop()) {
-    DEBUG(dbgs() << "LV: Bad stride - Not striding over innermost loop " << *Ptr
-          << " SCEV: " << *PtrScev << "\n");
+    DEBUG(dbgs() << "LV: Bad stride - Not striding over innermost loop " <<
+          *Ptr << " SCEV: " << *PtrScev << "\n");
   }
 
   // The address calculation must not wrap. Otherwise, a dependence could be
-  // inverted. An inbounds getelementptr that is a AddRec with a unit stride
+  // inverted.
+  // An inbounds getelementptr that is a AddRec with a unit stride
   // cannot wrap per definition. The unit stride requirement is checked later.
+  // An getelementptr without an inbounds attribute and unit stride would have
+  // to access the pointer value "0" which is undefined behavior in address
+  // space 0, therefore we can also vectorize this case.
   bool IsInBoundsGEP = isInBoundsGep(Ptr);
   bool IsNoWrapAddRec = AR->getNoWrapFlags(SCEV::NoWrapMask);
-  if (!IsNoWrapAddRec && !IsInBoundsGEP) {
+  bool IsInAddressSpaceZero = PtrTy->getAddressSpace() == 0;
+  if (!IsNoWrapAddRec && !IsInBoundsGEP && !IsInAddressSpaceZero) {
     DEBUG(dbgs() << "LV: Bad stride - Pointer may wrap in the address space "
           << *Ptr << " SCEV: " << *PtrScev << "\n");
     return 0;
@@ -3269,7 +3294,7 @@ static int isStridedPtr(ScalarEvolution *SE, DataLayout *DL, Value *Ptr,
     return 0;
   }
 
-  int64_t Size = DL->getTypeAllocSize(PtrTy->getPointerElementType());
+  int64_t Size = DL->getTypeAllocSize(PtrTy->getElementType());
   const APInt &APStepVal = C->getValue()->getValue();
 
   // Huge step value - give up.
@@ -3285,8 +3310,10 @@ static int isStridedPtr(ScalarEvolution *SE, DataLayout *DL, Value *Ptr,
     return 0;
 
   // If the SCEV could wrap but we have an inbounds gep with a unit stride we
-  // know we can't "wrap around the address space".
-  if (!IsNoWrapAddRec && IsInBoundsGEP && Stride != 1 && Stride != -1)
+  // know we can't "wrap around the address space". In case of address space
+  // zero we know that this won't happen without triggering undefined behavior.
+  if (!IsNoWrapAddRec && (IsInBoundsGEP || IsInAddressSpaceZero) &&
+      Stride != 1 && Stride != -1)
     return 0;
 
   return Stride;
@@ -3810,9 +3837,13 @@ bool LoopVectorizationLegality::AddReductionVar(PHINode *Phi,
       // Check if we found the exit user.
       BasicBlock *Parent = Usr->getParent();
       if (!TheLoop->contains(Parent)) {
-        // Exit if you find multiple outside users.
-        if (ExitInstruction != 0)
+        // Exit if you find multiple outside users or if the header phi node is
+        // being used. In this case the user uses the value of the previous
+        // iteration, in which case we would loose "VF-1" iterations of the
+        // reduction operation if we vectorize.
+        if (ExitInstruction != 0 || Cur == Phi)
           return false;
+
         ExitInstruction = Cur;
         continue;
       }
@@ -4052,7 +4083,8 @@ LoopVectorizationCostModel::selectVectorizationFactor(bool OptForSize,
   unsigned MaxSafeDepDist = -1U;
   if (Legal->getMaxSafeDepDistBytes() != -1U)
     MaxSafeDepDist = Legal->getMaxSafeDepDistBytes() * 8;
-  WidestRegister = WidestRegister < MaxSafeDepDist ?  WidestRegister : MaxSafeDepDist;
+  WidestRegister = ((WidestRegister < MaxSafeDepDist) ?
+                    WidestRegister : MaxSafeDepDist);
   unsigned MaxVectorSize = WidestRegister / WidestType;
   DEBUG(dbgs() << "LV: The Widest type: " << WidestType << " bits.\n");
   DEBUG(dbgs() << "LV: The Widest register is:" << WidestRegister << "bits.\n");
@@ -4378,7 +4410,7 @@ unsigned LoopVectorizationCostModel::expectedCost(unsigned VF) {
         continue;
 
       unsigned C = getInstructionCost(it, VF);
-      Cost += C;
+      BlockCost += C;
       DEBUG(dbgs() << "LV: Found an estimated cost of "<< C <<" for VF " <<
             VF << " For instruction: "<< *it << "\n");
     }
@@ -4386,13 +4418,66 @@ unsigned LoopVectorizationCostModel::expectedCost(unsigned VF) {
     // We assume that if-converted blocks have a 50% chance of being executed.
     // When the code is scalar then some of the blocks are avoided due to CF.
     // When the code is vectorized we execute all code paths.
-    if (Legal->blockNeedsPredication(*bb) && VF == 1)
+    if (VF == 1 && Legal->blockNeedsPredication(*bb))
       BlockCost /= 2;
 
     Cost += BlockCost;
   }
 
   return Cost;
+}
+
+/// \brief Check whether the address computation for a non-consecutive memory
+/// access looks like an unlikely candidate for being merged into the indexing
+/// mode.
+///
+/// We look for a GEP which has one index that is an induction variable and all
+/// other indices are loop invariant. If the stride of this access is also
+/// within a small bound we decide that this address computation can likely be
+/// merged into the addressing mode.
+/// In all other cases, we identify the address computation as complex.
+static bool isLikelyComplexAddressComputation(Value *Ptr,
+                                              LoopVectorizationLegality *Legal,
+                                              ScalarEvolution *SE,
+                                              const Loop *TheLoop) {
+  GetElementPtrInst *Gep = dyn_cast<GetElementPtrInst>(Ptr);
+  if (!Gep)
+    return true;
+
+  // We are looking for a gep with all loop invariant indices except for one
+  // which should be an induction variable.
+  unsigned NumOperands = Gep->getNumOperands();
+  for (unsigned i = 1; i < NumOperands; ++i) {
+    Value *Opd = Gep->getOperand(i);
+    if (!SE->isLoopInvariant(SE->getSCEV(Opd), TheLoop) &&
+        !Legal->isInductionVariable(Opd))
+      return true;
+  }
+
+  // Now we know we have a GEP ptr, %inv, %ind, %inv. Make sure that the step
+  // can likely be merged into the address computation.
+  unsigned MaxMergeDistance = 64;
+
+  const SCEVAddRecExpr *AddRec = dyn_cast<SCEVAddRecExpr>(SE->getSCEV(Ptr));
+  if (!AddRec)
+    return true;
+
+  // Check the step is constant.
+  const SCEV *Step = AddRec->getStepRecurrence(*SE);
+  // Calculate the pointer stride and check if it is consecutive.
+  const SCEVConstant *C = dyn_cast<SCEVConstant>(Step);
+  if (!C)
+    return true;
+
+  const APInt &APStepVal = C->getValue()->getValue();
+
+  // Huge step value - give up.
+  if (APStepVal.getBitWidth() > 64)
+    return true;
+
+  int64_t StepVal = APStepVal.getSExtValue();
+
+  return StepVal > MaxMergeDistance;
 }
 
 unsigned
@@ -4490,6 +4575,8 @@ LoopVectorizationCostModel::getInstructionCost(Instruction *I, unsigned VF) {
     unsigned ScalarAllocatedSize = DL->getTypeAllocSize(ValTy);
     unsigned VectorElementSize = DL->getTypeStoreSize(VectorTy)/VF;
     if (!ConsecutiveStride || ScalarAllocatedSize != VectorElementSize) {
+      bool IsComplexComputation =
+        isLikelyComplexAddressComputation(Ptr, Legal, SE, TheLoop);
       unsigned Cost = 0;
       // The cost of extracting from the value vector and pointer vector.
       Type *PtrTy = ToVectorTy(Ptr->getType(), VF);
@@ -4505,7 +4592,7 @@ LoopVectorizationCostModel::getInstructionCost(Instruction *I, unsigned VF) {
       }
 
       // The cost of the scalar loads/stores.
-      Cost += VF * TTI.getAddressComputationCost(ValTy->getScalarType());
+      Cost += VF * TTI.getAddressComputationCost(PtrTy, IsComplexComputation);
       Cost += VF * TTI.getMemoryOpCost(I->getOpcode(), ValTy->getScalarType(),
                                        Alignment, AS);
       return Cost;

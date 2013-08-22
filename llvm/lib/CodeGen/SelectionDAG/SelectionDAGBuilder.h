@@ -1,4 +1,4 @@
-//===-- SelectionDAGBuilder.h - Selection-DAG building --------*- c++ -*---===//
+//===-- SelectionDAGBuilder.h - Selection-DAG building --------*- C++ -*---===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -523,6 +523,10 @@ private:
   void visitPHI(const PHINode &I);
   void visitCall(const CallInst &I);
   bool visitMemCmpCall(const CallInst &I);
+  bool visitStrCpyCall(const CallInst &I, bool isStpcpy);
+  bool visitStrCmpCall(const CallInst &I);
+  bool visitStrLenCall(const CallInst &I);
+  bool visitStrNLenCall(const CallInst &I);
   bool visitUnaryFloatCall(const CallInst &I, unsigned Opcode);
   void visitAtomicLoad(const LoadInst &I);
   void visitAtomicStore(const StoreInst &I);
@@ -542,6 +546,9 @@ private:
   void visitUserOp2(const Instruction &I) {
     llvm_unreachable("UserOp2 should not exist at instruction selection time!");
   }
+
+  void processIntegerCallValue(const Instruction &I,
+                               SDValue Value, bool IsSigned);
 
   void HandlePHINodesInSuccessorBlocks(const BasicBlock *LLVMBB);
 

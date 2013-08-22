@@ -443,10 +443,6 @@ class PNaClTargetCodeGenInfo : public TargetCodeGenInfo {
  public:
   PNaClTargetCodeGenInfo(CodeGen::CodeGenTypes &CGT)
     : TargetCodeGenInfo(new PNaClABIInfo(CGT)) {}
-
-  /// For PNaCl we don't want llvm.pow.* intrinsics to be emitted instead
-  /// of library function calls.
-  bool emitIntrinsicForPow() const { return false; }
 };
 
 void PNaClABIInfo::computeInfo(CGFunctionInfo &FI) const {
@@ -901,9 +897,7 @@ ABIArgInfo X86_32ABIInfo::classifyArgumentType(QualType Ty,
     bool NeedsPadding;
     if (shouldUseInReg(Ty, FreeRegs, IsFastCall, NeedsPadding)) {
       unsigned SizeInRegs = (getContext().getTypeSize(Ty) + 31) / 32;
-      SmallVector<llvm::Type*, 3> Elements;
-      for (unsigned I = 0; I < SizeInRegs; ++I)
-        Elements.push_back(Int32);
+      SmallVector<llvm::Type*, 3> Elements(SizeInRegs, Int32);
       llvm::Type *Result = llvm::StructType::get(LLVMContext, Elements);
       return ABIArgInfo::getDirectInReg(Result);
     }
@@ -2873,11 +2867,11 @@ public:
          it != ie; ++it) {
       // We rely on the default argument classification for the most part.
       // One exception:  An aggregate containing a single floating-point
-      // item must be passed in a register if one is available.
+      // or vector item must be passed in a register if one is available.
       const Type *T = isSingleElementStruct(it->type, getContext());
       if (T) {
         const BuiltinType *BT = T->getAs<BuiltinType>();
-        if (BT && BT->isFloatingPoint()) {
+        if (T->isVectorType() || (BT && BT->isFloatingPoint())) {
           QualType QT(T, 0);
           it->info = ABIArgInfo::getDirectInReg(CGT.ConvertType(QT));
           continue;
@@ -4786,7 +4780,7 @@ class MipsABIInfo : public ABIInfo {
   bool IsO32;
   unsigned MinABIStackAlignInBytes, StackAlignInBytes;
   void CoerceToIntArgs(uint64_t TySize,
-                       SmallVector<llvm::Type*, 8> &ArgList) const;
+                       SmallVectorImpl<llvm::Type *> &ArgList) const;
   llvm::Type* HandleAggregates(QualType Ty, uint64_t TySize) const;
   llvm::Type* returnAggregateInRegs(QualType RetTy, uint64_t Size) const;
   llvm::Type* getPaddingType(uint64_t Align, uint64_t Offset) const;
@@ -4838,7 +4832,7 @@ public:
 }
 
 void MipsABIInfo::CoerceToIntArgs(uint64_t TySize,
-                                  SmallVector<llvm::Type*, 8> &ArgList) const {
+                                  SmallVectorImpl<llvm::Type *> &ArgList) const {
   llvm::IntegerType *IntTy =
     llvm::IntegerType::get(getVMContext(), MinABIStackAlignInBytes * 8);
 
@@ -5615,6 +5609,22 @@ public:
 } // end anonymous namespace
 
 
+//===----------------------------------------------------------------------===//
+// Xcore ABI Implementation
+//===----------------------------------------------------------------------===//
+namespace {
+class XcoreTargetCodeGenInfo : public TargetCodeGenInfo {
+public:
+  XcoreTargetCodeGenInfo(CodeGenTypes &CGT)
+    :TargetCodeGenInfo(new DefaultABIInfo(CGT)) {}
+};
+} // end anonymous namespace
+
+
+//===----------------------------------------------------------------------===//
+// Driver code
+//===----------------------------------------------------------------------===//
+
 const TargetCodeGenInfo &CodeGenModule::getTargetCodeGenInfo() {
   if (TheTargetCodeGenInfo)
     return *TheTargetCodeGenInfo;
@@ -5666,6 +5676,9 @@ const TargetCodeGenInfo &CodeGenModule::getTargetCodeGenInfo() {
       return *(TheTargetCodeGenInfo = new PPC64_SVR4_TargetCodeGenInfo(Types));
     else
       return *(TheTargetCodeGenInfo = new PPC64TargetCodeGenInfo(Types));
+  case llvm::Triple::ppc64le:
+    assert(Triple.isOSBinFormatELF() && "PPC64 LE non-ELF not supported!");
+    return *(TheTargetCodeGenInfo = new PPC64_SVR4_TargetCodeGenInfo(Types));
 
   case llvm::Triple::nvptx:
   case llvm::Triple::nvptx64:
@@ -5724,5 +5737,8 @@ const TargetCodeGenInfo &CodeGenModule::getTargetCodeGenInfo() {
     return *(TheTargetCodeGenInfo = new HexagonTargetCodeGenInfo(Types));
   case llvm::Triple::sparcv9:
     return *(TheTargetCodeGenInfo = new SparcV9TargetCodeGenInfo(Types));
+  case llvm::Triple::xcore:
+    return *(TheTargetCodeGenInfo = new XcoreTargetCodeGenInfo(Types));
+
   }
 }

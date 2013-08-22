@@ -2,7 +2,7 @@
 
 @g1 = external global i32
 
-; CHECK: seteq0:
+; CHECK-LABEL: seteq0:
 ; CHECK: sltiu ${{[0-9]+}}, $4, 1
 
 define i32 @seteq0(i32 %a) {
@@ -12,7 +12,7 @@ entry:
   ret i32 %conv
 }
 
-; CHECK: setne0:
+; CHECK-LABEL: setne0:
 ; CHECK: sltu ${{[0-9]+}}, $zero, $4
 
 define i32 @setne0(i32 %a) {
@@ -22,9 +22,9 @@ entry:
   ret i32 %conv
 }
 
-; CHECK: slti_beq0:
+; CHECK-LABEL: slti_beq0:
 ; CHECK: slti $[[R0:[0-9]+]], $4, -32768
-; CHECK: beq $[[R0]], $zero
+; CHECK: beqz $[[R0]]
 
 define void @slti_beq0(i32 %a) {
 entry:
@@ -39,7 +39,7 @@ if.end:
   ret void
 }
 
-; CHECK: slti_beq1:
+; CHECK-LABEL: slti_beq1:
 ; CHECK: slt ${{[0-9]+}}
 
 define void @slti_beq1(i32 %a) {
@@ -55,9 +55,9 @@ if.end:
   ret void
 }
 
-; CHECK: slti_beq2:
+; CHECK-LABEL: slti_beq2:
 ; CHECK: slti $[[R0:[0-9]+]], $4, 32767
-; CHECK: beq $[[R0]], $zero
+; CHECK: beqz $[[R0]]
 
 define void @slti_beq2(i32 %a) {
 entry:
@@ -72,7 +72,7 @@ if.end:
   ret void
 }
 
-; CHECK: slti_beq3:
+; CHECK-LABEL: slti_beq3:
 ; CHECK: slt ${{[0-9]+}}
 
 define void @slti_beq3(i32 %a) {
@@ -88,9 +88,9 @@ if.end:
   ret void
 }
 
-; CHECK: sltiu_beq0:
+; CHECK-LABEL: sltiu_beq0:
 ; CHECK: sltiu $[[R0:[0-9]+]], $4, 32767
-; CHECK: beq $[[R0]], $zero
+; CHECK: beqz $[[R0]]
 
 define void @sltiu_beq0(i32 %a) {
 entry:
@@ -105,7 +105,7 @@ if.end:
   ret void
 }
 
-; CHECK: sltiu_beq1:
+; CHECK-LABEL: sltiu_beq1:
 ; CHECK: sltu ${{[0-9]+}}
 
 define void @sltiu_beq1(i32 %a) {
@@ -121,9 +121,9 @@ if.end:
   ret void
 }
 
-; CHECK: sltiu_beq2:
+; CHECK-LABEL: sltiu_beq2:
 ; CHECK: sltiu $[[R0:[0-9]+]], $4, -32768
-; CHECK: beq $[[R0]], $zero
+; CHECK: beqz $[[R0]]
 
 define void @sltiu_beq2(i32 %a) {
 entry:
@@ -138,7 +138,7 @@ if.end:
   ret void
 }
 
-; CHECK: sltiu_beq3:
+; CHECK-LABEL: sltiu_beq3:
 ; CHECK: sltu ${{[0-9]+}}
 
 define void @sltiu_beq3(i32 %a) {

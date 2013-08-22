@@ -32,6 +32,8 @@ namespace __sanitizer {
   extern unsigned pid_t_sz;
   extern unsigned timeval_sz;
   extern unsigned uid_t_sz;
+  extern unsigned mbstate_t_sz;
+  extern unsigned sigset_t_sz;
 
 #if !SANITIZER_ANDROID
   extern unsigned ucontext_t_sz;
@@ -54,6 +56,12 @@ namespace __sanitizer {
     void  *iov_base;
     uptr iov_len;
   };
+
+#if SANITIZER_MAC
+  typedef unsigned long __sanitizer_pthread_key_t;
+#else
+  typedef unsigned __sanitizer_pthread_key_t;
+#endif
 
 #if SANITIZER_ANDROID || SANITIZER_MAC
   struct __sanitizer_msghdr {
@@ -89,7 +97,8 @@ namespace __sanitizer {
 
 #if SANITIZER_MAC
   struct __sanitizer_dirent {
-    unsigned d_ino;
+    unsigned long long d_ino;
+    unsigned long long d_seekoff;
     unsigned short d_reclen;
     // more fields that we don't care about
   };
@@ -111,8 +120,8 @@ namespace __sanitizer {
 
 #if SANITIZER_LINUX && !SANITIZER_ANDROID
   struct __sanitizer_dirent64 {
-    uptr d_ino;
-    uptr d_off;
+    unsigned long long d_ino;
+    unsigned long long d_off;
     unsigned short d_reclen;
     // more fields that we don't care about
   };
@@ -180,16 +189,40 @@ namespace __sanitizer {
     char **h_addr_list;
   };
 
+  struct __sanitizer_pollfd {
+    int fd;
+    short events;
+    short revents;
+  };
+
+#if SANITIZER_ANDROID || SANITIZER_MAC
+  typedef unsigned __sanitizer_nfds_t;
+#else
+  typedef unsigned long __sanitizer_nfds_t;
+#endif
+
 #if SANITIZER_LINUX && !SANITIZER_ANDROID
   struct __sanitizer_glob_t {
     uptr gl_pathc;
     char **gl_pathv;
+    uptr gl_offs;
+    int gl_flags;
+
+    void (*gl_closedir)(void *dirp);
+    void *(*gl_readdir)(void *dirp);
+    void *(*gl_opendir)(const char *);
+    int (*gl_lstat)(const char *, void *);
+    int (*gl_stat)(const char *, void *);
   };
 
   extern int glob_nomatch;
+  extern int glob_altdirfunc;
 #endif
 
-#if SANITIZER_LINUX && !SANITIZER_ANDROID
+  extern unsigned path_max;
+
+#if SANITIZER_LINUX && !SANITIZER_ANDROID && \
+      (defined(__i386) || defined (__x86_64))  // NOLINT
   extern unsigned struct_user_regs_struct_sz;
   extern unsigned struct_user_fpregs_struct_sz;
   extern unsigned struct_user_fpxregs_struct_sz;
@@ -671,8 +704,6 @@ namespace __sanitizer {
   extern unsigned IOCTL_LPSETIRQ;
   extern unsigned IOCTL_LPTIME;
   extern unsigned IOCTL_LPWAIT;
-  extern unsigned IOCTL_MTIOCGETCONFIG;
-  extern unsigned IOCTL_MTIOCSETCONFIG;
   extern unsigned IOCTL_PIO_CMAP;
   extern unsigned IOCTL_PIO_FONT;
   extern unsigned IOCTL_PIO_SCRNMAP;
@@ -685,18 +716,8 @@ namespace __sanitizer {
   extern unsigned IOCTL_SCSI_IOCTL_TAGGED_ENABLE;
   extern unsigned IOCTL_SIOCAIPXITFCRT;
   extern unsigned IOCTL_SIOCAIPXPRISLT;
-  extern unsigned IOCTL_SIOCAX25ADDUID;
-  extern unsigned IOCTL_SIOCAX25DELUID;
-  extern unsigned IOCTL_SIOCAX25GETPARMS;
-  extern unsigned IOCTL_SIOCAX25GETUID;
-  extern unsigned IOCTL_SIOCAX25NOUID;
-  extern unsigned IOCTL_SIOCAX25SETPARMS;
   extern unsigned IOCTL_SIOCDEVPLIP;
   extern unsigned IOCTL_SIOCIPXCFGDATA;
-  extern unsigned IOCTL_SIOCNRDECOBS;
-  extern unsigned IOCTL_SIOCNRGETPARMS;
-  extern unsigned IOCTL_SIOCNRRTCTL;
-  extern unsigned IOCTL_SIOCNRSETPARMS;
   extern unsigned IOCTL_SNDCTL_DSP_GETISPACE;
   extern unsigned IOCTL_SNDCTL_DSP_GETOSPACE;
   extern unsigned IOCTL_TIOCGSERIAL;

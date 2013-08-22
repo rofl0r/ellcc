@@ -111,8 +111,8 @@ std::string Module::getFullModuleName() const {
     Names.push_back(M->Name);
   
   std::string Result;
-  for (SmallVector<StringRef, 2>::reverse_iterator I = Names.rbegin(),
-                                                IEnd = Names.rend();
+  for (SmallVectorImpl<StringRef>::reverse_iterator I = Names.rbegin(),
+                                                 IEnd = Names.rend();
        I != IEnd; ++I) {
     if (!Result.empty())
       Result += '.';
@@ -239,6 +239,24 @@ void Module::getExportedModules(SmallVectorImpl<Module *> &Exported) const {
       continue;
 
     Exported.push_back(Mod);
+  }
+}
+
+void Module::buildVisibleModulesCache() const {
+  assert(VisibleModulesCache.empty() && "cache does not need building");
+
+  // This module is visible to itself.
+  VisibleModulesCache.insert(this);
+
+  llvm::SmallVector<Module*, 4> Exported;
+  for (unsigned I = 0, N = Imports.size(); I != N; ++I) {
+    // Every imported module is visible.
+    VisibleModulesCache.insert(Imports[I]);
+
+    // Every module exported by an imported module is visible.
+    Imports[I]->getExportedModules(Exported);
+    VisibleModulesCache.insert(Exported.begin(), Exported.end());
+    Exported.clear();
   }
 }
 

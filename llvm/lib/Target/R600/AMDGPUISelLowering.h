@@ -25,6 +25,11 @@ class MachineRegisterInfo;
 
 class AMDGPUTargetLowering : public TargetLowering {
 private:
+  void ExtractVectorElements(SDValue Op, SelectionDAG &DAG,
+                             SmallVectorImpl<SDValue> &Args,
+                             unsigned Start, unsigned Count) const;
+  SDValue LowerEXTRACT_SUBVECTOR(SDValue Op, SelectionDAG &DAG) const;
+  SDValue LowerCONCAT_VECTORS(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerINTRINSIC_WO_CHAIN(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerUDIVREM(SDValue Op, SelectionDAG &DAG) const;
 
@@ -46,9 +51,16 @@ protected:
   void AnalyzeFormalArguments(CCState &State,
                               const SmallVectorImpl<ISD::InputArg> &Ins) const;
 
+  /// \brief Lower vector stores by merging the vector elements into an integer
+  /// of the same bitwidth.
+  SDValue LowerVectorStore(const SDValue &Op, SelectionDAG &DAG) const;
+
 public:
   AMDGPUTargetLowering(TargetMachine &TM);
 
+  virtual bool isFAbsFree(EVT VT) const;
+  virtual bool isFNegFree(EVT VT) const;
+  virtual MVT getVectorIdxTy() const;
   virtual SDValue LowerReturn(SDValue Chain, CallingConv::ID CallConv,
                               bool isVarArg,
                               const SmallVectorImpl<ISD::OutputArg> &Outs,
@@ -121,6 +133,8 @@ enum {
   // End AMDIL ISD Opcodes
   DWORDADDR,
   FRACT,
+  COS_HW,
+  SIN_HW,
   FMAX,
   SMAX,
   UMAX,
@@ -134,6 +148,14 @@ enum {
   CONST_ADDRESS,
   REGISTER_LOAD,
   REGISTER_STORE,
+  LOAD_INPUT,
+  SAMPLE,
+  SAMPLEB,
+  SAMPLED,
+  SAMPLEL,
+  FIRST_MEM_OPCODE_NUMBER = ISD::FIRST_TARGET_MEMORY_OPCODE,
+  STORE_MSKOR,
+  LOAD_CONSTANT,
   LAST_AMDGPU_ISD_NUMBER
 };
 

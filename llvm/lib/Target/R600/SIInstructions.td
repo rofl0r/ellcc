@@ -176,19 +176,19 @@ defm V_CMPX_TRU_F32 : VOPC_32 <0x0000001f, "V_CMPX_TRU_F32">;
 } // End hasSideEffects = 1, Defs = [EXEC]
 
 defm V_CMP_F_F64 : VOPC_64 <0x00000020, "V_CMP_F_F64">;
-defm V_CMP_LT_F64 : VOPC_64 <0x00000021, "V_CMP_LT_F64">;
-defm V_CMP_EQ_F64 : VOPC_64 <0x00000022, "V_CMP_EQ_F64">;
-defm V_CMP_LE_F64 : VOPC_64 <0x00000023, "V_CMP_LE_F64">;
-defm V_CMP_GT_F64 : VOPC_64 <0x00000024, "V_CMP_GT_F64">;
+defm V_CMP_LT_F64 : VOPC_64 <0x00000021, "V_CMP_LT_F64", f64, COND_LT>;
+defm V_CMP_EQ_F64 : VOPC_64 <0x00000022, "V_CMP_EQ_F64", f64, COND_EQ>;
+defm V_CMP_LE_F64 : VOPC_64 <0x00000023, "V_CMP_LE_F64", f64, COND_LE>;
+defm V_CMP_GT_F64 : VOPC_64 <0x00000024, "V_CMP_GT_F64", f64, COND_GT>;
 defm V_CMP_LG_F64 : VOPC_64 <0x00000025, "V_CMP_LG_F64">;
-defm V_CMP_GE_F64 : VOPC_64 <0x00000026, "V_CMP_GE_F64">;
+defm V_CMP_GE_F64 : VOPC_64 <0x00000026, "V_CMP_GE_F64", f64, COND_GE>;
 defm V_CMP_O_F64 : VOPC_64 <0x00000027, "V_CMP_O_F64">;
 defm V_CMP_U_F64 : VOPC_64 <0x00000028, "V_CMP_U_F64">;
 defm V_CMP_NGE_F64 : VOPC_64 <0x00000029, "V_CMP_NGE_F64">;
 defm V_CMP_NLG_F64 : VOPC_64 <0x0000002a, "V_CMP_NLG_F64">;
 defm V_CMP_NGT_F64 : VOPC_64 <0x0000002b, "V_CMP_NGT_F64">;
 defm V_CMP_NLE_F64 : VOPC_64 <0x0000002c, "V_CMP_NLE_F64">;
-defm V_CMP_NEQ_F64 : VOPC_64 <0x0000002d, "V_CMP_NEQ_F64">;
+defm V_CMP_NEQ_F64 : VOPC_64 <0x0000002d, "V_CMP_NEQ_F64", f64, COND_NE>;
 defm V_CMP_NLT_F64 : VOPC_64 <0x0000002e, "V_CMP_NLT_F64">;
 defm V_CMP_TRU_F64 : VOPC_64 <0x0000002f, "V_CMP_TRU_F64">;
 
@@ -391,6 +391,9 @@ defm V_CMPX_CLASS_F64 : VOPC_64 <0x000000b8, "V_CMPX_CLASS_F64">;
 
 } // End isCompare = 1
 
+def DS_WRITE_B32 : DS_Store_Helper <0x0000000d, "DS_WRITE_B32", VReg_32>;
+def DS_READ_B32 : DS_Load_Helper <0x00000036, "DS_READ_B32", VReg_32>;
+
 //def BUFFER_LOAD_FORMAT_X : MUBUF_ <0x00000000, "BUFFER_LOAD_FORMAT_X", []>;
 //def BUFFER_LOAD_FORMAT_XY : MUBUF_ <0x00000001, "BUFFER_LOAD_FORMAT_XY", []>;
 //def BUFFER_LOAD_FORMAT_XYZ : MUBUF_ <0x00000002, "BUFFER_LOAD_FORMAT_XYZ", []>;
@@ -400,25 +403,31 @@ defm BUFFER_LOAD_FORMAT_XYZW : MUBUF_Load_Helper <0x00000003, "BUFFER_LOAD_FORMA
 //def BUFFER_STORE_FORMAT_XYZ : MUBUF_ <0x00000006, "BUFFER_STORE_FORMAT_XYZ", []>;
 //def BUFFER_STORE_FORMAT_XYZW : MUBUF_ <0x00000007, "BUFFER_STORE_FORMAT_XYZW", []>;
 defm BUFFER_LOAD_UBYTE : MUBUF_Load_Helper <0x00000008, "BUFFER_LOAD_UBYTE", VReg_32>;
-//def BUFFER_LOAD_SBYTE : MUBUF_ <0x00000009, "BUFFER_LOAD_SBYTE", []>;
-//def BUFFER_LOAD_USHORT : MUBUF_ <0x0000000a, "BUFFER_LOAD_USHORT", []>;
-//def BUFFER_LOAD_SSHORT : MUBUF_ <0x0000000b, "BUFFER_LOAD_SSHORT", []>;
+defm BUFFER_LOAD_SBYTE : MUBUF_Load_Helper <0x00000009, "BUFFER_LOAD_SBYTE", VReg_32>;
+defm BUFFER_LOAD_USHORT : MUBUF_Load_Helper <0x0000000a, "BUFFER_LOAD_USHORT", VReg_32>;
+defm BUFFER_LOAD_SSHORT : MUBUF_Load_Helper <0x0000000b, "BUFFER_LOAD_SSHORT", VReg_32>;
 defm BUFFER_LOAD_DWORD : MUBUF_Load_Helper <0x0000000c, "BUFFER_LOAD_DWORD", VReg_32>;
 defm BUFFER_LOAD_DWORDX2 : MUBUF_Load_Helper <0x0000000d, "BUFFER_LOAD_DWORDX2", VReg_64>;
 defm BUFFER_LOAD_DWORDX4 : MUBUF_Load_Helper <0x0000000e, "BUFFER_LOAD_DWORDX4", VReg_128>;
-//def BUFFER_STORE_BYTE : MUBUF_ <0x00000018, "BUFFER_STORE_BYTE", []>;
-//def BUFFER_STORE_SHORT : MUBUF_ <0x0000001a, "BUFFER_STORE_SHORT", []>;
+
+def BUFFER_STORE_BYTE : MUBUF_Store_Helper <
+  0x00000018, "BUFFER_STORE_BYTE", VReg_32
+>;
+
+def BUFFER_STORE_SHORT : MUBUF_Store_Helper <
+  0x0000001a, "BUFFER_STORE_SHORT", VReg_32
+>;
 
 def BUFFER_STORE_DWORD : MUBUF_Store_Helper <
-  0x0000001c, "BUFFER_STORE_DWORD", VReg_32, i32
+  0x0000001c, "BUFFER_STORE_DWORD", VReg_32
 >;
 
 def BUFFER_STORE_DWORDX2 : MUBUF_Store_Helper <
-  0x0000001d, "BUFFER_STORE_DWORDX2", VReg_64, i64
+  0x0000001d, "BUFFER_STORE_DWORDX2", VReg_64
 >;
 
 def BUFFER_STORE_DWORDX4 : MUBUF_Store_Helper <
-  0x0000001e, "BUFFER_STORE_DWORDX4", VReg_128, v4i32
+  0x0000001e, "BUFFER_STORE_DWORDX4", VReg_128
 >;
 //def BUFFER_ATOMIC_SWAP : MUBUF_ <0x00000030, "BUFFER_ATOMIC_SWAP", []>;
 //def BUFFER_ATOMIC_CMPSWAP : MUBUF_ <0x00000031, "BUFFER_ATOMIC_CMPSWAP", []>;
@@ -497,8 +506,8 @@ defm S_BUFFER_LOAD_DWORDX16 : SMRD_Helper <
 
 //def S_MEMTIME : SMRD_ <0x0000001e, "S_MEMTIME", []>;
 //def S_DCACHE_INV : SMRD_ <0x0000001f, "S_DCACHE_INV", []>;
-//def IMAGE_LOAD : MIMG_NoPattern_ <"IMAGE_LOAD", 0x00000000>;
-def IMAGE_LOAD_MIP : MIMG_NoSampler_Helper <0x00000001, "IMAGE_LOAD_MIP">;
+defm IMAGE_LOAD : MIMG_NoSampler <0x00000000, "IMAGE_LOAD">;
+defm IMAGE_LOAD_MIP : MIMG_NoSampler <0x00000001, "IMAGE_LOAD_MIP">;
 //def IMAGE_LOAD_PCK : MIMG_NoPattern_ <"IMAGE_LOAD_PCK", 0x00000002>;
 //def IMAGE_LOAD_PCK_SGN : MIMG_NoPattern_ <"IMAGE_LOAD_PCK_SGN", 0x00000003>;
 //def IMAGE_LOAD_MIP_PCK : MIMG_NoPattern_ <"IMAGE_LOAD_MIP_PCK", 0x00000004>;
@@ -507,7 +516,7 @@ def IMAGE_LOAD_MIP : MIMG_NoSampler_Helper <0x00000001, "IMAGE_LOAD_MIP">;
 //def IMAGE_STORE_MIP : MIMG_NoPattern_ <"IMAGE_STORE_MIP", 0x00000009>;
 //def IMAGE_STORE_PCK : MIMG_NoPattern_ <"IMAGE_STORE_PCK", 0x0000000a>;
 //def IMAGE_STORE_MIP_PCK : MIMG_NoPattern_ <"IMAGE_STORE_MIP_PCK", 0x0000000b>;
-def IMAGE_GET_RESINFO : MIMG_NoSampler_Helper <0x0000000e, "IMAGE_GET_RESINFO">;
+def IMAGE_GET_RESINFO : MIMG_NoSampler_Helper <0x0000000e, "IMAGE_GET_RESINFO", VReg_32>;
 //def IMAGE_ATOMIC_SWAP : MIMG_NoPattern_ <"IMAGE_ATOMIC_SWAP", 0x0000000f>;
 //def IMAGE_ATOMIC_CMPSWAP : MIMG_NoPattern_ <"IMAGE_ATOMIC_CMPSWAP", 0x00000010>;
 //def IMAGE_ATOMIC_ADD : MIMG_NoPattern_ <"IMAGE_ATOMIC_ADD", 0x00000011>;
@@ -525,20 +534,20 @@ def IMAGE_GET_RESINFO : MIMG_NoSampler_Helper <0x0000000e, "IMAGE_GET_RESINFO">;
 //def IMAGE_ATOMIC_FCMPSWAP : MIMG_NoPattern_ <"IMAGE_ATOMIC_FCMPSWAP", 0x0000001d>;
 //def IMAGE_ATOMIC_FMIN : MIMG_NoPattern_ <"IMAGE_ATOMIC_FMIN", 0x0000001e>;
 //def IMAGE_ATOMIC_FMAX : MIMG_NoPattern_ <"IMAGE_ATOMIC_FMAX", 0x0000001f>;
-def IMAGE_SAMPLE : MIMG_Sampler_Helper <0x00000020, "IMAGE_SAMPLE">; 
+defm IMAGE_SAMPLE : MIMG_Sampler <0x00000020, "IMAGE_SAMPLE">;
 //def IMAGE_SAMPLE_CL : MIMG_NoPattern_ <"IMAGE_SAMPLE_CL", 0x00000021>;
-def IMAGE_SAMPLE_D : MIMG_Sampler_Helper <0x00000022, "IMAGE_SAMPLE_D">;
+defm IMAGE_SAMPLE_D : MIMG_Sampler <0x00000022, "IMAGE_SAMPLE_D">;
 //def IMAGE_SAMPLE_D_CL : MIMG_NoPattern_ <"IMAGE_SAMPLE_D_CL", 0x00000023>;
-def IMAGE_SAMPLE_L : MIMG_Sampler_Helper <0x00000024, "IMAGE_SAMPLE_L">;
-def IMAGE_SAMPLE_B : MIMG_Sampler_Helper <0x00000025, "IMAGE_SAMPLE_B">;
+defm IMAGE_SAMPLE_L : MIMG_Sampler <0x00000024, "IMAGE_SAMPLE_L">;
+defm IMAGE_SAMPLE_B : MIMG_Sampler <0x00000025, "IMAGE_SAMPLE_B">;
 //def IMAGE_SAMPLE_B_CL : MIMG_NoPattern_ <"IMAGE_SAMPLE_B_CL", 0x00000026>;
 //def IMAGE_SAMPLE_LZ : MIMG_NoPattern_ <"IMAGE_SAMPLE_LZ", 0x00000027>;
-def IMAGE_SAMPLE_C : MIMG_Sampler_Helper <0x00000028, "IMAGE_SAMPLE_C">;
+defm IMAGE_SAMPLE_C : MIMG_Sampler <0x00000028, "IMAGE_SAMPLE_C">;
 //def IMAGE_SAMPLE_C_CL : MIMG_NoPattern_ <"IMAGE_SAMPLE_C_CL", 0x00000029>;
-//def IMAGE_SAMPLE_C_D : MIMG_NoPattern_ <"IMAGE_SAMPLE_C_D", 0x0000002a>;
+defm IMAGE_SAMPLE_C_D : MIMG_Sampler <0x0000002a, "IMAGE_SAMPLE_C_D">;
 //def IMAGE_SAMPLE_C_D_CL : MIMG_NoPattern_ <"IMAGE_SAMPLE_C_D_CL", 0x0000002b>;
-def IMAGE_SAMPLE_C_L : MIMG_Sampler_Helper <0x0000002c, "IMAGE_SAMPLE_C_L">;
-def IMAGE_SAMPLE_C_B : MIMG_Sampler_Helper <0x0000002d, "IMAGE_SAMPLE_C_B">;
+defm IMAGE_SAMPLE_C_L : MIMG_Sampler <0x0000002c, "IMAGE_SAMPLE_C_L">;
+defm IMAGE_SAMPLE_C_B : MIMG_Sampler <0x0000002d, "IMAGE_SAMPLE_C_B">;
 //def IMAGE_SAMPLE_C_B_CL : MIMG_NoPattern_ <"IMAGE_SAMPLE_C_B_CL", 0x0000002e>;
 //def IMAGE_SAMPLE_C_LZ : MIMG_NoPattern_ <"IMAGE_SAMPLE_C_LZ", 0x0000002f>;
 //def IMAGE_SAMPLE_O : MIMG_NoPattern_ <"IMAGE_SAMPLE_O", 0x00000030>;
@@ -600,15 +609,21 @@ defm V_MOV_B32 : VOP1_32 <0x00000001, "V_MOV_B32", []>;
 } // End neverHasSideEffects = 1, isMoveImm = 1
 
 defm V_READFIRSTLANE_B32 : VOP1_32 <0x00000002, "V_READFIRSTLANE_B32", []>;
-//defm V_CVT_I32_F64 : VOP1_32 <0x00000003, "V_CVT_I32_F64", []>;
-//defm V_CVT_F64_I32 : VOP1_64 <0x00000004, "V_CVT_F64_I32", []>;
+defm V_CVT_I32_F64 : VOP1_32_64 <0x00000003, "V_CVT_I32_F64",
+  [(set i32:$dst, (fp_to_sint f64:$src0))]
+>;
+defm V_CVT_F64_I32 : VOP1_64_32 <0x00000004, "V_CVT_F64_I32",
+  [(set f64:$dst, (sint_to_fp i32:$src0))]
+>;
 defm V_CVT_F32_I32 : VOP1_32 <0x00000005, "V_CVT_F32_I32",
   [(set f32:$dst, (sint_to_fp i32:$src0))]
 >;
 defm V_CVT_F32_U32 : VOP1_32 <0x00000006, "V_CVT_F32_U32",
   [(set f32:$dst, (uint_to_fp i32:$src0))]
 >;
-defm V_CVT_U32_F32 : VOP1_32 <0x00000007, "V_CVT_U32_F32", []>;
+defm V_CVT_U32_F32 : VOP1_32 <0x00000007, "V_CVT_U32_F32",
+  [(set i32:$dst, (fp_to_uint f32:$src0))]
+>;
 defm V_CVT_I32_F32 : VOP1_32 <0x00000008, "V_CVT_I32_F32",
   [(set i32:$dst, (fp_to_sint f32:$src0))]
 >;
@@ -618,8 +633,12 @@ defm V_MOV_FED_B32 : VOP1_32 <0x00000009, "V_MOV_FED_B32", []>;
 //defm V_CVT_RPI_I32_F32 : VOP1_32 <0x0000000c, "V_CVT_RPI_I32_F32", []>;
 //defm V_CVT_FLR_I32_F32 : VOP1_32 <0x0000000d, "V_CVT_FLR_I32_F32", []>;
 //defm V_CVT_OFF_F32_I4 : VOP1_32 <0x0000000e, "V_CVT_OFF_F32_I4", []>;
-//defm V_CVT_F32_F64 : VOP1_32 <0x0000000f, "V_CVT_F32_F64", []>;
-//defm V_CVT_F64_F32 : VOP1_64 <0x00000010, "V_CVT_F64_F32", []>;
+defm V_CVT_F32_F64 : VOP1_32_64 <0x0000000f, "V_CVT_F32_F64",
+  [(set f32:$dst, (fround f64:$src0))]
+>;
+defm V_CVT_F64_F32 : VOP1_64_32 <0x00000010, "V_CVT_F64_F32",
+  [(set f64:$dst, (fextend f32:$src0))]
+>;
 //defm V_CVT_F32_UBYTE0 : VOP1_32 <0x00000011, "V_CVT_F32_UBYTE0", []>;
 //defm V_CVT_F32_UBYTE1 : VOP1_32 <0x00000012, "V_CVT_F32_UBYTE1", []>;
 //defm V_CVT_F32_UBYTE2 : VOP1_32 <0x00000013, "V_CVT_F32_UBYTE2", []>;
@@ -660,12 +679,18 @@ defm V_RSQ_LEGACY_F32 : VOP1_32 <
   [(set f32:$dst, (int_AMDGPU_rsq f32:$src0))]
 >;
 defm V_RSQ_F32 : VOP1_32 <0x0000002e, "V_RSQ_F32", []>;
-defm V_RCP_F64 : VOP1_64 <0x0000002f, "V_RCP_F64", []>;
+defm V_RCP_F64 : VOP1_64 <0x0000002f, "V_RCP_F64",
+  [(set f64:$dst, (fdiv FP_ONE, f64:$src0))]
+>;
 defm V_RCP_CLAMP_F64 : VOP1_64 <0x00000030, "V_RCP_CLAMP_F64", []>;
 defm V_RSQ_F64 : VOP1_64 <0x00000031, "V_RSQ_F64", []>;
 defm V_RSQ_CLAMP_F64 : VOP1_64 <0x00000032, "V_RSQ_CLAMP_F64", []>;
-defm V_SQRT_F32 : VOP1_32 <0x00000033, "V_SQRT_F32", []>;
-defm V_SQRT_F64 : VOP1_64 <0x00000034, "V_SQRT_F64", []>;
+defm V_SQRT_F32 : VOP1_32 <0x00000033, "V_SQRT_F32",
+  [(set f32:$dst, (fsqrt f32:$src0))]
+>;
+defm V_SQRT_F64 : VOP1_64 <0x00000034, "V_SQRT_F64",
+  [(set f64:$dst, (fsqrt f64:$src0))]
+>;
 defm V_SIN_F32 : VOP1_32 <0x00000035, "V_SIN_F32", []>;
 defm V_COS_F32 : VOP1_32 <0x00000036, "V_COS_F32", []>;
 defm V_NOT_B32 : VOP1_32 <0x00000037, "V_NOT_B32", []>;
@@ -771,8 +796,17 @@ def S_CBRANCH_EXECNZ : SOPP <
 } // End isBranch = 1
 } // End isTerminator = 1
 
-//def S_BARRIER : SOPP_ <0x0000000a, "S_BARRIER", []>;
 let hasSideEffects = 1 in {
+def S_BARRIER : SOPP <0x0000000a, (ins), "S_BARRIER",
+  [(int_AMDGPU_barrier_local)]
+> {
+  let SIMM16 = 0;
+  let isBarrier = 1;
+  let hasCtrlDep = 1;
+  let mayLoad = 1;
+  let mayStore = 1;
+}
+
 def S_WAITCNT : SOPP <0x0000000c, (ins i32imm:$simm16), "S_WAITCNT $simm16",
   []
 >;
@@ -809,6 +843,18 @@ def : Pat <
   (V_CNDMASK_B32_e64 $src0, $src1, $src2)
 >;
 
+//use two V_CNDMASK_B32_e64 instructions for f64
+def : Pat <
+  (f64 (select i1:$src2, f64:$src1, f64:$src0)),
+  (INSERT_SUBREG (INSERT_SUBREG (f64 (IMPLICIT_DEF)),
+  (V_CNDMASK_B32_e64 (EXTRACT_SUBREG $src0, sub0),
+                     (EXTRACT_SUBREG $src1, sub0),
+                     $src2), sub0),
+  (V_CNDMASK_B32_e64 (EXTRACT_SUBREG $src0, sub1),
+                     (EXTRACT_SUBREG $src1, sub1),
+                     $src2), sub1)
+>;
+
 defm V_READLANE_B32 : VOP2_32 <0x00000001, "V_READLANE_B32", []>;
 defm V_WRITELANE_B32 : VOP2_32 <0x00000002, "V_WRITELANE_B32", []>;
 
@@ -836,14 +882,16 @@ defm V_MUL_F32 : VOP2_32 <0x00000008, "V_MUL_F32",
   [(set f32:$dst, (fmul f32:$src0, f32:$src1))]
 >;
 
-} // End isCommutable = 1
 
-//defm V_MUL_I32_I24 : VOP2_32 <0x00000009, "V_MUL_I32_I24", []>;
+defm V_MUL_I32_I24 : VOP2_32 <0x00000009, "V_MUL_I32_I24",
+  [(set i32:$dst, (mul I24:$src0, I24:$src1))]
+>;
 //defm V_MUL_HI_I32_I24 : VOP2_32 <0x0000000a, "V_MUL_HI_I32_I24", []>;
-//defm V_MUL_U32_U24 : VOP2_32 <0x0000000b, "V_MUL_U32_U24", []>;
+defm V_MUL_U32_U24 : VOP2_32 <0x0000000b, "V_MUL_U32_U24",
+  [(set i32:$dst, (mul U24:$src0, U24:$src1))]
+>;
 //defm V_MUL_HI_U32_U24 : VOP2_32 <0x0000000c, "V_MUL_HI_U32_U24", []>;
 
-let isCommutable = 1 in {
 
 defm V_MIN_LEGACY_F32 : VOP2_32 <0x0000000d, "V_MIN_LEGACY_F32",
   [(set f32:$dst, (AMDGPUfmin f32:$src0, f32:$src1))]
@@ -900,8 +948,8 @@ defm V_MAC_F32 : VOP2_32 <0x0000001f, "V_MAC_F32", []>;
 defm V_MADMK_F32 : VOP2_32 <0x00000020, "V_MADMK_F32", []>;
 defm V_MADAK_F32 : VOP2_32 <0x00000021, "V_MADAK_F32", []>;
 //defm V_BCNT_U32_B32 : VOP2_32 <0x00000022, "V_BCNT_U32_B32", []>;
-//defm V_MBCNT_LO_U32_B32 : VOP2_32 <0x00000023, "V_MBCNT_LO_U32_B32", []>;
-//defm V_MBCNT_HI_U32_B32 : VOP2_32 <0x00000024, "V_MBCNT_HI_U32_B32", []>;
+defm V_MBCNT_LO_U32_B32 : VOP2_32 <0x00000023, "V_MBCNT_LO_U32_B32", []>;
+defm V_MBCNT_HI_U32_B32 : VOP2_32 <0x00000024, "V_MBCNT_HI_U32_B32", []>;
 
 let isCommutable = 1, Defs = [VCC] in { // Carry-out goes to VCC
 defm V_ADD_I32 : VOP2b_32 <0x00000025, "V_ADD_I32",
@@ -951,8 +999,12 @@ let neverHasSideEffects = 1 in {
 
 def V_MAD_LEGACY_F32 : VOP3_32 <0x00000140, "V_MAD_LEGACY_F32", []>;
 def V_MAD_F32 : VOP3_32 <0x00000141, "V_MAD_F32", []>;
-//def V_MAD_I32_I24 : VOP3_32 <0x00000142, "V_MAD_I32_I24", []>;
-//def V_MAD_U32_U24 : VOP3_32 <0x00000143, "V_MAD_U32_U24", []>;
+def V_MAD_I32_I24 : VOP3_32 <0x00000142, "V_MAD_I32_I24",
+  [(set i32:$dst, (add (mul I24:$src0, I24:$src1), i32:$src2))]
+>;
+def V_MAD_U32_U24 : VOP3_32 <0x00000143, "V_MAD_U32_U24",
+  [(set i32:$dst, (add (mul U24:$src0, U24:$src1), i32:$src2))]
+>;
 
 } // End neverHasSideEffects
 def V_CUBEID_F32 : VOP3_32 <0x00000144, "V_CUBEID_F32", []>;
@@ -963,8 +1015,12 @@ def V_BFE_U32 : VOP3_32 <0x00000148, "V_BFE_U32", []>;
 def V_BFE_I32 : VOP3_32 <0x00000149, "V_BFE_I32", []>;
 def V_BFI_B32 : VOP3_32 <0x0000014a, "V_BFI_B32", []>;
 defm : BFIPatterns <V_BFI_B32>;
-def V_FMA_F32 : VOP3_32 <0x0000014b, "V_FMA_F32", []>;
-def V_FMA_F64 : VOP3_64 <0x0000014c, "V_FMA_F64", []>;
+def V_FMA_F32 : VOP3_32 <0x0000014b, "V_FMA_F32",
+  [(set f32:$dst, (fma f32:$src0, f32:$src1, f32:$src2))]
+>;
+def V_FMA_F64 : VOP3_64 <0x0000014c, "V_FMA_F64",
+  [(set f64:$dst, (fma f64:$src0, f64:$src1, f64:$src2))]
+>;
 //def V_LERP_U8 : VOP3_U8 <0x0000014d, "V_LERP_U8", []>;
 def V_ALIGNBIT_B32 : VOP3_32 <0x0000014e, "V_ALIGNBIT_B32", []>;
 def : ROTRPattern <V_ALIGNBIT_B32>;
@@ -994,12 +1050,29 @@ def V_LSHL_B64 : VOP3_64_Shift <0x00000161, "V_LSHL_B64",
 def V_LSHR_B64 : VOP3_64_Shift <0x00000162, "V_LSHR_B64",
   [(set i64:$dst, (srl i64:$src0, i32:$src1))]
 >;
-def V_ASHR_I64 : VOP3_64_Shift <0x00000163, "V_ASHR_I64", []>;
+def V_ASHR_I64 : VOP3_64_Shift <0x00000163, "V_ASHR_I64",
+  [(set i64:$dst, (sra i64:$src0, i32:$src1))]
+>;
+
+let isCommutable = 1 in {
 
 def V_ADD_F64 : VOP3_64 <0x00000164, "V_ADD_F64", []>;
 def V_MUL_F64 : VOP3_64 <0x00000165, "V_MUL_F64", []>;
 def V_MIN_F64 : VOP3_64 <0x00000166, "V_MIN_F64", []>;
 def V_MAX_F64 : VOP3_64 <0x00000167, "V_MAX_F64", []>;
+
+} // isCommutable = 1
+
+def : Pat <
+  (fadd f64:$src0, f64:$src1),
+  (V_ADD_F64 $src0, $src1, (i64 0))
+>;
+
+def : Pat <
+  (fmul f64:$src0, f64:$src1),
+  (V_MUL_F64 $src0, $src1, (i64 0))
+>;
+
 def V_LDEXP_F64 : VOP3_64 <0x00000168, "V_LDEXP_F64", []>;
 
 let isCommutable = 1 in {
@@ -1071,7 +1144,9 @@ def : Pat <
   (S_OR_B64 $src0, $src1)
 >;
 def S_XOR_B32 : SOP2_32 <0x00000012, "S_XOR_B32", []>;
-def S_XOR_B64 : SOP2_64 <0x00000013, "S_XOR_B64", []>;
+def S_XOR_B64 : SOP2_64 <0x00000013, "S_XOR_B64",
+  [(set i1:$dst, (xor i1:$src0, i1:$src1))]
+>;
 def S_ANDN2_B32 : SOP2_32 <0x00000014, "S_ANDN2_B32", []>;
 def S_ANDN2_B64 : SOP2_64 <0x00000015, "S_ANDN2_B64", []>;
 def S_ORN2_B32 : SOP2_32 <0x00000016, "S_ORN2_B32", []>;
@@ -1203,15 +1278,21 @@ def SI_INDIRECT_DST_V16 : SI_INDIRECT_DST<VReg_512>;
 
 } // Uses = [EXEC,VCC,M0], Defs = [EXEC,VCC,M0]
 
-// This psuedo instruction takes a pointer as input and outputs a resource
-// constant that can be used with the ADDR64 MUBUF instructions.
-
 let usesCustomInserter = 1 in {
 
+// This psuedo instruction takes a pointer as input and outputs a resource
+// constant that can be used with the ADDR64 MUBUF instructions.
 def SI_ADDR64_RSRC : InstSI <
   (outs SReg_128:$srsrc),
   (ins SReg_64:$ptr),
   "", []
+>;
+
+def V_SUB_F64 : InstSI <
+  (outs VReg_64:$dst),
+  (ins VReg_64:$src0, VReg_64:$src1),
+  "V_SUB_F64 $dst, $src0, $src1",
+  []
 >;
 
 } // end usesCustomInserter
@@ -1230,7 +1311,7 @@ def : Pat <
 
 /* int_SI_vs_load_input */
 def : Pat<
-  (int_SI_vs_load_input v16i8:$tlst, IMM12bit:$attr_offset, i32:$buf_idx_vgpr),
+  (SIload_input i128:$tlst, IMM12bit:$attr_offset, i32:$buf_idx_vgpr),
   (BUFFER_LOAD_FORMAT_XYZW_IDXEN $tlst, $buf_idx_vgpr, imm:$attr_offset)
 >;
 
@@ -1242,66 +1323,94 @@ def : Pat <
        $src0, $src1, $src2, $src3)
 >;
 
+def : Pat <
+  (f64 (fsub f64:$src0, f64:$src1)),
+  (V_SUB_F64 $src0, $src1)
+>;
+
 /********** ======================= **********/
 /********** Image sampling patterns **********/
 /********** ======================= **********/
 
-/* int_SI_sample for simple 1D texture lookup */
+/* SIsample for simple 1D texture lookup */
 def : Pat <
-  (int_SI_sample v1i32:$addr, v32i8:$rsrc, v16i8:$sampler, imm),
-  (IMAGE_SAMPLE 0xf, 0, 0, 0, 0, 0, 0, 0, $addr, $rsrc, $sampler)
+  (SIsample i32:$addr, v32i8:$rsrc, i128:$sampler, imm),
+  (IMAGE_SAMPLE_V1 0xf, 0, 0, 0, 0, 0, 0, 0, $addr, $rsrc, $sampler)
 >;
 
-class SamplePattern<Intrinsic name, MIMG opcode, ValueType vt> : Pat <
-    (name vt:$addr, v32i8:$rsrc, v16i8:$sampler, imm),
+class SamplePattern<SDNode name, MIMG opcode, ValueType vt> : Pat <
+    (name vt:$addr, v32i8:$rsrc, i128:$sampler, imm),
     (opcode 0xf, 0, 0, 0, 0, 0, 0, 0, $addr, $rsrc, $sampler)
 >;
 
-class SampleRectPattern<Intrinsic name, MIMG opcode, ValueType vt> : Pat <
-    (name vt:$addr, v32i8:$rsrc, v16i8:$sampler, TEX_RECT),
+class SampleRectPattern<SDNode name, MIMG opcode, ValueType vt> : Pat <
+    (name vt:$addr, v32i8:$rsrc, i128:$sampler, TEX_RECT),
     (opcode 0xf, 1, 0, 0, 0, 0, 0, 0, $addr, $rsrc, $sampler)
 >;
 
-class SampleArrayPattern<Intrinsic name, MIMG opcode, ValueType vt> : Pat <
-    (name vt:$addr, v32i8:$rsrc, v16i8:$sampler, TEX_ARRAY),
+class SampleArrayPattern<SDNode name, MIMG opcode, ValueType vt> : Pat <
+    (name vt:$addr, v32i8:$rsrc, i128:$sampler, TEX_ARRAY),
     (opcode 0xf, 0, 0, 1, 0, 0, 0, 0, $addr, $rsrc, $sampler)
 >;
 
-class SampleShadowPattern<Intrinsic name, MIMG opcode,
+class SampleShadowPattern<SDNode name, MIMG opcode,
                           ValueType vt> : Pat <
-    (name vt:$addr, v32i8:$rsrc, v16i8:$sampler, TEX_SHADOW),
+    (name vt:$addr, v32i8:$rsrc, i128:$sampler, TEX_SHADOW),
     (opcode 0xf, 0, 0, 0, 0, 0, 0, 0, $addr, $rsrc, $sampler)
 >;
 
-class SampleShadowArrayPattern<Intrinsic name, MIMG opcode,
+class SampleShadowArrayPattern<SDNode name, MIMG opcode,
                                ValueType vt> : Pat <
-    (name vt:$addr, v32i8:$rsrc, v16i8:$sampler, TEX_SHADOW_ARRAY),
+    (name vt:$addr, v32i8:$rsrc, i128:$sampler, TEX_SHADOW_ARRAY),
     (opcode 0xf, 0, 0, 1, 0, 0, 0, 0, $addr, $rsrc, $sampler)
 >;
 
-/* int_SI_sample* for texture lookups consuming more address parameters */
-multiclass SamplePatterns<ValueType addr_type> {
-  def : SamplePattern <int_SI_sample, IMAGE_SAMPLE, addr_type>;
-  def : SampleRectPattern <int_SI_sample, IMAGE_SAMPLE, addr_type>;
-  def : SampleArrayPattern <int_SI_sample, IMAGE_SAMPLE, addr_type>;
-  def : SampleShadowPattern <int_SI_sample, IMAGE_SAMPLE_C, addr_type>;
-  def : SampleShadowArrayPattern <int_SI_sample, IMAGE_SAMPLE_C, addr_type>;
+/* SIsample* for texture lookups consuming more address parameters */
+multiclass SamplePatterns<MIMG sample, MIMG sample_c, MIMG sample_l,
+                          MIMG sample_c_l, MIMG sample_b, MIMG sample_c_b,
+MIMG sample_d, MIMG sample_c_d, ValueType addr_type> {
+  def : SamplePattern <SIsample, sample, addr_type>;
+  def : SampleRectPattern <SIsample, sample, addr_type>;
+  def : SampleArrayPattern <SIsample, sample, addr_type>;
+  def : SampleShadowPattern <SIsample, sample_c, addr_type>;
+  def : SampleShadowArrayPattern <SIsample, sample_c, addr_type>;
 
-  def : SamplePattern <int_SI_samplel, IMAGE_SAMPLE_L, addr_type>;
-  def : SampleArrayPattern <int_SI_samplel, IMAGE_SAMPLE_L, addr_type>;
-  def : SampleShadowPattern <int_SI_samplel, IMAGE_SAMPLE_C_L, addr_type>;
-  def : SampleShadowArrayPattern <int_SI_samplel, IMAGE_SAMPLE_C_L, addr_type>;
+  def : SamplePattern <SIsamplel, sample_l, addr_type>;
+  def : SampleArrayPattern <SIsamplel, sample_l, addr_type>;
+  def : SampleShadowPattern <SIsamplel, sample_c_l, addr_type>;
+  def : SampleShadowArrayPattern <SIsamplel, sample_c_l, addr_type>;
 
-  def : SamplePattern <int_SI_sampleb, IMAGE_SAMPLE_B, addr_type>;
-  def : SampleArrayPattern <int_SI_sampleb, IMAGE_SAMPLE_B, addr_type>;
-  def : SampleShadowPattern <int_SI_sampleb, IMAGE_SAMPLE_C_B, addr_type>;
-  def : SampleShadowArrayPattern <int_SI_sampleb, IMAGE_SAMPLE_C_B, addr_type>;
+  def : SamplePattern <SIsampleb, sample_b, addr_type>;
+  def : SampleArrayPattern <SIsampleb, sample_b, addr_type>;
+  def : SampleShadowPattern <SIsampleb, sample_c_b, addr_type>;
+  def : SampleShadowArrayPattern <SIsampleb, sample_c_b, addr_type>;
+
+  def : SamplePattern <SIsampled, sample_d, addr_type>;
+  def : SampleArrayPattern <SIsampled, sample_d, addr_type>;
+  def : SampleShadowPattern <SIsampled, sample_c_d, addr_type>;
+  def : SampleShadowArrayPattern <SIsampled, sample_c_d, addr_type>;
 }
 
-defm : SamplePatterns<v2i32>;
-defm : SamplePatterns<v4i32>;
-defm : SamplePatterns<v8i32>;
-defm : SamplePatterns<v16i32>;
+defm : SamplePatterns<IMAGE_SAMPLE_V2, IMAGE_SAMPLE_C_V2,
+                      IMAGE_SAMPLE_L_V2, IMAGE_SAMPLE_C_L_V2,
+                      IMAGE_SAMPLE_B_V2, IMAGE_SAMPLE_C_B_V2,
+                      IMAGE_SAMPLE_D_V2, IMAGE_SAMPLE_C_D_V2,
+                      v2i32>;
+defm : SamplePatterns<IMAGE_SAMPLE_V4, IMAGE_SAMPLE_C_V4,
+                      IMAGE_SAMPLE_L_V4, IMAGE_SAMPLE_C_L_V4,
+                      IMAGE_SAMPLE_B_V4, IMAGE_SAMPLE_C_B_V4,
+                      IMAGE_SAMPLE_D_V4, IMAGE_SAMPLE_C_D_V4,
+                      v4i32>;
+defm : SamplePatterns<IMAGE_SAMPLE_V8, IMAGE_SAMPLE_C_V8,
+                      IMAGE_SAMPLE_L_V8, IMAGE_SAMPLE_C_L_V8,
+                      IMAGE_SAMPLE_B_V8, IMAGE_SAMPLE_C_B_V8,
+                      IMAGE_SAMPLE_D_V8, IMAGE_SAMPLE_C_D_V8,
+                      v8i32>;
+defm : SamplePatterns<IMAGE_SAMPLE_V16, IMAGE_SAMPLE_C_V16,
+                      IMAGE_SAMPLE_L_V16, IMAGE_SAMPLE_C_L_V16,
+                      IMAGE_SAMPLE_B_V16, IMAGE_SAMPLE_C_B_V16,
+                      IMAGE_SAMPLE_D_V16, IMAGE_SAMPLE_C_D_V16,
+                      v16i32>;
 
 /* int_SI_imageload for texture fetches consuming varying address parameters */
 class ImageLoadPattern<Intrinsic name, MIMG opcode, ValueType addr_type> : Pat <
@@ -1314,13 +1423,31 @@ class ImageLoadArrayPattern<Intrinsic name, MIMG opcode, ValueType addr_type> : 
     (opcode 0xf, 0, 0, 1, 0, 0, 0, 0, $addr, $rsrc)
 >;
 
-multiclass ImageLoadPatterns<ValueType addr_type> {
-  def : ImageLoadPattern <int_SI_imageload, IMAGE_LOAD_MIP, addr_type>;
-  def : ImageLoadArrayPattern <int_SI_imageload, IMAGE_LOAD_MIP, addr_type>;
+class ImageLoadMSAAPattern<Intrinsic name, MIMG opcode, ValueType addr_type> : Pat <
+    (name addr_type:$addr, v32i8:$rsrc, TEX_MSAA),
+    (opcode 0xf, 0, 0, 0, 0, 0, 0, 0, $addr, $rsrc)
+>;
+
+class ImageLoadArrayMSAAPattern<Intrinsic name, MIMG opcode, ValueType addr_type> : Pat <
+    (name addr_type:$addr, v32i8:$rsrc, TEX_ARRAY_MSAA),
+    (opcode 0xf, 0, 0, 1, 0, 0, 0, 0, $addr, $rsrc)
+>;
+
+multiclass ImageLoadPatterns<MIMG opcode, ValueType addr_type> {
+  def : ImageLoadPattern <int_SI_imageload, opcode, addr_type>;
+  def : ImageLoadArrayPattern <int_SI_imageload, opcode, addr_type>;
 }
 
-defm : ImageLoadPatterns<v2i32>;
-defm : ImageLoadPatterns<v4i32>;
+multiclass ImageLoadMSAAPatterns<MIMG opcode, ValueType addr_type> {
+  def : ImageLoadMSAAPattern <int_SI_imageload, opcode, addr_type>;
+  def : ImageLoadArrayMSAAPattern <int_SI_imageload, opcode, addr_type>;
+}
+
+defm : ImageLoadPatterns<IMAGE_LOAD_MIP_V2, v2i32>;
+defm : ImageLoadPatterns<IMAGE_LOAD_MIP_V4, v4i32>;
+
+defm : ImageLoadMSAAPatterns<IMAGE_LOAD_V2, v2i32>;
+defm : ImageLoadMSAAPatterns<IMAGE_LOAD_V4, v4i32>;
 
 /* Image resource information */
 def : Pat <
@@ -1330,6 +1457,11 @@ def : Pat <
 
 def : Pat <
   (int_SI_resinfo i32:$mipid, v32i8:$rsrc, TEX_ARRAY),
+  (IMAGE_GET_RESINFO 0xf, 0, 0, 1, 0, 0, 0, 0, (V_MOV_B32_e32 $mipid), $rsrc)
+>;
+
+def : Pat <
+  (int_SI_resinfo i32:$mipid, v32i8:$rsrc, TEX_ARRAY_MSAA),
   (IMAGE_GET_RESINFO 0xf, 0, 0, 1, 0, 0, 0, 0, (V_MOV_B32_e32 $mipid), $rsrc)
 >;
 
@@ -1401,21 +1533,26 @@ foreach Index = 0-15 in {
   >;
 }
 
-def : Vector1_Build <v1i32, i32, VReg_32>;
-def : Vector2_Build <v2i32, i32>;
-def : Vector2_Build <v2f32, f32>;
-def : Vector4_Build <v4i32, i32>;
-def : Vector4_Build <v4f32, f32>;
-def : Vector8_Build <v8i32, i32>;
-def : Vector8_Build <v8f32, f32>;
-def : Vector16_Build <v16i32, i32>;
-def : Vector16_Build <v16f32, f32>;
-
 def : BitConvert <i32, f32, SReg_32>;
 def : BitConvert <i32, f32, VReg_32>;
 
 def : BitConvert <f32, i32, SReg_32>;
 def : BitConvert <f32, i32, VReg_32>;
+
+def : BitConvert <i64, f64, VReg_64>;
+
+def : BitConvert <f64, i64, VReg_64>;
+
+def : BitConvert <v2f32, v2i32, VReg_64>;
+def : BitConvert <v2i32, v2f32, VReg_64>;
+
+def : BitConvert <v4f32, v4i32, VReg_128>;
+def : BitConvert <v4i32, v4f32, VReg_128>;
+
+def : BitConvert <v8i32, v32i8, SReg_256>;
+def : BitConvert <v32i8, v8i32, SReg_256>;
+def : BitConvert <v8i32, v32i8, VReg_256>;
+def : BitConvert <v32i8, v8i32, VReg_256>;
 
 /********** =================== **********/
 /********** Src & Dst modifiers **********/
@@ -1444,6 +1581,16 @@ def : Pat <
 /********** ================== **********/
 
 def : Pat <
+  (SGPRImm<(i32 imm)>:$imm),
+  (S_MOV_B32 imm:$imm)
+>;
+
+def : Pat <
+  (SGPRImm<(f32 fpimm)>:$imm),
+  (S_MOV_B32 fpimm:$imm)
+>;
+
+def : Pat <
   (i32 imm:$imm),
   (V_MOV_B32_e32 imm:$imm)
 >;
@@ -1469,6 +1616,13 @@ def : Pat <
   (INSERT_SUBREG (INSERT_SUBREG (i64 (IMPLICIT_DEF)),
     (S_MOV_B32 (i32 (LO32 imm:$imm))), sub0),
     (S_MOV_B32 (i32 (HI32 imm:$imm))), sub1)
+>;
+
+def : Pat <
+  (f64 fpimm:$imm),
+  (INSERT_SUBREG (INSERT_SUBREG (f64 (IMPLICIT_DEF)),
+    (V_MOV_B32_e32 (f32 (LO32f fpimm:$imm))), sub0),
+    (V_MOV_B32_e32 (f32 (HI32f fpimm:$imm))), sub1)
 >;
 
 /********** ===================== **********/
@@ -1503,6 +1657,11 @@ def : Pat <
 def : Pat<
   (fdiv f32:$src0, f32:$src1),
   (V_MUL_F32_e32 $src0, (V_RCP_F32_e32 $src1))
+>;
+
+def : Pat<
+  (fdiv f64:$src0, f64:$src1),
+  (V_MUL_F64 $src0, (V_RCP_F64_e32 $src1), (i64 0))
 >;
 
 def : Pat <
@@ -1543,19 +1702,19 @@ def : Pat <
 
 // 1. Offset as 8bit DWORD immediate
 def : Pat <
-  (int_SI_load_const v16i8:$sbase, IMM8bitDWORD:$offset),
+  (SIload_constant i128:$sbase, IMM8bitDWORD:$offset),
   (S_BUFFER_LOAD_DWORD_IMM $sbase, IMM8bitDWORD:$offset)
 >;
 
 // 2. Offset loaded in an 32bit SGPR
 def : Pat <
-  (int_SI_load_const v16i8:$sbase, imm:$offset),
+  (SIload_constant i128:$sbase, imm:$offset),
   (S_BUFFER_LOAD_DWORD_SGPR $sbase, (S_MOV_B32 imm:$offset))
 >;
 
 // 3. Offset in an 32Bit VGPR
 def : Pat <
-  (int_SI_load_const v16i8:$sbase, i32:$voff),
+  (SIload_constant i128:$sbase, i32:$voff),
   (BUFFER_LOAD_DWORD_OFFEN $sbase, $voff)
 >;
 
@@ -1567,6 +1726,12 @@ def : Pat <
                    (V_RCP_IFLAG_F32_e32 (V_CVT_F32_U32_e32 $src0))))
 >;
 
+def : Pat <
+  (int_SI_tid),
+  (V_MBCNT_HI_U32_B32_e32 0xffffffff,
+                          (V_MBCNT_LO_U32_B32_e64 0xffffffff, 0, 0, 0, 0, 0))
+>;
+
 /********** ================== **********/
 /**********   VOP3 Patterns    **********/
 /********** ================== **********/
@@ -1574,6 +1739,21 @@ def : Pat <
 def : Pat <
   (f32 (fadd (fmul f32:$src0, f32:$src1), f32:$src2)),
   (V_MAD_F32 $src0, $src1, $src2)
+>;
+
+/********** ======================= **********/
+/**********   Load/Store Patterns   **********/
+/********** ======================= **********/
+
+def : Pat <
+    (local_load i64:$src0),
+    (i32 (DS_READ_B32 0, (EXTRACT_SUBREG $src0, sub0),
+                      (EXTRACT_SUBREG $src0, sub0), (EXTRACT_SUBREG $src0, sub0), 0, 0))
+>;
+
+def : Pat <
+    (local_store i32:$src1, i64:$src0),
+    (DS_WRITE_B32 0, (EXTRACT_SUBREG $src0, sub0), $src1, $src1, 0, 0)
 >;
 
 /********** ================== **********/
@@ -1604,7 +1784,8 @@ multiclass SMRD_Pattern <SMRD Instr_IMM, SMRD Instr_SGPR, ValueType vt> {
 defm : SMRD_Pattern <S_LOAD_DWORD_IMM, S_LOAD_DWORD_SGPR, f32>;
 defm : SMRD_Pattern <S_LOAD_DWORD_IMM, S_LOAD_DWORD_SGPR, i32>;
 defm : SMRD_Pattern <S_LOAD_DWORDX2_IMM, S_LOAD_DWORDX2_SGPR, i64>;
-defm : SMRD_Pattern <S_LOAD_DWORDX4_IMM, S_LOAD_DWORDX4_SGPR, v16i8>;
+defm : SMRD_Pattern <S_LOAD_DWORDX2_IMM, S_LOAD_DWORDX2_SGPR, v2i32>;
+defm : SMRD_Pattern <S_LOAD_DWORDX4_IMM, S_LOAD_DWORDX4_SGPR, i128>;
 defm : SMRD_Pattern <S_LOAD_DWORDX8_IMM, S_LOAD_DWORDX8_SGPR, v32i8>;
 
 //===----------------------------------------------------------------------===//
@@ -1634,32 +1815,44 @@ multiclass MUBUFLoad_Pattern <MUBUF Instr_ADDR64, ValueType vt,
   >;
 }
 
+defm : MUBUFLoad_Pattern <BUFFER_LOAD_SBYTE_ADDR64, i32,
+                          sextloadi8_global, sextloadi8_constant>;
+defm : MUBUFLoad_Pattern <BUFFER_LOAD_UBYTE_ADDR64, i32,
+                          az_extloadi8_global, az_extloadi8_constant>;
+defm : MUBUFLoad_Pattern <BUFFER_LOAD_SSHORT_ADDR64, i32,
+                          sextloadi16_global, sextloadi16_constant>;
+defm : MUBUFLoad_Pattern <BUFFER_LOAD_USHORT_ADDR64, i32,
+                          az_extloadi16_global, az_extloadi16_constant>;
 defm : MUBUFLoad_Pattern <BUFFER_LOAD_DWORD_ADDR64, i32,
                           global_load, constant_load>;
-defm : MUBUFLoad_Pattern <BUFFER_LOAD_UBYTE_ADDR64, i32,
-                          zextloadi8_global, zextloadi8_constant>;
+defm : MUBUFLoad_Pattern <BUFFER_LOAD_DWORDX2_ADDR64, i64,
+                          global_load, constant_load>;
+defm : MUBUFLoad_Pattern <BUFFER_LOAD_DWORDX2_ADDR64, i64,
+                          az_extloadi32_global, az_extloadi32_constant>;
 defm : MUBUFLoad_Pattern <BUFFER_LOAD_DWORDX2_ADDR64, v2i32,
                           global_load, constant_load>;
 defm : MUBUFLoad_Pattern <BUFFER_LOAD_DWORDX4_ADDR64, v4i32,
                           global_load, constant_load>;
 
-multiclass MUBUFStore_Pattern <MUBUF Instr, ValueType vt> {
+multiclass MUBUFStore_Pattern <MUBUF Instr, ValueType vt, PatFrag st> {
 
   def : Pat <
-    (global_store vt:$value, i64:$ptr),
+    (st vt:$value, i64:$ptr),
     (Instr $value, (SI_ADDR64_RSRC (i64 0)), $ptr, 0)
   >;
 
   def : Pat <
-    (global_store vt:$value, (add i64:$ptr, i64:$offset)),
+    (st vt:$value, (add i64:$ptr, i64:$offset)),
     (Instr $value, (SI_ADDR64_RSRC $ptr), $offset, 0)
    >;
 }
 
-defm : MUBUFStore_Pattern <BUFFER_STORE_DWORD, i32>;
-defm : MUBUFStore_Pattern <BUFFER_STORE_DWORDX2, i64>;
-defm : MUBUFStore_Pattern <BUFFER_STORE_DWORDX2, v2i32>;
-defm : MUBUFStore_Pattern <BUFFER_STORE_DWORDX4, v4i32>;
+defm : MUBUFStore_Pattern <BUFFER_STORE_BYTE, i32, truncstorei8_global>;
+defm : MUBUFStore_Pattern <BUFFER_STORE_SHORT, i32, truncstorei16_global>;
+defm : MUBUFStore_Pattern <BUFFER_STORE_DWORD, i32, global_store>;
+defm : MUBUFStore_Pattern <BUFFER_STORE_DWORDX2, i64, global_store>;
+defm : MUBUFStore_Pattern <BUFFER_STORE_DWORDX2, v2i32, global_store>;
+defm : MUBUFStore_Pattern <BUFFER_STORE_DWORDX4, v4i32, global_store>;
 
 /********** ====================== **********/
 /**********   Indirect adressing   **********/
@@ -1669,25 +1862,25 @@ multiclass SI_INDIRECT_Pattern <ValueType vt, SI_INDIRECT_DST IndDst> {
 
   // 1. Extract with offset
   def : Pat<
-    (vector_extract vt:$vec, (i64 (zext (add i32:$idx, imm:$off)))),
+    (vector_extract vt:$vec, (add i32:$idx, imm:$off)),
     (f32 (SI_INDIRECT_SRC (IMPLICIT_DEF), $vec, $idx, imm:$off))
   >;
 
   // 2. Extract without offset
   def : Pat<
-    (vector_extract vt:$vec, (i64 (zext i32:$idx))),
+    (vector_extract vt:$vec, i32:$idx),
     (f32 (SI_INDIRECT_SRC (IMPLICIT_DEF), $vec, $idx, 0))
   >;
 
   // 3. Insert with offset
   def : Pat<
-    (vector_insert vt:$vec, f32:$val, (i64 (zext (add i32:$idx, imm:$off)))),
+    (vector_insert vt:$vec, f32:$val, (add i32:$idx, imm:$off)),
     (IndDst (IMPLICIT_DEF), $vec, $idx, imm:$off, $val)
   >;
 
   // 4. Insert without offset
   def : Pat<
-    (vector_insert vt:$vec, f32:$val, (i64 (zext i32:$idx))),
+    (vector_insert vt:$vec, f32:$val, i32:$idx),
     (IndDst (IMPLICIT_DEF), $vec, $idx, 0, $val)
   >;
 }

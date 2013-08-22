@@ -99,6 +99,12 @@ void SetThreadName(const char *name) {
 // ---------------------- Wrappers ---------------- {{{1
 using namespace __asan;  // NOLINT
 
+DECLARE_REAL_AND_INTERCEPTOR(void *, malloc, uptr)
+DECLARE_REAL_AND_INTERCEPTOR(void, free, void *)
+
+#define COMMON_INTERCEPTOR_UNPOISON_PARAM(ctx, count) \
+  do {                                                \
+  } while (false)
 #define COMMON_INTERCEPTOR_WRITE_RANGE(ctx, ptr, size) \
   ASAN_WRITE_RANGE(ptr, size)
 #define COMMON_INTERCEPTOR_READ_RANGE(ctx, ptr, size) ASAN_READ_RANGE(ptr, size)
@@ -119,12 +125,17 @@ using namespace __asan;  // NOLINT
   do {                                                      \
   } while (false)
 #define COMMON_INTERCEPTOR_SET_THREAD_NAME(ctx, name) SetThreadName(name)
+#define COMMON_INTERCEPTOR_BLOCK_REAL(name) REAL(name)
 #include "sanitizer_common/sanitizer_common_interceptors.inc"
 
 #define COMMON_SYSCALL_PRE_READ_RANGE(p, s) ASAN_READ_RANGE(p, s)
 #define COMMON_SYSCALL_PRE_WRITE_RANGE(p, s) ASAN_WRITE_RANGE(p, s)
-#define COMMON_SYSCALL_POST_READ_RANGE(p, s)
-#define COMMON_SYSCALL_POST_WRITE_RANGE(p, s)
+#define COMMON_SYSCALL_POST_READ_RANGE(p, s) \
+  do {                                       \
+  } while (false)
+#define COMMON_SYSCALL_POST_WRITE_RANGE(p, s) \
+  do {                                        \
+  } while (false)
 #include "sanitizer_common/sanitizer_common_syscalls.inc"
 
 static thread_return_t THREAD_CALLING_CONV asan_thread_start(void *arg) {
@@ -138,6 +149,7 @@ extern "C" int pthread_attr_getdetachstate(void *attr, int *v);
 
 INTERCEPTOR(int, pthread_create, void *thread,
     void *attr, void *(*start_routine)(void*), void *arg) {
+  EnsureMainThreadIDIsCorrect();
   // Strict init-order checking in thread-hostile.
   if (flags()->strict_init_order)
     StopInitOrderChecking();
@@ -245,8 +257,10 @@ static void MlockIsUnsupported() {
   static bool printed = false;
   if (printed) return;
   printed = true;
-  if (flags()->verbosity > 0)
-    Printf("INFO: AddressSanitizer ignores mlock/mlockall/munlock/munlockall\n");
+  if (flags()->verbosity > 0) {
+    Printf("INFO: AddressSanitizer ignores "
+           "mlock/mlockall/munlock/munlockall\n");
+  }
 }
 
 INTERCEPTOR(int, mlock, const void *addr, uptr len) {
@@ -419,24 +433,6 @@ INTERCEPTOR(char*, strncat, char *to, const char *from, uptr size) {
   return REAL(strncat)(to, from, size);
 }
 
-INTERCEPTOR(int, strcmp, const char *s1, const char *s2) {
-  if (!asan_inited) return internal_strcmp(s1, s2);
-  if (asan_init_is_running) {
-    return REAL(strcmp)(s1, s2);
-  }
-  ENSURE_ASAN_INITED();
-  unsigned char c1, c2;
-  uptr i;
-  for (i = 0; ; i++) {
-    c1 = (unsigned char)s1[i];
-    c2 = (unsigned char)s2[i];
-    if (c1 != c2 || c1 == '\0') break;
-  }
-  ASAN_READ_RANGE(s1, i + 1);
-  ASAN_READ_RANGE(s2, i + 1);
-  return CharCmp(c1, c2);
-}
-
 INTERCEPTOR(char*, strcpy, char *to, const char *from) {  // NOLINT
 #if SANITIZER_MAC
   if (!asan_inited) return REAL(strcpy)(to, from);  // NOLINT
@@ -484,26 +480,6 @@ INTERCEPTOR(uptr, strlen, const char *s) {
     ASAN_READ_RANGE(s, length + 1);
   }
   return length;
-}
-
-INTERCEPTOR(int, strncmp, const char *s1, const char *s2, uptr size) {
-  if (!asan_inited) return internal_strncmp(s1, s2, size);
-  // strncmp is called from malloc_default_purgeable_zone()
-  // in __asan::ReplaceSystemAlloc() on Mac.
-  if (asan_init_is_running) {
-    return REAL(strncmp)(s1, s2, size);
-  }
-  ENSURE_ASAN_INITED();
-  unsigned char c1 = 0, c2 = 0;
-  uptr i;
-  for (i = 0; i < size; i++) {
-    c1 = (unsigned char)s1[i];
-    c2 = (unsigned char)s2[i];
-    if (c1 != c2 || c1 == '\0') break;
-  }
-  ASAN_READ_RANGE(s1, Min(i + 1, size));
-  ASAN_READ_RANGE(s2, Min(i + 1, size));
-  return CharCmp(c1, c2);
 }
 
 INTERCEPTOR(char*, strncpy, char *to, const char *from, uptr size) {
@@ -702,11 +678,9 @@ void InitializeAsanInterceptors() {
   // Intercept str* functions.
   ASAN_INTERCEPT_FUNC(strcat);  // NOLINT
   ASAN_INTERCEPT_FUNC(strchr);
-  ASAN_INTERCEPT_FUNC(strcmp);
   ASAN_INTERCEPT_FUNC(strcpy);  // NOLINT
   ASAN_INTERCEPT_FUNC(strlen);
   ASAN_INTERCEPT_FUNC(strncat);
-  ASAN_INTERCEPT_FUNC(strncmp);
   ASAN_INTERCEPT_FUNC(strncpy);
 #if ASAN_INTERCEPT_STRDUP
   ASAN_INTERCEPT_FUNC(strdup);

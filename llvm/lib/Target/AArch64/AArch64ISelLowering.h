@@ -111,7 +111,31 @@ namespace AArch64ISD {
     // created using the small memory model style: i.e. adrp/add or
     // adrp/mem-op. This exists to prevent bare TargetAddresses which may never
     // get selected.
-    WrapperSmall
+    WrapperSmall,
+
+    // Vector bitwise select
+    NEON_BSL,
+
+    // Vector move immediate
+    NEON_MOVIMM,
+
+    // Vector Move Inverted Immediate
+    NEON_MVNIMM,
+
+    // Vector FP move immediate
+    NEON_FMOVIMM,
+
+    // Vector compare
+    NEON_CMP,
+
+    // Vector compare zero
+    NEON_CMPZ,
+
+    // Vector compare bitwise test
+    NEON_TST,
+
+    // Operation for the immediate in vector shift
+    NEON_DUPIMM
   };
 }
 
@@ -148,9 +172,11 @@ public:
                           SDLoc dl, SelectionDAG &DAG,
                           SmallVectorImpl<SDValue> &InVals) const;
 
-  void SaveVarArgRegisters(CCState &CCInfo, SelectionDAG &DAG,
-                           SDLoc DL, SDValue &Chain) const;
+  SDValue LowerBUILD_VECTOR(SDValue Op, SelectionDAG &DAG,
+                            const AArch64Subtarget *ST) const;
 
+  void SaveVarArgRegisters(CCState &CCInfo, SelectionDAG &DAG, SDLoc DL,
+                           SDValue &Chain) const;
 
   /// IsEligibleForTailCallOptimization - Check whether the call is eligible
   /// for tail call optimization. Targets which want to do tail call
@@ -229,11 +255,11 @@ public:
 
   virtual SDValue PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const;
 
-  /// isFMAFasterThanMulAndAdd - Return true if an FMA operation is faster than
-  /// a pair of mul and add instructions. fmuladd intrinsics will be expanded to
-  /// FMAs when this method returns true (and FMAs are legal), otherwise fmuladd
-  /// is expanded to mul + add.
-  virtual bool isFMAFasterThanMulAndAdd(EVT) const { return true; }
+  /// isFMAFasterThanFMulAndFAdd - Return true if an FMA operation is faster
+  /// than a pair of fmul and fadd instructions. fmuladd intrinsics will be
+  /// expanded to FMAs when this method returns true, otherwise fmuladd is
+  /// expanded to fmul + fadd.
+  virtual bool isFMAFasterThanFMulAndFAdd(EVT VT) const;
 
   ConstraintType getConstraintType(const std::string &Constraint) const;
 
@@ -252,6 +278,10 @@ private:
   const AArch64Subtarget *getSubtarget() const {
     return &getTargetMachine().getSubtarget<AArch64Subtarget>();
   }
+};
+enum NeonModImmType {
+  Neon_Mov_Imm,
+  Neon_Mvn_Imm
 };
 } // namespace llvm
 

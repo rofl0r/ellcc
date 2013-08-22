@@ -1061,15 +1061,32 @@ void CodeGenModule::ConstructAttributeList(const CGFunctionInfo &FI,
     }
 
     FuncAttrs.addAttribute("less-precise-fpmad",
-                           CodeGenOpts.LessPreciseFPMAD ? "true" : "false");
+                           llvm::toStringRef(CodeGenOpts.LessPreciseFPMAD));
     FuncAttrs.addAttribute("no-infs-fp-math",
-                           CodeGenOpts.NoInfsFPMath ? "true" : "false");
+                           llvm::toStringRef(CodeGenOpts.NoInfsFPMath));
     FuncAttrs.addAttribute("no-nans-fp-math",
-                           CodeGenOpts.NoNaNsFPMath ? "true" : "false");
+                           llvm::toStringRef(CodeGenOpts.NoNaNsFPMath));
     FuncAttrs.addAttribute("unsafe-fp-math",
-                           CodeGenOpts.UnsafeFPMath ? "true" : "false");
+                           llvm::toStringRef(CodeGenOpts.UnsafeFPMath));
     FuncAttrs.addAttribute("use-soft-float",
-                           CodeGenOpts.SoftFloat ? "true" : "false");
+                           llvm::toStringRef(CodeGenOpts.SoftFloat));
+    FuncAttrs.addAttribute("stack-protector-buffer-size",
+                           llvm::utostr(CodeGenOpts.SSPBufferSize));
+
+    bool NoFramePointerElimNonLeaf;
+    if (!CodeGenOpts.DisableFPElim) {
+      NoFramePointerElimNonLeaf = false;
+    } else if (CodeGenOpts.OmitLeafFramePointer) {
+      NoFramePointerElimNonLeaf = true;
+    } else {
+      NoFramePointerElimNonLeaf = true;
+    }
+
+    FuncAttrs.addAttribute("no-frame-pointer-elim-non-leaf",
+                           llvm::toStringRef(NoFramePointerElimNonLeaf));
+
+    if (!CodeGenOpts.StackRealignment)
+      FuncAttrs.addAttribute("no-realign-stack");
   }
 
   QualType RetTy = FI.getReturnType();
@@ -2178,7 +2195,7 @@ static void checkArgMatches(llvm::Value *Elt, unsigned &ArgNo,
 }
 
 void CodeGenFunction::ExpandTypeToArgs(QualType Ty, RValue RV,
-                                       SmallVector<llvm::Value*,16> &Args,
+                                       SmallVectorImpl<llvm::Value *> &Args,
                                        llvm::FunctionType *IRFuncTy) {
   if (const ConstantArrayType *AT = getContext().getAsConstantArrayType(Ty)) {
     unsigned NumElts = AT->getSize().getZExtValue();

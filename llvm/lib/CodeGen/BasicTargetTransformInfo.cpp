@@ -65,6 +65,8 @@ public:
     return this;
   }
 
+  virtual bool hasBranchDivergence() const;
+
   /// \name Scalar TTI Implementations
   /// @{
 
@@ -108,7 +110,7 @@ public:
   virtual unsigned getIntrinsicInstrCost(Intrinsic::ID, Type *RetTy,
                                          ArrayRef<Type*> Tys) const;
   virtual unsigned getNumberOfParts(Type *Tp) const;
-  virtual unsigned getAddressComputationCost(Type *Ty) const;
+  virtual unsigned getAddressComputationCost(Type *Ty, bool IsComplex) const;
 
   /// @}
 };
@@ -124,6 +126,7 @@ llvm::createBasicTargetTransformInfoPass(const TargetMachine *TM) {
   return new BasicTTI(TM);
 }
 
+bool BasicTTI::hasBranchDivergence() const { return false; }
 
 bool BasicTTI::isLegalAddImmediate(int64_t imm) const {
   return getTLI()->isLegalAddImmediate(imm);
@@ -443,10 +446,16 @@ unsigned BasicTTI::getIntrinsicInstrCost(Intrinsic::ID IID, Type *RetTy,
   case Intrinsic::floor:   ISD = ISD::FFLOOR; break;
   case Intrinsic::ceil:    ISD = ISD::FCEIL;  break;
   case Intrinsic::trunc:   ISD = ISD::FTRUNC; break;
+  case Intrinsic::nearbyint:
+                           ISD = ISD::FNEARBYINT; break;
   case Intrinsic::rint:    ISD = ISD::FRINT;  break;
+  case Intrinsic::round:   ISD = ISD::FROUND; break;
   case Intrinsic::pow:     ISD = ISD::FPOW;   break;
   case Intrinsic::fma:     ISD = ISD::FMA;    break;
   case Intrinsic::fmuladd: ISD = ISD::FMA;    break; // FIXME: mul + add?
+  case Intrinsic::lifetime_start:
+  case Intrinsic::lifetime_end:
+    return 0;
   }
 
   const TargetLoweringBase *TLI = getTLI();
@@ -487,6 +496,6 @@ unsigned BasicTTI::getNumberOfParts(Type *Tp) const {
   return LT.first;
 }
 
-unsigned BasicTTI::getAddressComputationCost(Type *Ty) const {
+unsigned BasicTTI::getAddressComputationCost(Type *Ty, bool IsComplex) const {
   return 0;
 }

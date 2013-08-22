@@ -47,6 +47,8 @@ namespace CodeGen {
 /// and is responsible for emitting to llvm globals or pass directly to
 /// the backend.
 class CGDebugInfo {
+  friend class NoLocation;
+  friend class ArtificialLocation;
   CodeGenModule &CGM;
   const CodeGenOptions::DebugInfoKind DebugKind;
   llvm::DIBuilder DBuilder;
@@ -60,14 +62,14 @@ class CGDebugInfo {
   llvm::DIType OCLImage2dDITy, OCLImage2dArrayDITy;
   llvm::DIType OCLImage3dDITy;
   llvm::DIType OCLEventDITy;
+  llvm::DIType BlockLiteralGeneric;
 
   /// TypeCache - Cache of previously constructed Types.
   llvm::DenseMap<void *, llvm::WeakVH> TypeCache;
 
   /// ObjCInterfaceCache - Cache of previously constructed interfaces
   /// which may change. Storing a pair of DIType and checksum.
-  llvm::DenseMap<void *, std::pair<llvm::WeakVH, unsigned > >
-    ObjCInterfaceCache;
+  llvm::DenseMap<void *, std::pair<llvm::WeakVH, unsigned> > ObjCInterfaceCache;
 
   /// RetainedTypes - list of interfaces we want to keep even if orphaned.
   std::vector<void *> RetainedTypes;
@@ -78,9 +80,6 @@ class CGDebugInfo {
   /// ReplaceMap - Cache of forward declared types to RAUW at the end of
   /// compilation.
   std::vector<std::pair<void *, llvm::WeakVH> >ReplaceMap;
-
-  bool BlockLiteralGenericSet;
-  llvm::DIType BlockLiteralGeneric;
 
   // LexicalBlockStack - Keep track of our current nested lexical block.
   std::vector<llvm::TrackingVH<llvm::MDNode> > LexicalBlockStack;
@@ -116,6 +115,7 @@ class CGDebugInfo {
   llvm::DIType CreateType(const BlockPointerType *Ty, llvm::DIFile F);
   llvm::DIType CreateType(const FunctionType *Ty, llvm::DIFile F);
   llvm::DIType CreateType(const RecordType *Ty, bool Declaration);
+  llvm::DIType CreateTypeDefinition(const RecordType *Ty);
   llvm::DIType CreateLimitedType(const RecordType *Ty);
   llvm::DIType CreateType(const ObjCInterfaceType *Ty, llvm::DIFile F);
   llvm::DIType CreateType(const ObjCObjectType *Ty, llvm::DIFile F);
@@ -184,16 +184,15 @@ class CGDebugInfo {
   void CollectRecordLambdaFields(const CXXRecordDecl *CXXDecl,
                                  SmallVectorImpl<llvm::Value *> &E,
                                  llvm::DIType RecordTy);
-  void CollectRecordStaticField(const VarDecl *Var,
-                                SmallVectorImpl<llvm::Value *> &E,
-                                llvm::DIType RecordTy);
+  llvm::DIDerivedType CreateRecordStaticField(const VarDecl *Var,
+                                              llvm::DIType RecordTy);
   void CollectRecordNormalField(const FieldDecl *Field, uint64_t OffsetInBits,
                                 llvm::DIFile F,
                                 SmallVectorImpl<llvm::Value *> &E,
                                 llvm::DIType RecordTy);
   void CollectRecordFields(const RecordDecl *Decl, llvm::DIFile F,
                            SmallVectorImpl<llvm::Value *> &E,
-                           llvm::DIType RecordTy);
+                           llvm::DICompositeType RecordTy);
 
   void CollectVTableInfo(const CXXRecordDecl *Decl,
                          llvm::DIFile F,
@@ -289,7 +288,9 @@ public:
   llvm::DIType getOrCreateInterfaceType(QualType Ty,
                                         SourceLocation Loc);
 
-  void completeFwdDecl(const RecordDecl &TD);
+  void completeType(const RecordDecl *RD);
+  void completeRequiredType(const RecordDecl *RD);
+
 
 private:
   /// EmitDeclare - Emit call to llvm.dbg.declare for a variable declaration.
@@ -306,9 +307,8 @@ private:
 
   llvm::DIScope getCurrentContextDescriptor(const Decl *Decl);
 
-  /// createRecordFwdDecl - Create a forward decl for a RecordType in a given
-  /// context.
-  llvm::DIType createRecordFwdDecl(const RecordDecl *, llvm::DIDescriptor);
+  /// \brief Create a forward decl for a RecordType in a given context.
+  llvm::DIType getOrCreateRecordFwdDecl(const RecordDecl *, llvm::DIDescriptor);
 
   /// createContextChain - Create a set of decls for the context chain.
   llvm::DIDescriptor createContextChain(const Decl *Decl);
@@ -332,7 +332,7 @@ private:
 
   /// getOrCreateLimitedType - Get the type from the cache or create a new
   /// partial type if necessary.
-  llvm::DIType getOrCreateLimitedType(QualType Ty, llvm::DIFile F);
+  llvm::DIType getOrCreateLimitedType(const RecordType *Ty, llvm::DIFile F);
 
   /// CreateTypeNode - Create type metadata for a source language type.
   llvm::DIType CreateTypeNode(QualType Ty, llvm::DIFile F, bool Declaration);
@@ -340,10 +340,6 @@ private:
   /// getObjCInterfaceDecl - return the underlying ObjCInterfaceDecl
   /// if Ty is an ObjCInterface or a pointer to one.
   ObjCInterfaceDecl* getObjCInterfaceDecl(QualType Ty);
-
-  /// CreateLimitedTypeNode - Create type metadata for a source language
-  /// type, but only partial types for records.
-  llvm::DIType CreateLimitedTypeNode(QualType Ty, llvm::DIFile F);
 
   /// CreateMemberType - Create new member and increase Offset by FType's size.
   llvm::DIType CreateMemberType(llvm::DIFile Unit, QualType FType,
@@ -360,7 +356,7 @@ private:
   /// getStaticDataMemberDeclaration - Return debug info descriptor to
   /// describe in-class static data member declaration for the given
   /// out-of-class definition.
-  llvm::DIDerivedType getStaticDataMemberDeclaration(const Decl *D);
+  llvm::DIDerivedType getStaticDataMemberDeclaration(const VarDecl *D);
 
   /// getFunctionName - Get function name for the given FunctionDecl. If the
   /// name is constructred on demand (e.g. C++ destructor) then the name
@@ -390,6 +386,47 @@ private:
   /// \param Force  Assume DebugColumnInfo option is true.
   unsigned getColumnNumber(SourceLocation Loc, bool Force=false);
 };
+
+/// NoLocation - An RAII object that temporarily disables debug
+/// locations. This is useful for emitting instructions that should be
+/// counted towards the function prologue.
+class NoLocation {
+  SourceLocation SavedLoc;
+  CGDebugInfo *DI;
+  CGBuilderTy &Builder;
+public:
+  NoLocation(CodeGenFunction &CGF, CGBuilderTy &B);
+  /// ~NoLocation - Autorestore everything back to normal.
+  ~NoLocation();
+};
+
+/// ArtificialLocation - An RAII object that temporarily switches to
+/// an artificial debug location that has a valid scope, but no line
+/// information. This is useful when emitting compiler-generated
+/// helper functions that have no source location associated with
+/// them. The DWARF specification allows the compiler to use the
+/// special line number 0 to indicate code that can not be attributed
+/// to any source location.
+///
+/// This is necessary because passing an empty SourceLocation to
+/// CGDebugInfo::setLocation() will result in the last valid location
+/// being reused.
+class ArtificialLocation {
+  SourceLocation SavedLoc;
+  CGDebugInfo *DI;
+  CGBuilderTy &Builder;
+public:
+  ArtificialLocation(CodeGenFunction &CGF, CGBuilderTy &B);
+
+  /// Set the current location to line 0, but within the current scope
+  /// (= the top of the LexicalBlockStack).
+  void Emit();
+
+  /// ~ArtificialLocation - Autorestore everything back to normal.
+  ~ArtificialLocation();
+};
+
+
 } // namespace CodeGen
 } // namespace clang
 

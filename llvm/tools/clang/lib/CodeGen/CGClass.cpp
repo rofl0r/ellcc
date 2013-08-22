@@ -563,7 +563,7 @@ static void EmitMemberInitializer(CodeGenFunction &CGF,
   // in the AST, we could generalize it more easily.
   const ConstantArrayType *Array
     = CGF.getContext().getAsConstantArrayType(FieldType);
-  if (Array && Constructor->isImplicitlyDefined() &&
+  if (Array && Constructor->isDefaulted() &&
       Constructor->isCopyOrMoveConstructor()) {
     QualType BaseElementTy = CGF.getContext().getBaseElementType(Array);
     CXXConstructExpr *CE = dyn_cast<CXXConstructExpr>(MemberInit->getInit());
@@ -885,7 +885,7 @@ namespace {
     /// constructor. 
     static const VarDecl* getTrivialCopySource(const CXXConstructorDecl *CD,
                                                FunctionArgList &Args) {
-      if (CD->isCopyOrMoveConstructor() && CD->isImplicitlyDefined())
+      if (CD->isCopyOrMoveConstructor() && CD->isDefaulted())
         return Args[Args.size() - 1];
       return 0; 
     }
@@ -919,7 +919,7 @@ namespace {
                           FunctionArgList &Args)
       : FieldMemcpyizer(CGF, CD->getParent(), getTrivialCopySource(CD, Args)),
         ConstructorDecl(CD),
-        MemcpyableCtor(CD->isImplicitlyDefined() &&
+        MemcpyableCtor(CD->isDefaulted() &&
                        CD->isCopyOrMoveConstructor() &&
                        CGF.getLangOpts().getGC() == LangOptions::NonGC),
         Args(Args) { }
@@ -1265,16 +1265,19 @@ void CodeGenFunction::EmitDestructorBody(FunctionArgList &Args) {
   // If this is the complete variant, just invoke the base variant;
   // the epilogue will destruct the virtual bases.  But we can't do
   // this optimization if the body is a function-try-block, because
-  // we'd introduce *two* handler blocks.
+  // we'd introduce *two* handler blocks.  In the Microsoft ABI, we 
+  // always delegate because we might not have a definition in this TU.
   switch (DtorType) {
   case Dtor_Deleting: llvm_unreachable("already handled deleting case");
 
   case Dtor_Complete:
+    assert((Body || getTarget().getCXXABI().isMicrosoft()) &&
+           "can't emit a dtor without a body for non-Microsoft ABIs");
+
     // Enter the cleanup scopes for virtual bases.
     EnterDtorCleanups(Dtor, Dtor_Complete);
 
-    if (!isTryBody &&
-        CGM.getTarget().getCXXABI().hasDestructorVariants()) {
+    if (!isTryBody) {
       EmitCXXDestructorCall(Dtor, Dtor_Base, /*ForVirtualBase=*/false,
                             /*Delegating=*/false, LoadCXXThis());
       break;
@@ -1282,6 +1285,8 @@ void CodeGenFunction::EmitDestructorBody(FunctionArgList &Args) {
     // Fallthrough: act like we're in the base variant.
       
   case Dtor_Base:
+    assert(Body);
+
     // Enter the cleanup scopes for fields and non-virtual bases.
     EnterDtorCleanups(Dtor, Dtor_Base);
 
@@ -1630,17 +1635,6 @@ CodeGenFunction::EmitCXXConstructorCall(const CXXConstructorDecl *D,
                                         llvm::Value *This,
                                         CallExpr::const_arg_iterator ArgBeg,
                                         CallExpr::const_arg_iterator ArgEnd) {
-
-  CGDebugInfo *DI = getDebugInfo();
-  if (DI &&
-      CGM.getCodeGenOpts().getDebugInfo() == CodeGenOptions::LimitedDebugInfo) {
-    // If debug info for this class has not been emitted then this is the
-    // right time to do so.
-    const CXXRecordDecl *Parent = D->getParent();
-    DI->getOrCreateRecordType(CGM.getContext().getTypeDeclType(Parent),
-                              Parent->getLocation());
-  }
-
   // If this is a trivial constructor, just emit what's needed.
   if (D->isTrivial()) {
     if (ArgBeg == ArgEnd) {

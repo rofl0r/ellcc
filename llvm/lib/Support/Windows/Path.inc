@@ -16,6 +16,7 @@
 //===          is guaranteed to work on *all* Windows variants.
 //===----------------------------------------------------------------------===//
 
+#include "llvm/ADT/STLExtras.h"
 #include "Windows.h"
 #include <fcntl.h>
 #include <io.h>
@@ -28,6 +29,10 @@
 #ifndef _ERRNO_T_DEFINED
 #define _ERRNO_T_DEFINED
 typedef int errno_t;
+#endif
+
+#ifdef _MSC_VER
+# pragma comment(lib, "advapi32.lib")  // This provides CryptAcquireContextW.
 #endif
 
 using namespace llvm;
@@ -184,7 +189,7 @@ retry_random_path:
   random_path_utf16.push_back(0);
   random_path_utf16.pop_back();
 
-  HANDLE TempFileHandle;
+  HANDLE TempFileHandle = INVALID_HANDLE_VALUE;
 
   switch (Type) {
   case FS_File: {
@@ -268,6 +273,14 @@ std::string getMainExecutable(const char *argv0, void *MainExecAddr) {
   return ret != MAX_PATH ? pathname : "";
 }
 
+UniqueID file_status::getUniqueID() const {
+  // The file is uniquely identified by the volume serial number along
+  // with the 64-bit file identifier.
+  uint64_t FileID = (static_cast<uint64_t>(FileIndexHigh) << 32ULL) |
+                    static_cast<uint64_t>(FileIndexLow);
+
+  return UniqueID(VolumeSerialNumber, FileID);
+}
 
 TimeValue file_status::getLastModificationTime() const {
   ULARGE_INTEGER UI;
@@ -297,53 +310,7 @@ retry_cur_dir:
   }
 
   cur_path.set_size(len);
-  // cur_path now holds the current directory in utf-16. Convert to utf-8.
-
-  // Find out how much space we need. Sadly, this function doesn't return the
-  // size needed unless you tell it the result size is 0, which means you
-  // _always_ have to call it twice.
-  len = ::WideCharToMultiByte(CP_UTF8, 0,
-                              cur_path.data(), cur_path.size(),
-                              result.data(), 0,
-                              NULL, NULL);
-
-  if (len == 0)
-    return make_error_code(windows_error(::GetLastError()));
-
-  result.reserve(len);
-  result.set_size(len);
-  // Now do the actual conversion.
-  len = ::WideCharToMultiByte(CP_UTF8, 0,
-                              cur_path.data(), cur_path.size(),
-                              result.data(), result.size(),
-                              NULL, NULL);
-  if (len == 0)
-    return windows_error(::GetLastError());
-
-  return error_code::success();
-}
-
-error_code copy_file(const Twine &from, const Twine &to, copy_option copt) {
-  // Get arguments.
-  SmallString<128> from_storage;
-  SmallString<128> to_storage;
-  StringRef f = from.toStringRef(from_storage);
-  StringRef t = to.toStringRef(to_storage);
-
-  // Convert to utf-16.
-  SmallVector<wchar_t, 128> wide_from;
-  SmallVector<wchar_t, 128> wide_to;
-  if (error_code ec = UTF8ToUTF16(f, wide_from)) return ec;
-  if (error_code ec = UTF8ToUTF16(t, wide_to)) return ec;
-
-  // Copy the file.
-  BOOL res = ::CopyFileW(wide_from.begin(), wide_to.begin(),
-                         copt != copy_option::overwrite_if_exists);
-
-  if (res == 0)
-    return windows_error(::GetLastError());
-
-  return error_code::success();
+  return UTF16ToUTF8(cur_path.begin(), cur_path.size(), result);
 }
 
 error_code create_directory(const Twine &path, bool &existed) {
@@ -413,8 +380,15 @@ error_code remove(const Twine &path, bool &existed) {
   SmallVector<wchar_t, 128> path_utf16;
 
   file_status st;
-  if (error_code ec = status(path, st))
-    return ec;
+  error_code EC = status(path, st);
+  if (EC) {
+    if (EC == windows_error::file_not_found ||
+        EC == windows_error::path_not_found) {
+      existed = false;
+      return error_code::success();
+    }
+    return EC;
+  }
 
   if (error_code ec = UTF8ToUTF16(path.toStringRef(path_storage),
                                   path_utf16))
@@ -555,46 +529,6 @@ error_code equivalent(const Twine &A, const Twine &B, bool &result) {
   return error_code::success();
 }
 
-error_code file_size(const Twine &path, uint64_t &result) {
-  SmallString<128> path_storage;
-  SmallVector<wchar_t, 128> path_utf16;
-
-  if (error_code ec = UTF8ToUTF16(path.toStringRef(path_storage),
-                                  path_utf16))
-    return ec;
-
-  WIN32_FILE_ATTRIBUTE_DATA FileData;
-  if (!::GetFileAttributesExW(path_utf16.begin(),
-                              ::GetFileExInfoStandard,
-                              &FileData))
-    return windows_error(::GetLastError());
-
-  result =
-    (uint64_t(FileData.nFileSizeHigh) << (sizeof(FileData.nFileSizeLow) * 8))
-    + FileData.nFileSizeLow;
-
-  return error_code::success();
-}
-
-error_code getUniqueID(const Twine Path, uint64_t &Result) {
-  file_status Status;
-  if (error_code E = status(Path, Status))
-    return E;
-
-  // The file is uniquely identified by the volume serial number along
-  // with the 64-bit file identifier.
-  Result = (static_cast<uint64_t>(Status.FileIndexHigh) << 32ULL) |
-           static_cast<uint64_t>(Status.FileIndexLow);
-  
-  // Because the serial number is 32-bits, but we've already used up all 64
-  // bits for the file index, XOR the serial number into the high 32 bits of
-  // the resulting value.  We could potentially get collisons from this, but
-  // the likelihood is low.
-  Result ^= (static_cast<uint64_t>(Status.VolumeSerialNumber) << 32ULL);
-
-  return error_code::success();
-}
-
 static bool isReservedName(StringRef path) {
   // This list of reserved names comes from MSDN, at:
   // http://msdn.microsoft.com/en-us/library/aa365247%28v=vs.85%29.aspx
@@ -609,13 +543,65 @@ static bool isReservedName(StringRef path) {
     return true;
 
   // Then compare against the list of ancient reserved names
-  for (size_t i = 0; i < sizeof(sReservedNames) / sizeof(const char *); ++i) {
+  for (size_t i = 0; i < array_lengthof(sReservedNames); ++i) {
     if (path.equals_lower(sReservedNames[i]))
       return true;
   }
 
   // The path isn't what we consider reserved.
   return false;
+}
+
+static error_code getStatus(HANDLE FileHandle, file_status &Result) {
+  if (FileHandle == INVALID_HANDLE_VALUE)
+    goto handle_status_error;
+
+  switch (::GetFileType(FileHandle)) {
+  default:
+    llvm_unreachable("Don't know anything about this file type");
+  case FILE_TYPE_UNKNOWN: {
+    DWORD Err = ::GetLastError();
+    if (Err != NO_ERROR)
+      return windows_error(Err);
+    Result = file_status(file_type::type_unknown);
+    return error_code::success();
+  }
+  case FILE_TYPE_DISK:
+    break;
+  case FILE_TYPE_CHAR:
+    Result = file_status(file_type::character_file);
+    return error_code::success();
+  case FILE_TYPE_PIPE:
+    Result = file_status(file_type::fifo_file);
+    return error_code::success();
+  }
+
+  BY_HANDLE_FILE_INFORMATION Info;
+  if (!::GetFileInformationByHandle(FileHandle, &Info))
+    goto handle_status_error;
+
+  {
+    file_type Type = (Info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+                         ? file_type::directory_file
+                         : file_type::regular_file;
+    Result =
+        file_status(Type, Info.ftLastWriteTime.dwHighDateTime,
+                    Info.ftLastWriteTime.dwLowDateTime,
+                    Info.dwVolumeSerialNumber, Info.nFileSizeHigh,
+                    Info.nFileSizeLow, Info.nFileIndexHigh, Info.nFileIndexLow);
+    return error_code::success();
+  }
+
+handle_status_error:
+  error_code EC = windows_error(::GetLastError());
+  if (EC == windows_error::file_not_found ||
+      EC == windows_error::path_not_found)
+    Result = file_status(file_type::file_not_found);
+  else if (EC == windows_error::sharing_violation)
+    Result = file_status(file_type::type_unknown);
+  else
+    Result = file_status(file_type::status_error);
+  return EC;
 }
 
 error_code status(const Twine &path, file_status &result) {
@@ -633,7 +619,7 @@ error_code status(const Twine &path, file_status &result) {
 
   DWORD attr = ::GetFileAttributesW(path_utf16.begin());
   if (attr == INVALID_FILE_ATTRIBUTES)
-    goto handle_status_error;
+    return getStatus(INVALID_HANDLE_VALUE, result);
 
   // Handle reparse points.
   if (attr & FILE_ATTRIBUTE_REPARSE_POINT) {
@@ -646,84 +632,22 @@ error_code status(const Twine &path, file_status &result) {
                     FILE_FLAG_BACKUP_SEMANTICS,
                     0));
     if (!h)
-      goto handle_status_error;
+      return getStatus(INVALID_HANDLE_VALUE, result);
   }
 
-  if (attr & FILE_ATTRIBUTE_DIRECTORY)
-    result = file_status(file_type::directory_file);
-  else {
-    result = file_status(file_type::regular_file);
-    ScopedFileHandle h(
-      ::CreateFileW(path_utf16.begin(),
-                    0, // Attributes only.
+  ScopedFileHandle h(
+      ::CreateFileW(path_utf16.begin(), 0, // Attributes only.
                     FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE,
-                    NULL,
-                    OPEN_EXISTING,
-                    FILE_FLAG_BACKUP_SEMANTICS,
-                    0));
+                    NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, 0));
     if (!h)
-      goto handle_status_error;
-    BY_HANDLE_FILE_INFORMATION Info;
-    if (!::GetFileInformationByHandle(h, &Info))
-      goto handle_status_error;
-    result.FileIndexHigh      = Info.nFileIndexHigh;
-    result.FileIndexLow       = Info.nFileIndexLow;
-    result.FileSizeHigh       = Info.nFileSizeHigh;
-    result.FileSizeLow        = Info.nFileSizeLow;
-    result.LastWriteTimeHigh  = Info.ftLastWriteTime.dwHighDateTime;
-    result.LastWriteTimeLow   = Info.ftLastWriteTime.dwLowDateTime;
-    result.VolumeSerialNumber = Info.dwVolumeSerialNumber;
-  }
+      return getStatus(INVALID_HANDLE_VALUE, result);
 
-  return error_code::success();
-
-handle_status_error:
-  error_code ec = windows_error(::GetLastError());
-  if (ec == windows_error::file_not_found ||
-      ec == windows_error::path_not_found)
-    result = file_status(file_type::file_not_found);
-  else if (ec == windows_error::sharing_violation)
-    result = file_status(file_type::type_unknown);
-  else {
-    result = file_status(file_type::status_error);
-    return ec;
-  }
-
-  return error_code::success();
+    return getStatus(h, result);
 }
 
-
-// Modifies permissions on a file.
-error_code permissions(const Twine &path, perms prms) {
-#if 0 // verify code below before enabling:
-  // If the permissions bits are not trying to modify
-  // "write" permissions, there is nothing to do.
-  if (!(prms & (owner_write|group_write|others_write)))
-    return error_code::success();
-  
-  SmallString<128> path_storage;
-  SmallVector<wchar_t, 128> path_utf16;
-
-  if (error_code ec = UTF8ToUTF16(path.toStringRef(path_storage),
-                                  path_utf16))
-    return ec;
-
-  DWORD attributes = ::GetFileAttributesW(path_utf16.begin());
-
-  if (prms & add_perms) {
-    attributes &= ~FILE_ATTRIBUTE_READONLY;
-  }
-  else if (prms & remove_perms) {
-    attributes |= FILE_ATTRIBUTE_READONLY;
-  }
-  else {
-    assert(0 && "neither add_perms or remove_perms is set");
-  }
-
-  if ( ! ::SetFileAttributesW(path_utf16.begin(), attributes))
-    return windows_error(::GetLastError());
-#endif    
-  return error_code::success();
+error_code status(int FD, file_status &Result) {
+  HANDLE FileHandle = reinterpret_cast<HANDLE>(_get_osfhandle(FD));
+  return getStatus(FileHandle, Result);
 }
 
 error_code setLastModificationAndAccessTime(int FD, TimeValue Time) {
@@ -797,7 +721,6 @@ error_code mapped_file_region::init(int FD, bool CloseFD, uint64_t Offset) {
   case readonly:  flprotect = PAGE_READONLY; break;
   case readwrite: flprotect = PAGE_READWRITE; break;
   case priv:      flprotect = PAGE_WRITECOPY; break;
-  default: llvm_unreachable("invalid mapping mode");
   }
 
   FileMappingHandle = ::CreateFileMapping(FileHandle,
@@ -821,7 +744,6 @@ error_code mapped_file_region::init(int FD, bool CloseFD, uint64_t Offset) {
   case readonly:  dwDesiredAccess = FILE_MAP_READ; break;
   case readwrite: dwDesiredAccess = FILE_MAP_WRITE; break;
   case priv:      dwDesiredAccess = FILE_MAP_COPY; break;
-  default: llvm_unreachable("invalid mapping mode");
   }
   Mapping = ::MapViewOfFile(FileMappingHandle,
                             dwDesiredAccess,
@@ -1084,7 +1006,92 @@ error_code unmap_file_pages(void *base, size_t size) {
   return windows_error::invalid_function;
 }
 
+error_code openFileForRead(const Twine &Name, int &ResultFD) {
+  SmallString<128> PathStorage;
+  SmallVector<wchar_t, 128> PathUTF16;
 
+  if (error_code EC = UTF8ToUTF16(Name.toStringRef(PathStorage),
+                                  PathUTF16))
+    return EC;
+
+  HANDLE H = ::CreateFileW(PathUTF16.begin(), GENERIC_READ,
+                           FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+                           OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+  if (H == INVALID_HANDLE_VALUE) {
+    error_code EC = windows_error(::GetLastError());
+    // Provide a better error message when trying to open directories.
+    // This only runs if we failed to open the file, so there is probably
+    // no performances issues.
+    if (EC != windows_error::access_denied)
+      return EC;
+    if (is_directory(Name))
+      return error_code(errc::is_a_directory, posix_category());
+    return EC;
+  }
+
+  int FD = ::_open_osfhandle(intptr_t(H), 0);
+  if (FD == -1) {
+    ::CloseHandle(H);
+    return windows_error::invalid_handle;
+  }
+
+  ResultFD = FD;
+  return error_code::success();
+}
+
+error_code openFileForWrite(const Twine &Name, int &ResultFD,
+                            sys::fs::OpenFlags Flags, unsigned Mode) {
+  // Verify that we don't have both "append" and "excl".
+  assert((!(Flags & sys::fs::F_Excl) || !(Flags & sys::fs::F_Append)) &&
+         "Cannot specify both 'excl' and 'append' file creation flags!");
+
+  SmallString<128> PathStorage;
+  SmallVector<wchar_t, 128> PathUTF16;
+
+  if (error_code EC = UTF8ToUTF16(Name.toStringRef(PathStorage),
+                                  PathUTF16))
+    return EC;
+
+  DWORD CreationDisposition;
+  if (Flags & F_Excl)
+    CreationDisposition = CREATE_NEW;
+  else if (Flags & F_Append) 
+    CreationDisposition = OPEN_ALWAYS;
+  else
+    CreationDisposition = CREATE_ALWAYS;
+
+  HANDLE H = ::CreateFileW(PathUTF16.begin(), GENERIC_WRITE,
+                           FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+                           CreationDisposition, FILE_ATTRIBUTE_NORMAL, NULL);
+
+  if (H == INVALID_HANDLE_VALUE) {
+    error_code EC = windows_error(::GetLastError());
+    // Provide a better error message when trying to open directories.
+    // This only runs if we failed to open the file, so there is probably
+    // no performances issues.
+    if (EC != windows_error::access_denied)
+      return EC;
+    if (is_directory(Name))
+      return error_code(errc::is_a_directory, posix_category());
+    return EC;
+  }
+
+  int OpenFlags = 0;
+  if (Flags & F_Append)
+    OpenFlags |= _O_APPEND;
+
+  if (!(Flags & F_Binary))
+    OpenFlags |= _O_TEXT;
+
+  int FD = ::_open_osfhandle(intptr_t(H), OpenFlags);
+  if (FD == -1) {
+    ::CloseHandle(H);
+    return windows_error::invalid_handle;
+  }
+
+  ResultFD = FD;
+  return error_code::success();
+}
 
 } // end namespace fs
 } // end namespace sys

@@ -50,6 +50,9 @@ isImplicitlyDef(MachineRegisterInfo &MRI, unsigned Reg) {
       E = MRI.def_end(); It != E; ++It) {
     return (*It).isImplicitDef();
   }
+  if (MRI.isReserved(Reg)) {
+    return false;
+  }
   llvm_unreachable("Reg without a def");
   return false;
 }
@@ -183,10 +186,6 @@ MachineInstr *R600VectorRegMerger::RebuildVector(
   std::vector<unsigned> UpdatedUndef = BaseRSI->UndefReg;
   for (DenseMap<unsigned, unsigned>::iterator It = RSI->RegToChan.begin(),
       E = RSI->RegToChan.end(); It != E; ++It) {
-    if (BaseRSI->RegToChan.find((*It).first) != BaseRSI->RegToChan.end()) {
-      UpdatedRegToChan[(*It).first] = (*It).second;
-      continue;
-    }
     unsigned DstReg = MRI->createVirtualRegister(&AMDGPU::R600_Reg128RegClass);
     unsigned SubReg = (*It).first;
     unsigned Swizzle = (*It).second;
@@ -326,8 +325,17 @@ bool R600VectorRegMerger::runOnMachineFunction(MachineFunction &Fn) {
     for (MachineBasicBlock::iterator MII = MB->begin(), MIIE = MB->end();
          MII != MIIE; ++MII) {
       MachineInstr *MI = MII;
-      if (MI->getOpcode() != AMDGPU::REG_SEQUENCE)
+      if (MI->getOpcode() != AMDGPU::REG_SEQUENCE) {
+        if (TII->get(MI->getOpcode()).TSFlags & R600_InstFlag::TEX_INST) {
+          unsigned Reg = MI->getOperand(1).getReg();
+          for (MachineRegisterInfo::def_iterator It = MRI->def_begin(Reg),
+              E = MRI->def_end(); It != E; ++It) {
+            RemoveMI(&(*It));
+          }
+        }
         continue;
+      }
+
 
       RegSeqInfo RSI(*MRI, MI);
 

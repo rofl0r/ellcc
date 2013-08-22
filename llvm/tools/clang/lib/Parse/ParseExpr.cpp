@@ -389,7 +389,7 @@ Parser::ParseRHSOfBinaryExpression(ExprResult LHS, prec::Level MinPrec) {
         // parentheses so that the code remains well-formed in C++0x.
         if (!GreaterThanIsOperator && OpToken.is(tok::greatergreater))
           SuggestParentheses(OpToken.getLocation(),
-                             diag::warn_cxx0x_right_shift_in_template_arg,
+                             diag::warn_cxx11_right_shift_in_template_arg,
                          SourceRange(Actions.getExprRange(LHS.get()).getBegin(),
                                      Actions.getExprRange(RHS.get()).getEnd()));
 
@@ -741,19 +741,19 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
           REVERTABLE_TYPE_TRAIT(__is_void);
 #undef REVERTABLE_TYPE_TRAIT
 #undef RTT_JOIN
-          }
-
-          // If we find that this is in fact the name of a type trait,
-          // update the token kind in place and parse again to treat it as
-          // the appropriate kind of type trait.
-          llvm::SmallDenseMap<IdentifierInfo *, tok::TokenKind>::iterator Known
-            = RevertableTypeTraits.find(II);
-          if (Known != RevertableTypeTraits.end()) {
-            Tok.setKind(Known->second);
-            return ParseCastExpression(isUnaryExpression, isAddressOfOperand,
-                                       NotCastExpr, isTypeCast);
-          }
         }
+
+        // If we find that this is in fact the name of a type trait,
+        // update the token kind in place and parse again to treat it as
+        // the appropriate kind of type trait.
+        llvm::SmallDenseMap<IdentifierInfo *, tok::TokenKind>::iterator Known
+          = RevertableTypeTraits.find(II);
+        if (Known != RevertableTypeTraits.end()) {
+          Tok.setKind(Known->second);
+          return ParseCastExpression(isUnaryExpression, isAddressOfOperand,
+                                     NotCastExpr, isTypeCast);
+        }
+      }
 
       if (Next.is(tok::coloncolon) ||
           (!ColonIsSacred && Next.is(tok::colon)) ||
@@ -1371,7 +1371,7 @@ Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
         CommaLocsTy ExecConfigCommaLocs;
         SourceLocation OpenLoc = ConsumeToken();
 
-        if (ParseExpressionList(ExecConfigExprs, ExecConfigCommaLocs)) {
+        if (ParseSimpleExpressionList(ExecConfigExprs, ExecConfigCommaLocs)) {
           LHS = ExprError();
         }
 
@@ -1457,7 +1457,19 @@ Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
       ParsedType ObjectType;
       bool MayBePseudoDestructor = false;
       if (getLangOpts().CPlusPlus && !LHS.isInvalid()) {
-        LHS = Actions.ActOnStartCXXMemberReference(getCurScope(), LHS.take(),
+        Expr *Base = LHS.take();
+        const Type* BaseType = Base->getType().getTypePtrOrNull();
+        if (BaseType && Tok.is(tok::l_paren) &&
+            (BaseType->isFunctionType() ||
+             BaseType->getAsPlaceholderType()->getKind() ==
+                 BuiltinType::BoundMember)) {
+          Diag(OpLoc, diag::err_function_is_not_record)
+            << (OpKind == tok::arrow) << Base->getSourceRange()
+            << FixItHint::CreateRemoval(OpLoc);
+          return ParsePostfixExpressionSuffix(Base);
+        }
+
+        LHS = Actions.ActOnStartCXXMemberReference(getCurScope(), Base,
                                                    OpLoc, OpKind, ObjectType,
                                                    MayBePseudoDestructor);
         if (LHS.isInvalid())
@@ -2129,7 +2141,7 @@ Parser::ParseParenExpression(ParenParseOption &ExprType, bool stopIfCastExpr,
     ExprVector ArgExprs;
     CommaLocsTy CommaLocs;
 
-    if (!ParseExpressionList(ArgExprs, CommaLocs)) {
+    if (!ParseSimpleExpressionList(ArgExprs, CommaLocs)) {
       ExprType = SimpleExpr;
       Result = Actions.ActOnParenListExpr(OpenLoc, Tok.getLocation(),
                                           ArgExprs);
@@ -2353,6 +2365,32 @@ bool Parser::ParseExpressionList(SmallVectorImpl<Expr*> &Exprs,
 
     if (Tok.isNot(tok::comma))
       return false;
+    // Move to the next argument, remember where the comma was.
+    CommaLocs.push_back(ConsumeToken());
+  }
+}
+
+/// ParseSimpleExpressionList - A simple comma-separated list of expressions,
+/// used for misc language extensions.
+///
+/// \verbatim
+///       simple-expression-list:
+///         assignment-expression
+///         simple-expression-list , assignment-expression
+/// \endverbatim
+bool
+Parser::ParseSimpleExpressionList(SmallVectorImpl<Expr*> &Exprs,
+                                  SmallVectorImpl<SourceLocation> &CommaLocs) {
+  while (1) {
+    ExprResult Expr = ParseAssignmentExpression();
+    if (Expr.isInvalid())
+      return true;
+
+    Exprs.push_back(Expr.release());
+
+    if (Tok.isNot(tok::comma))
+      return false;
+
     // Move to the next argument, remember where the comma was.
     CommaLocs.push_back(ConsumeToken());
   }

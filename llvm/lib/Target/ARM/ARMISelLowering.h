@@ -298,6 +298,9 @@ namespace llvm {
     using TargetLowering::isZExtFree;
     virtual bool isZExtFree(SDValue Val, EVT VT2) const;
 
+    virtual bool allowTruncateForTailCall(Type *Ty1, Type *Ty2) const;
+
+
     /// isLegalAddressingMode - Return true if the addressing mode represented
     /// by AM is legal for this target, for a load/store of the specified type.
     virtual bool isLegalAddressingMode(const AddrMode &AM, Type *Ty)const;
@@ -417,7 +420,7 @@ namespace llvm {
                           RegsToPassVector &RegsToPass,
                           CCValAssign &VA, CCValAssign &NextVA,
                           SDValue &StackPtr,
-                          SmallVector<SDValue, 8> &MemOpChains,
+                          SmallVectorImpl<SDValue> &MemOpChains,
                           ISD::ArgFlagsTy Flags) const;
     SDValue GetF64FormalArgument(CCValAssign &VA, CCValAssign &NextVA,
                                  SDValue &Root, SelectionDAG &DAG,
@@ -457,6 +460,18 @@ namespace llvm {
                             const ARMSubtarget *ST) const;
     SDValue LowerBUILD_VECTOR(SDValue Op, SelectionDAG &DAG,
                               const ARMSubtarget *ST) const;
+    SDValue LowerDivRem(SDValue Op, SelectionDAG &DAG) const;
+
+    /// isFMAFasterThanFMulAndFAdd - Return true if an FMA operation is faster
+    /// than a pair of fmul and fadd instructions. fmuladd intrinsics will be
+    /// expanded to FMAs when this method returns true, otherwise fmuladd is
+    /// expanded to fmul + fadd.
+    ///
+    /// ARM supports both fused and unfused multiply-add operations; we already
+    /// lower a pair of fmul and fadd to the latter so it's not clear that there
+    /// would be a gain or that the gain would be worthwhile enough to risk
+    /// correctness bugs.
+    virtual bool isFMAFasterThanFMulAndFAdd(EVT VT) const { return false; }
 
     SDValue ReconstructShuffle(SDValue Op, SelectionDAG &DAG) const;
 

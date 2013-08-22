@@ -73,22 +73,6 @@ private:
   int v_;
 };
 
-/// copy_option - An "enum class" enumeration of copy semantics for copy
-///               operations.
-struct copy_option {
-  enum _ {
-    fail_if_exists,
-    overwrite_if_exists
-  };
-
-  copy_option(_ v) : v_(v) {}
-  explicit copy_option(int v) : v_(_(v)) {}
-  operator int() const {return v_;}
-
-private:
-  int v_;
-};
-
 /// space_info - Self explanatory.
 struct space_info {
   uint64_t capacity;
@@ -96,33 +80,28 @@ struct space_info {
   uint64_t available;
 };
 
-
 enum perms {
-  no_perms     = 0,
-  owner_read   = 0400, 
-  owner_write  = 0200, 
-  owner_exe    = 0100, 
-  owner_all    = owner_read | owner_write | owner_exe,
-  group_read   =  040, 
-  group_write  =  020, 
-  group_exe    =  010, 
-  group_all    = group_read | group_write | group_exe,
-  others_read  =   04, 
-  others_write =   02, 
-  others_exe   =   01, 
-  others_all   = others_read | others_write | others_exe, 
-  all_read     = owner_read | group_read | others_read,
-  all_write    = owner_write | group_write | others_write,
-  all_exe      = owner_exe | group_exe | others_exe,
-  all_all      = owner_all | group_all | others_all,
-  set_uid_on_exe  = 04000, 
-  set_gid_on_exe  = 02000, 
-  sticky_bit      = 01000,
-  perms_mask      = all_all | set_uid_on_exe | set_gid_on_exe | sticky_bit, 
-  perms_not_known = 0xFFFF,
-  add_perms       = 0x1000,
-  remove_perms    = 0x2000, 
-  symlink_perms   = 0x4000
+  no_perms = 0,
+  owner_read = 0400,
+  owner_write = 0200,
+  owner_exe = 0100,
+  owner_all = owner_read | owner_write | owner_exe,
+  group_read = 040,
+  group_write = 020,
+  group_exe = 010,
+  group_all = group_read | group_write | group_exe,
+  others_read = 04,
+  others_write = 02,
+  others_exe = 01,
+  others_all = others_read | others_write | others_exe,
+  all_read = owner_read | group_read | others_read,
+  all_write = owner_write | group_write | others_write,
+  all_exe = owner_exe | group_exe | others_exe,
+  all_all = owner_all | group_all | others_all,
+  set_uid_on_exe = 04000,
+  set_gid_on_exe = 02000,
+  sticky_bit = 01000,
+  perms_not_known = 0xFFFF
 };
 
 // Helper functions so that you can use & and | to manipulate perms bits:
@@ -146,8 +125,25 @@ inline perms operator~(perms x) {
   return static_cast<perms>(~static_cast<unsigned short>(x));
 }
 
+class UniqueID {
+  uint64_t Device;
+  uint64_t File;
 
- 
+public:
+  UniqueID() {}
+  UniqueID(uint64_t Device, uint64_t File) : Device(Device), File(File) {}
+  bool operator==(const UniqueID &Other) const {
+    return Device == Other.Device && File == Other.File;
+  }
+  bool operator!=(const UniqueID &Other) const { return !(*this == Other); }
+  bool operator<(const UniqueID &Other) const {
+    return Device < Other.Device ||
+           (Device == Other.Device && File < Other.File);
+  }
+  uint64_t getDevice() const { return Device; }
+  uint64_t getFile() const { return File; }
+};
+
 /// file_status - Represents the result of a call to stat and friends. It has
 ///               a platform specific member to store the result.
 class file_status
@@ -158,6 +154,7 @@ class file_status
   time_t fs_st_mtime;
   uid_t fs_st_uid;
   gid_t fs_st_gid;
+  off_t fs_st_size;
   #elif defined (LLVM_ON_WIN32)
   uint32_t LastWriteTimeHigh;
   uint32_t LastWriteTimeLow;
@@ -168,29 +165,48 @@ class file_status
   uint32_t FileIndexLow;
   #endif
   friend bool equivalent(file_status A, file_status B);
-  friend error_code status(const Twine &path, file_status &result);
-  friend error_code getUniqueID(const Twine Path, uint64_t &Result);
   file_type Type;
   perms Perms;
 public:
-  explicit file_status(file_type v=file_type::status_error, 
-                      perms prms=perms_not_known)
-    : Type(v), Perms(prms) {}
+  file_status() : Type(file_type::status_error) {}
+  file_status(file_type Type) : Type(Type) {}
+
+  #if defined(LLVM_ON_UNIX)
+    file_status(file_type Type, perms Perms, dev_t Dev, ino_t Ino, time_t MTime,
+                uid_t UID, gid_t GID, off_t Size)
+        : fs_st_dev(Dev), fs_st_ino(Ino), fs_st_mtime(MTime), fs_st_uid(UID),
+          fs_st_gid(GID), fs_st_size(Size), Type(Type), Perms(Perms) {}
+  #elif defined(LLVM_ON_WIN32)
+    file_status(file_type Type, uint32_t LastWriteTimeHigh,
+                uint32_t LastWriteTimeLow, uint32_t VolumeSerialNumber,
+                uint32_t FileSizeHigh, uint32_t FileSizeLow,
+                uint32_t FileIndexHigh, uint32_t FileIndexLow)
+        : LastWriteTimeHigh(LastWriteTimeHigh),
+          LastWriteTimeLow(LastWriteTimeLow),
+          VolumeSerialNumber(VolumeSerialNumber), FileSizeHigh(FileSizeHigh),
+          FileSizeLow(FileSizeLow), FileIndexHigh(FileIndexHigh),
+          FileIndexLow(FileIndexLow), Type(Type), Perms(perms_not_known) {}
+  #endif
 
   // getters
   file_type type() const { return Type; }
   perms permissions() const { return Perms; }
   TimeValue getLastModificationTime() const;
+  UniqueID getUniqueID() const;
 
   #if defined(LLVM_ON_UNIX)
   uint32_t getUser() const { return fs_st_uid; }
   uint32_t getGroup() const { return fs_st_gid; }
+  uint64_t getSize() const { return fs_st_size; }
   #elif defined (LLVM_ON_WIN32)
   uint32_t getUser() const {
     return 9999; // Not applicable to Windows, so...
   }
   uint32_t getGroup() const {
     return 9999; // Not applicable to Windows, so...
+  }
+  uint64_t getSize() const {
+    return (uint64_t(FileSizeHigh) << 32) + FileSizeLow;
   }
   #endif
 
@@ -253,18 +269,6 @@ private:
 /// @returns errc::success if \a path has been made absolute, otherwise a
 ///          platform specific error_code.
 error_code make_absolute(SmallVectorImpl<char> &path);
-
-/// @brief Copy the file at \a from to the path \a to.
-///
-/// @param from The path to copy the file from.
-/// @param to The path to copy the file to.
-/// @param copt Behavior if \a to already exists.
-/// @returns errc::success if the file has been successfully copied.
-///          errc::file_exists if \a to already exists and \a copt ==
-///          copy_option::fail_if_exists. Otherwise a platform specific
-///          error_code.
-error_code copy_file(const Twine &from, const Twine &to,
-                     copy_option copt = copy_option::fail_if_exists);
 
 /// @brief Create all the non-existent directories in path.
 ///
@@ -434,14 +438,6 @@ inline bool equivalent(const Twine &A, const Twine &B) {
   return !equivalent(A, B, result) && result;
 }
 
-/// @brief Get file size.
-///
-/// @param path Input path.
-/// @param result Set to the size of the file in \a path.
-/// @returns errc::success if result has been successfully set, otherwise a
-///          platform specific error_code.
-error_code file_size(const Twine &path, uint64_t &result);
-
 /// @brief Does status represent a directory?
 ///
 /// @param status A file_status previously returned from status.
@@ -456,6 +452,13 @@ bool is_directory(file_status status);
 /// @returns errc::success if result has been successfully set, otherwise a
 ///          platform specific error_code.
 error_code is_directory(const Twine &path, bool &result);
+
+/// @brief Simpler version of is_directory for clients that don't need to
+///        differentiate between an error and false.
+inline bool is_directory(const Twine &Path) {
+  bool Result;
+  return !is_directory(Path, Result) && Result;
+}
 
 /// @brief Does status represent a regular file?
 ///
@@ -522,12 +525,23 @@ error_code is_symlink(const Twine &path, bool &result);
 ///          platform specific error_code.
 error_code status(const Twine &path, file_status &result);
 
-/// @brief Modifies permission bits on a file
+/// @brief A version for when a file descriptor is already available.
+error_code status(int FD, file_status &Result);
+
+/// @brief Get file size.
 ///
-/// @param path Input path.
-/// @returns errc::success if permissions have been changed, otherwise a
+/// @param Path Input path.
+/// @param Result Set to the size of the file in \a Path.
+/// @returns errc::success if result has been successfully set, otherwise a
 ///          platform specific error_code.
-error_code permissions(const Twine &path, perms prms);
+inline error_code file_size(const Twine &Path, uint64_t &Result) {
+  file_status Status;
+  error_code EC = status(Path, Status);
+  if (EC)
+    return EC;
+  Result = Status.getSize();
+  return error_code::success();
+}
 
 error_code setLastModificationAndAccessTime(int FD, TimeValue Time);
 
@@ -545,38 +559,84 @@ bool status_known(file_status s);
 ///          platform specific error_code.
 error_code status_known(const Twine &path, bool &result);
 
-/// @brief Generate a unique path and open it as a file.
+/// @brief Create a uniquely named file.
 ///
 /// Generates a unique path suitable for a temporary file and then opens it as a
 /// file. The name is based on \a model with '%' replaced by a random char in
 /// [0-9a-f]. If \a model is not an absolute path, a suitable temporary
 /// directory will be prepended.
 ///
+/// Example: clang-%%-%%-%%-%%-%%.s => clang-a0-b1-c2-d3-e4.s
+///
 /// This is an atomic operation. Either the file is created and opened, or the
 /// file system is left untouched.
 ///
-/// clang-%%-%%-%%-%%-%%.s => /tmp/clang-a0-b1-c2-d3-e4.s
+/// The intendend use is for files that are to be kept, possibly after
+/// renaming them. For example, when running 'clang -c foo.o', the file can
+/// be first created as foo-abc123.o and then renamed.
 ///
-/// @param model Name to base unique path off of.
-/// @param result_fd Set to the opened file's file descriptor.
-/// @param result_path Set to the opened file's absolute path.
-/// @param makeAbsolute If true and \a model is not an absolute path, a temp
-///        directory will be prepended.
-/// @param mode Set to the file open mode; since this is most often used for
-///        temporary files, mode defaults to owner_read | owner_write.
-/// @returns errc::success if result_{fd,path} have been successfully set,
+/// @param Model Name to base unique path off of.
+/// @param ResultFD Set to the opened file's file descriptor.
+/// @param ResultPath Set to the opened file's absolute path.
+/// @returns errc::success if Result{FD,Path} have been successfully set,
 ///          otherwise a platform specific error_code.
-error_code unique_file(const Twine &model, int &result_fd,
-                       SmallVectorImpl<char> &result_path,
-                       bool makeAbsolute = true,
-                       unsigned mode = owner_read | owner_write);
+error_code createUniqueFile(const Twine &Model, int &ResultFD,
+                            SmallVectorImpl<char> &ResultPath,
+                            unsigned Mode = all_read | all_write);
 
 /// @brief Simpler version for clients that don't want an open file.
-error_code unique_file(const Twine &Model, SmallVectorImpl<char> &ResultPath,
-                       bool MakeAbsolute = true);
+error_code createUniqueFile(const Twine &Model,
+                            SmallVectorImpl<char> &ResultPath);
+
+/// @brief Create a file in the system temporary directory.
+///
+/// The filename is of the form prefix-random_chars.suffix. Since the directory
+/// is not know to the caller, Prefix and Suffix cannot have path separators.
+/// The files are created with mode 0600.
+///
+/// This should be used for things like a temporary .s that is removed after
+/// running the assembler.
+error_code createTemporaryFile(const Twine &Prefix, StringRef Suffix,
+                               int &ResultFD,
+                               SmallVectorImpl<char> &ResultPath);
+
+/// @brief Simpler version for clients that don't want an open file.
+error_code createTemporaryFile(const Twine &Prefix, StringRef Suffix,
+                               SmallVectorImpl<char> &ResultPath);
 
 error_code createUniqueDirectory(const Twine &Prefix,
                                  SmallVectorImpl<char> &ResultPath);
+
+enum OpenFlags {
+  F_None = 0,
+
+  /// F_Excl - When opening a file, this flag makes raw_fd_ostream
+  /// report an error if the file already exists.
+  F_Excl = 1,
+
+  /// F_Append - When opening a file, if it already exists append to the
+  /// existing file instead of returning an error.  This may not be specified
+  /// with F_Excl.
+  F_Append = 2,
+
+  /// F_Binary - The file should be opened in binary mode on platforms that
+  /// make this distinction.
+  F_Binary = 4
+};
+
+inline OpenFlags operator|(OpenFlags A, OpenFlags B) {
+  return OpenFlags(unsigned(A) | unsigned(B));
+}
+
+inline OpenFlags &operator|=(OpenFlags &A, OpenFlags B) {
+  A = A | B;
+  return A;
+}
+
+error_code openFileForWrite(const Twine &Name, int &ResultFD, OpenFlags Flags,
+                            unsigned Mode = 0666);
+
+error_code openFileForRead(const Twine &Name, int &ResultFD);
 
 /// @brief Canonicalize path.
 ///
@@ -621,7 +681,7 @@ file_magic identify_magic(StringRef magic);
 ///          platform specific error_code.
 error_code identify_magic(const Twine &path, file_magic &result);
 
-error_code getUniqueID(const Twine Path, uint64_t &Result);
+error_code getUniqueID(const Twine Path, UniqueID &Result);
 
 /// This class represents a memory mapped file. It is based on
 /// boost::iostreams::mapped_file.
@@ -809,7 +869,7 @@ public:
   }
 
   /// Construct end iterator.
-  directory_iterator() : State(new detail::DirIterState) {}
+  directory_iterator() : State(0) {}
 
   // No operator++ because we need error_code.
   directory_iterator &increment(error_code &ec) {
@@ -821,6 +881,12 @@ public:
   const directory_entry *operator->() const { return &State->CurrentEntry; }
 
   bool operator==(const directory_iterator &RHS) const {
+    if (State == RHS.State)
+      return true;
+    if (RHS.State == 0)
+      return State->CurrentEntry == directory_entry();
+    if (State == 0)
+      return RHS.State->CurrentEntry == directory_entry();
     return State->CurrentEntry == RHS.State->CurrentEntry;
   }
 
@@ -860,7 +926,7 @@ public:
   }
   // No operator++ because we need error_code.
   recursive_directory_iterator &increment(error_code &ec) {
-    static const directory_iterator end_itr;
+    const directory_iterator end_itr;
 
     if (State->HasNoPushRequest)
       State->HasNoPushRequest = false;
@@ -907,7 +973,7 @@ public:
     assert(State && "Cannot pop and end itertor!");
     assert(State->Level > 0 && "Cannot pop an iterator with level < 1");
 
-    static const directory_iterator end_itr;
+    const directory_iterator end_itr;
     error_code ec;
     do {
       if (ec)

@@ -392,7 +392,7 @@ def vrrc : RegisterOperand<VRRC> {
   let ParserMatchClass = PPCRegVRRCAsmOperand;
 }
 def PPCRegCRBITRCAsmOperand : AsmOperandClass {
-  let Name = "RegCRBITRC"; let PredicateMethod = "isRegNumber";
+  let Name = "RegCRBITRC"; let PredicateMethod = "isCRBitNumber";
 }
 def crbitrc : RegisterOperand<CRBITRC> {
   let ParserMatchClass = PPCRegCRBITRCAsmOperand;
@@ -1093,6 +1093,7 @@ def TAILBA   : IForm<18, 0, 0, (outs), (ins abscalltarget:$dst),
 }
 
 let hasSideEffects = 1, isBarrier = 1, usesCustomInserter = 1 in {
+  let Defs = [CTR] in
   def EH_SjLj_SetJmp32  : Pseudo<(outs gprc:$dst), (ins memr:$buf),
                             "#EH_SJLJ_SETJMP32",
                             [(set i32:$dst, (PPCeh_sjlj_setjmp addr:$buf))]>,
@@ -1237,6 +1238,15 @@ def STWCX : XForm_1<31, 150, (outs), (ins gprc:$rS, memrr:$dst),
 
 let isTerminator = 1, isBarrier = 1, hasCtrlDep = 1 in
 def TRAP  : XForm_24<31, 4, (outs), (ins), "trap", LdStLoad, [(trap)]>;
+
+def TWI : DForm_base<3, (outs), (ins u5imm:$to, gprc:$rA, s16imm:$imm),
+                     "twi $to, $rA, $imm", IntTrapW, []>;
+def TW : XForm_1<31, 4, (outs), (ins u5imm:$to, gprc:$rA, gprc:$rB),
+                 "tw $to, $rA, $rB", IntTrapW, []>;
+def TDI : DForm_base<2, (outs), (ins u5imm:$to, g8rc:$rA, s16imm:$imm),
+                     "tdi $to, $rA, $imm", IntTrapD, []>;
+def TD : XForm_1<31, 68, (outs), (ins u5imm:$to, g8rc:$rA, g8rc:$rB),
+                 "td $to, $rA, $rB", IntTrapD, []>;
 
 //===----------------------------------------------------------------------===//
 // PPC32 Load Instructions.
@@ -1676,23 +1686,13 @@ let Uses = [RM] in {
                           "frsp", "$frD, $frB", FPGeneral,
                           [(set f32:$frD, (fround f64:$frB))]>;
 
-  // The frin -> nearbyint mapping is valid only in fast-math mode.
   let Interpretation64Bit = 1 in
   defm FRIND  : XForm_26r<63, 392, (outs f8rc:$frD), (ins f8rc:$frB),
                           "frin", "$frD, $frB", FPGeneral,
-                          [(set f64:$frD, (fnearbyint f64:$frB))]>;
+                          [(set f64:$frD, (frnd f64:$frB))]>;
   defm FRINS  : XForm_26r<63, 392, (outs f4rc:$frD), (ins f4rc:$frB),
                           "frin", "$frD, $frB", FPGeneral,
-                          [(set f32:$frD, (fnearbyint f32:$frB))]>;
-  }
-
-  // These pseudos expand to rint but also set FE_INEXACT when the result does
-  // not equal the argument.
-  let usesCustomInserter = 1, Defs = [RM] in { // FIXME: Model FPSCR!
-    def FRINDrint : Pseudo<(outs f8rc:$frD), (ins f8rc:$frB),
-                            "#FRINDrint", [(set f64:$frD, (frint f64:$frB))]>;
-    def FRINSrint : Pseudo<(outs f4rc:$frD), (ins f4rc:$frB),
-                            "#FRINSrint", [(set f32:$frD, (frint f32:$frB))]>;
+                          [(set f32:$frD, (frnd f32:$frB))]>;
   }
 
   let neverHasSideEffects = 1 in {
@@ -1843,6 +1843,9 @@ def MFSPR : XFXForm_1<31, 339, (outs gprc:$RT), (ins i32imm:$SPR),
                       "mfspr $RT, $SPR", SprMFSPR>;
 def MTSPR : XFXForm_1<31, 467, (outs), (ins i32imm:$SPR, gprc:$RT),
                       "mtspr $SPR, $RT", SprMTSPR>;
+
+def MFTB : XFXForm_1<31, 371, (outs gprc:$RT), (ins i32imm:$SPR),
+                     "mftb $RT, $SPR", SprMFTB>;
 
 let Uses = [CTR] in {
 def MFCTR : XFXForm_1_ext<31, 339, 9, (outs gprc:$rT), (ins),
@@ -2326,6 +2329,9 @@ def : InstAlias<"crnot $bx, $by", (CRNOR crbitrc:$bx, crbitrc:$by, crbitrc:$by)>
 def : InstAlias<"mtxer $Rx", (MTSPR 1, gprc:$Rx)>;
 def : InstAlias<"mfxer $Rx", (MFSPR gprc:$Rx, 1)>;
 
+def : InstAlias<"mftb $Rx", (MFTB gprc:$Rx, 268)>;
+def : InstAlias<"mftbu $Rx", (MFTB gprc:$Rx, 269)>;
+
 def : InstAlias<"xnop", (XORI R0, R0, 0)>;
 
 def : InstAlias<"mr $rA, $rB", (OR8 g8rc:$rA, g8rc:$rB, g8rc:$rB)>;
@@ -2568,4 +2574,35 @@ def : InstAlias<"cmpdi $rA, $imm", (CMPDI CR0, g8rc:$rA, s16imm:$imm)>;
 def : InstAlias<"cmpd $rA, $rB", (CMPD CR0, g8rc:$rA, g8rc:$rB)>;
 def : InstAlias<"cmpldi $rA, $imm", (CMPLDI CR0, g8rc:$rA, u16imm:$imm)>;
 def : InstAlias<"cmpld $rA, $rB", (CMPLD CR0, g8rc:$rA, g8rc:$rB)>;
+
+def : InstAlias<"cmpi $bf, 0, $rA, $imm", (CMPWI crrc:$bf, gprc:$rA, s16imm:$imm)>;
+def : InstAlias<"cmp $bf, 0, $rA, $rB", (CMPW crrc:$bf, gprc:$rA, gprc:$rB)>;
+def : InstAlias<"cmpli $bf, 0, $rA, $imm", (CMPLWI crrc:$bf, gprc:$rA, u16imm:$imm)>;
+def : InstAlias<"cmpl $bf, 0, $rA, $rB", (CMPLW crrc:$bf, gprc:$rA, gprc:$rB)>;
+def : InstAlias<"cmpi $bf, 1, $rA, $imm", (CMPDI crrc:$bf, g8rc:$rA, s16imm:$imm)>;
+def : InstAlias<"cmp $bf, 1, $rA, $rB", (CMPD crrc:$bf, g8rc:$rA, g8rc:$rB)>;
+def : InstAlias<"cmpli $bf, 1, $rA, $imm", (CMPLDI crrc:$bf, g8rc:$rA, u16imm:$imm)>;
+def : InstAlias<"cmpl $bf, 1, $rA, $rB", (CMPLD crrc:$bf, g8rc:$rA, g8rc:$rB)>;
+
+multiclass TrapExtendedMnemonic<string name, int to> {
+  def : InstAlias<"td"#name#"i $rA, $imm", (TDI to, g8rc:$rA, s16imm:$imm)>;
+  def : InstAlias<"td"#name#" $rA, $rB", (TD to, g8rc:$rA, g8rc:$rB)>;
+  def : InstAlias<"tw"#name#"i $rA, $imm", (TWI to, gprc:$rA, s16imm:$imm)>;
+  def : InstAlias<"tw"#name#" $rA, $rB", (TW to, gprc:$rA, gprc:$rB)>;
+}
+defm : TrapExtendedMnemonic<"lt", 16>;
+defm : TrapExtendedMnemonic<"le", 20>;
+defm : TrapExtendedMnemonic<"eq", 4>;
+defm : TrapExtendedMnemonic<"ge", 12>;
+defm : TrapExtendedMnemonic<"gt", 8>;
+defm : TrapExtendedMnemonic<"nl", 12>;
+defm : TrapExtendedMnemonic<"ne", 24>;
+defm : TrapExtendedMnemonic<"ng", 20>;
+defm : TrapExtendedMnemonic<"llt", 2>;
+defm : TrapExtendedMnemonic<"lle", 6>;
+defm : TrapExtendedMnemonic<"lge", 5>;
+defm : TrapExtendedMnemonic<"lgt", 1>;
+defm : TrapExtendedMnemonic<"lnl", 5>;
+defm : TrapExtendedMnemonic<"lng", 6>;
+defm : TrapExtendedMnemonic<"u", 31>;
 

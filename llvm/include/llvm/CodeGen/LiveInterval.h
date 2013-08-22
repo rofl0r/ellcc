@@ -144,17 +144,6 @@ namespace llvm {
     Ranges ranges;       // the ranges in which this register is live
     VNInfoList valnos;   // value#'s
 
-    struct InstrSlots {
-      enum {
-        LOAD  = 0,
-        USE   = 1,
-        DEF   = 2,
-        STORE = 3,
-        NUM   = 4
-      };
-
-    };
-
     LiveInterval(unsigned Reg, float Weight)
       : reg(Reg), weight(Weight) {}
 
@@ -251,7 +240,7 @@ namespace llvm {
 
     /// RenumberValues - Renumber all values in order of appearance and remove
     /// unused values.
-    void RenumberValues(LiveIntervals &lis);
+    void RenumberValues();
 
     /// MergeValueNumberInto - This method is called when two value nubmers
     /// are found to be equivalent.  This eliminates V1, replacing all
@@ -389,15 +378,8 @@ namespace llvm {
     void join(LiveInterval &Other,
               const int *ValNoAssignments,
               const int *RHSValNoAssignments,
-              SmallVector<VNInfo*, 16> &NewVNInfo,
+              SmallVectorImpl<VNInfo *> &NewVNInfo,
               MachineRegisterInfo *MRI);
-
-    /// isInOneLiveRange - Return true if the range specified is entirely in the
-    /// a single LiveRange of the live interval.
-    bool isInOneLiveRange(SlotIndex Start, SlotIndex End) const {
-      const_iterator r = find(Start);
-      return r != end() && r->containsRange(Start, End);
-    }
 
     /// True iff this live range is a single segment that lies between the
     /// specified boundaries, exclusively. Vregs live across a backedge are not

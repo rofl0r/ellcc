@@ -493,9 +493,9 @@ SDValue NVPTXTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
                                        SmallVectorImpl<SDValue> &InVals) const {
   SelectionDAG &DAG = CLI.DAG;
   SDLoc dl = CLI.DL;
-  SmallVector<ISD::OutputArg, 32> &Outs = CLI.Outs;
-  SmallVector<SDValue, 32> &OutVals = CLI.OutVals;
-  SmallVector<ISD::InputArg, 32> &Ins = CLI.Ins;
+  SmallVectorImpl<ISD::OutputArg> &Outs = CLI.Outs;
+  SmallVectorImpl<SDValue> &OutVals = CLI.OutVals;
+  SmallVectorImpl<ISD::InputArg> &Ins = CLI.Ins;
   SDValue Chain = CLI.Chain;
   SDValue Callee = CLI.Callee;
   bool &isTailCall = CLI.IsTailCall;
@@ -1316,7 +1316,15 @@ SDValue NVPTXTargetLowering::getExtSymb(SelectionDAG &DAG, const char *inname,
 
 SDValue
 NVPTXTargetLowering::getParamSymbol(SelectionDAG &DAG, int idx, EVT v) const {
-  return getExtSymb(DAG, ".PARAM", idx, v);
+  std::string ParamSym;
+  raw_string_ostream ParamStr(ParamSym);
+
+  ParamStr << DAG.getMachineFunction().getName() << "_param_" << idx;
+  ParamStr.flush();
+
+  std::string *SavedStr =
+    nvTM->getManagedStrPool()->getManagedString(ParamSym.c_str());
+  return DAG.getTargetExternalSymbol(SavedStr->c_str(), v);
 }
 
 SDValue NVPTXTargetLowering::getParamHelpSymbol(SelectionDAG &DAG, int idx) {

@@ -40,7 +40,7 @@ namespace llvm {
   FunctionPass *createPPCJITCodeEmitterPass(PPCTargetMachine &TM,
                                             JITCodeEmitter &MCE);
   void LowerPPCMachineInstrToMCInst(const MachineInstr *MI, MCInst &OutMI,
-                                    AsmPrinter &AP);
+                                    AsmPrinter &AP, bool isDarwin);
 
   /// \brief Creates an PPC-specific Target Transformation Info pass.
   ImmutablePass *createPPCTargetTransformInfoPass(const PPCTargetMachine *TM);
@@ -85,7 +85,10 @@ namespace llvm {
     /// into memory operations.
     MO_DTPREL_LO = 5 << 4,
     MO_TLSLD_LO  = 6 << 4,
-    MO_TOC_LO    = 7 << 4
+    MO_TOC_LO    = 7 << 4,
+
+    // Symbol for VK_PPC_TLS fixup attached to an ADD instruction
+    MO_TLS       = 8 << 4
   };
   } // end namespace PPCII
   

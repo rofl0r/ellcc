@@ -18,6 +18,7 @@
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/Twine.h"
 #include "llvm/MC/MCAsmLayout.h"
 #include "llvm/MC/MCAssembler.h"
 #include "llvm/MC/MCContext.h"
@@ -474,18 +475,21 @@ void WinCOFFObjectWriter::DefineSymbol(MCSymbolData const &SymbolData,
 /// name into the string table if needed
 void WinCOFFObjectWriter::MakeSectionReal(COFFSection &S, size_t Number) {
   if (S.Name.size() > COFF::NameSize) {
-    size_t StringTableEntry = Strings.insert(S.Name.c_str());
+    const unsigned Max6DecimalSize = 999999;
+    const unsigned Max7DecimalSize = 9999999;
+    uint64_t StringTableEntry = Strings.insert(S.Name.c_str());
 
-    // FIXME: Why is this number 999999? This number is never mentioned in the
-    // spec. I'm assuming this is due to the printed value needing to fit into
-    // the S.Header.Name field. In which case why not 9999999 (7 9's instead of
-    // 6)? The spec does not state if this entry should be null terminated in
-    // this case, and thus this seems to be the best way to do it. I think I
-    // just solved my own FIXME...
-    if (StringTableEntry > 999999)
-      report_fatal_error("COFF string table is greater than 999999 bytes.");
-
-    std::sprintf(S.Header.Name, "/%d", unsigned(StringTableEntry));
+    if (StringTableEntry <= Max6DecimalSize) {
+      std::sprintf(S.Header.Name, "/%d", unsigned(StringTableEntry));
+    } else if (StringTableEntry <= Max7DecimalSize) {
+      // With seven digits, we have to skip the terminating null. Because
+      // sprintf always appends it, we use a larger temporary buffer.
+      char buffer[9] = { };
+      std::sprintf(buffer, "/%d", unsigned(StringTableEntry));
+      std::memcpy(S.Header.Name, buffer, 8);
+    } else {
+      report_fatal_error("COFF string table is greater than 9,999,999 bytes.");
+    }
   } else
     std::memcpy(S.Header.Name, S.Name.c_str(), S.Name.size());
 
@@ -636,8 +640,9 @@ void WinCOFFObjectWriter::RecordRelocation(const MCAssembler &Asm,
                                            uint64_t &FixedValue) {
   assert(Target.getSymA() != NULL && "Relocation must reference a symbol!");
 
-  const MCSymbol *A = &Target.getSymA()->getSymbol();
-  MCSymbolData &A_SD = Asm.getSymbolData(*A);
+  const MCSymbol &Symbol = Target.getSymA()->getSymbol();
+  const MCSymbol &A = Symbol.AliasedSymbol();
+  MCSymbolData &A_SD = Asm.getSymbolData(A);
 
   MCSectionData const *SectionData = Fragment->getParent();
 
@@ -707,10 +712,13 @@ void WinCOFFObjectWriter::WriteObject(MCAssembler &Asm,
   // Assign symbol and section indexes and offsets.
   Header.NumberOfSections = 0;
 
+  DenseMap<COFFSection *, uint16_t> SectionIndices;
   for (sections::iterator i = Sections.begin(),
                           e = Sections.end(); i != e; i++) {
     if (Layout.getSectionAddressSize((*i)->MCData) > 0) {
-      MakeSectionReal(**i, ++Header.NumberOfSections);
+      size_t Number = ++Header.NumberOfSections;
+      SectionIndices[*i] = Number;
+      MakeSectionReal(**i, Number);
     } else {
       (*i)->Number = -1;
     }
@@ -753,6 +761,31 @@ void WinCOFFObjectWriter::WriteObject(MCAssembler &Asm,
       coff_symbol->Aux[0].Aux.WeakExternal.TagIndex = coff_symbol->Other->Index;
     }
   }
+
+  // Fixup associative COMDAT sections.
+  for (sections::iterator i = Sections.begin(),
+                          e = Sections.end(); i != e; i++) {
+    if ((*i)->Symbol->Aux[0].Aux.SectionDefinition.Selection !=
+        COFF::IMAGE_COMDAT_SELECT_ASSOCIATIVE)
+      continue;
+
+    const MCSectionCOFF &MCSec = static_cast<const MCSectionCOFF &>(
+                                                    (*i)->MCData->getSection());
+
+    COFFSection *Assoc = SectionMap.lookup(MCSec.getAssocSection());
+    if (!Assoc) {
+      report_fatal_error(Twine("Missing associated COMDAT section ") +
+                         MCSec.getAssocSection()->getSectionName() +
+                         " for section " + MCSec.getSectionName());
+    }
+
+    // Skip this section if the associated section is unused.
+    if (Assoc->Number == -1)
+      continue;
+
+    (*i)->Symbol->Aux[0].Aux.SectionDefinition.Number = SectionIndices[Assoc];
+  }
+
 
   // Assign file offsets to COFF object file structures.
 

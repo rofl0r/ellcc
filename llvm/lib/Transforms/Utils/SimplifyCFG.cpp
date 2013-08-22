@@ -40,12 +40,14 @@
 #include "llvm/Support/ConstantRange.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/NoFolder.h"
+#include "llvm/Support/PatternMatch.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include <algorithm>
 #include <map>
 #include <set>
 using namespace llvm;
+using namespace PatternMatch;
 
 static cl::opt<unsigned>
 PHINodeFoldingThreshold("phi-node-folding-threshold", cl::Hidden, cl::init(1),
@@ -88,7 +90,6 @@ namespace {
 class SimplifyCFGOpt {
   const TargetTransformInfo &TTI;
   const DataLayout *const TD;
-
   Value *isValueEqualityComparison(TerminatorInst *TI);
   BasicBlock *GetValueEqualityComparisonCases(TerminatorInst *TI,
                                std::vector<ValueEqualityComparisonCase> &Cases);
@@ -192,93 +193,6 @@ static void AddPredecessorToBlock(BasicBlock *Succ, BasicBlock *NewPred,
   for (BasicBlock::iterator I = Succ->begin();
        (PN = dyn_cast<PHINode>(I)); ++I)
     PN->addIncoming(PN->getIncomingValueForBlock(ExistPred), NewPred);
-}
-
-
-/// GetIfCondition - Given a basic block (BB) with two predecessors (and at
-/// least one PHI node in it), check to see if the merge at this block is due
-/// to an "if condition".  If so, return the boolean condition that determines
-/// which entry into BB will be taken.  Also, return by references the block
-/// that will be entered from if the condition is true, and the block that will
-/// be entered if the condition is false.
-///
-/// This does no checking to see if the true/false blocks have large or unsavory
-/// instructions in them.
-static Value *GetIfCondition(BasicBlock *BB, BasicBlock *&IfTrue,
-                             BasicBlock *&IfFalse) {
-  PHINode *SomePHI = cast<PHINode>(BB->begin());
-  assert(SomePHI->getNumIncomingValues() == 2 &&
-         "Function can only handle blocks with 2 predecessors!");
-  BasicBlock *Pred1 = SomePHI->getIncomingBlock(0);
-  BasicBlock *Pred2 = SomePHI->getIncomingBlock(1);
-
-  // We can only handle branches.  Other control flow will be lowered to
-  // branches if possible anyway.
-  BranchInst *Pred1Br = dyn_cast<BranchInst>(Pred1->getTerminator());
-  BranchInst *Pred2Br = dyn_cast<BranchInst>(Pred2->getTerminator());
-  if (Pred1Br == 0 || Pred2Br == 0)
-    return 0;
-
-  // Eliminate code duplication by ensuring that Pred1Br is conditional if
-  // either are.
-  if (Pred2Br->isConditional()) {
-    // If both branches are conditional, we don't have an "if statement".  In
-    // reality, we could transform this case, but since the condition will be
-    // required anyway, we stand no chance of eliminating it, so the xform is
-    // probably not profitable.
-    if (Pred1Br->isConditional())
-      return 0;
-
-    std::swap(Pred1, Pred2);
-    std::swap(Pred1Br, Pred2Br);
-  }
-
-  if (Pred1Br->isConditional()) {
-    // The only thing we have to watch out for here is to make sure that Pred2
-    // doesn't have incoming edges from other blocks.  If it does, the condition
-    // doesn't dominate BB.
-    if (Pred2->getSinglePredecessor() == 0)
-      return 0;
-
-    // If we found a conditional branch predecessor, make sure that it branches
-    // to BB and Pred2Br.  If it doesn't, this isn't an "if statement".
-    if (Pred1Br->getSuccessor(0) == BB &&
-        Pred1Br->getSuccessor(1) == Pred2) {
-      IfTrue = Pred1;
-      IfFalse = Pred2;
-    } else if (Pred1Br->getSuccessor(0) == Pred2 &&
-               Pred1Br->getSuccessor(1) == BB) {
-      IfTrue = Pred2;
-      IfFalse = Pred1;
-    } else {
-      // We know that one arm of the conditional goes to BB, so the other must
-      // go somewhere unrelated, and this must not be an "if statement".
-      return 0;
-    }
-
-    return Pred1Br->getCondition();
-  }
-
-  // Ok, if we got here, both predecessors end with an unconditional branch to
-  // BB.  Don't panic!  If both blocks only have a single (identical)
-  // predecessor, and THAT is a conditional branch, then we're all ok!
-  BasicBlock *CommonPred = Pred1->getSinglePredecessor();
-  if (CommonPred == 0 || CommonPred != Pred2->getSinglePredecessor())
-    return 0;
-
-  // Otherwise, if this is a conditional branch, then we can use it!
-  BranchInst *BI = dyn_cast<BranchInst>(CommonPred->getTerminator());
-  if (BI == 0) return 0;
-
-  assert(BI->isConditional() && "Two successors but not conditional?");
-  if (BI->getSuccessor(0) == Pred1) {
-    IfTrue = Pred1;
-    IfFalse = Pred2;
-  } else {
-    IfTrue = Pred2;
-    IfFalse = Pred1;
-  }
-  return BI->getCondition();
 }
 
 /// ComputeSpeculationCost - Compute an abstract "cost" of speculating the
@@ -432,7 +346,24 @@ GatherConstantCompares(Value *V, std::vector<ConstantInt*> &Vals, Value *&Extra,
   // If this is an icmp against a constant, handle this as one of the cases.
   if (ICmpInst *ICI = dyn_cast<ICmpInst>(I)) {
     if (ConstantInt *C = GetConstantInt(I->getOperand(1), TD)) {
+      Value *RHSVal;
+      ConstantInt *RHSC;
+
       if (ICI->getPredicate() == (isEQ ? ICmpInst::ICMP_EQ:ICmpInst::ICMP_NE)) {
+        // (x & ~2^x) == y --> x == y || x == y|2^x
+        // This undoes a transformation done by instcombine to fuse 2 compares.
+        if (match(ICI->getOperand(0),
+                  m_And(m_Value(RHSVal), m_ConstantInt(RHSC)))) {
+          APInt Not = ~RHSC->getValue();
+          if (Not.isPowerOf2()) {
+            Vals.push_back(C);
+            Vals.push_back(
+                ConstantInt::get(C->getContext(), C->getValue() | Not));
+            UsedICmps++;
+            return RHSVal;
+          }
+        }
+
         UsedICmps++;
         Vals.push_back(C);
         return I->getOperand(0);
@@ -442,6 +373,13 @@ GatherConstantCompares(Value *V, std::vector<ConstantInt*> &Vals, Value *&Extra,
       // the set.
       ConstantRange Span =
         ConstantRange::makeICmpRegion(ICI->getPredicate(), C->getValue());
+
+      // Shift the range if the compare is fed by an add. This is the range
+      // compare idiom as emitted by instcombine.
+      bool hasAdd =
+          match(I->getOperand(0), m_Add(m_Value(RHSVal), m_ConstantInt(RHSC)));
+      if (hasAdd)
+        Span = Span.subtract(RHSC->getValue());
 
       // If this is an and/!= check then we want to optimize "x ugt 2" into
       // x != 0 && x != 1.
@@ -455,7 +393,7 @@ GatherConstantCompares(Value *V, std::vector<ConstantInt*> &Vals, Value *&Extra,
       for (APInt Tmp = Span.getLower(); Tmp != Span.getUpper(); ++Tmp)
         Vals.push_back(ConstantInt::get(V->getContext(), Tmp));
       UsedICmps++;
-      return I->getOperand(0);
+      return hasAdd ? RHSVal : I->getOperand(0);
     }
     return 0;
   }
@@ -3327,7 +3265,7 @@ static bool ForwardSwitchConditionToPHI(SwitchInst *SI) {
   for (ForwardingNodesMap::iterator I = ForwardingNodes.begin(),
        E = ForwardingNodes.end(); I != E; ++I) {
     PHINode *Phi = I->first;
-    SmallVector<int,4> &Indexes = I->second;
+    SmallVectorImpl<int> &Indexes = I->second;
 
     if (Indexes.size() < 2) continue;
 
@@ -3412,11 +3350,12 @@ static Constant *ConstantFold(Instruction *I,
 /// at the common destination basic block, *CommonDest, for one of the case
 /// destionations CaseDest corresponding to value CaseVal (0 for the default
 /// case), of a switch instruction SI.
-static bool GetCaseResults(SwitchInst *SI,
-                           ConstantInt *CaseVal,
-                           BasicBlock *CaseDest,
-                           BasicBlock **CommonDest,
-                           SmallVector<std::pair<PHINode*,Constant*>, 4> &Res) {
+static bool
+GetCaseResults(SwitchInst *SI,
+               ConstantInt *CaseVal,
+               BasicBlock *CaseDest,
+               BasicBlock **CommonDest,
+               SmallVectorImpl<std::pair<PHINode*,Constant*> > &Res) {
   // The block from which we enter the common destination.
   BasicBlock *Pred = SI->getParent();
 
@@ -3489,7 +3428,7 @@ namespace {
     SwitchLookupTable(Module &M,
                       uint64_t TableSize,
                       ConstantInt *Offset,
-               const SmallVector<std::pair<ConstantInt*, Constant*>, 4>& Values,
+             const SmallVectorImpl<std::pair<ConstantInt*, Constant*> >& Values,
                       Constant *DefaultValue,
                       const DataLayout *TD);
 
@@ -3536,7 +3475,7 @@ namespace {
 SwitchLookupTable::SwitchLookupTable(Module &M,
                                      uint64_t TableSize,
                                      ConstantInt *Offset,
-               const SmallVector<std::pair<ConstantInt*, Constant*>, 4>& Values,
+             const SmallVectorImpl<std::pair<ConstantInt*, Constant*> >& Values,
                                      Constant *DefaultValue,
                                      const DataLayout *TD)
     : SingleValue(0), BitMap(0), BitMapElementTy(0), Array(0) {

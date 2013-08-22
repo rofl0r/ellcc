@@ -410,6 +410,7 @@ private:
   SDValue SoftenFloatRes_FPOWI(SDNode *N);
   SDValue SoftenFloatRes_FREM(SDNode *N);
   SDValue SoftenFloatRes_FRINT(SDNode *N);
+  SDValue SoftenFloatRes_FROUND(SDNode *N);
   SDValue SoftenFloatRes_FSIN(SDNode *N);
   SDValue SoftenFloatRes_FSQRT(SDNode *N);
   SDValue SoftenFloatRes_FSUB(SDNode *N);
@@ -470,6 +471,7 @@ private:
   void ExpandFloatRes_FPOWI     (SDNode *N, SDValue &Lo, SDValue &Hi);
   void ExpandFloatRes_FREM      (SDNode *N, SDValue &Lo, SDValue &Hi);
   void ExpandFloatRes_FRINT     (SDNode *N, SDValue &Lo, SDValue &Hi);
+  void ExpandFloatRes_FROUND    (SDNode *N, SDValue &Lo, SDValue &Hi);
   void ExpandFloatRes_FSIN      (SDNode *N, SDValue &Lo, SDValue &Hi);
   void ExpandFloatRes_FSQRT     (SDNode *N, SDValue &Lo, SDValue &Hi);
   void ExpandFloatRes_FSUB      (SDNode *N, SDValue &Lo, SDValue &Hi);
@@ -653,7 +655,7 @@ private:
   /// loads to load a vector with a resulting wider type. It takes
   ///   LdChain: list of chains for the load to be generated.
   ///   Ld:      load to widen
-  SDValue GenWidenVectorLoads(SmallVector<SDValue, 16>& LdChain,
+  SDValue GenWidenVectorLoads(SmallVectorImpl<SDValue> &LdChain,
                               LoadSDNode *LD);
 
   /// GenWidenVectorExtLoads - Helper function to generate a set of extension
@@ -661,20 +663,20 @@ private:
   ///   LdChain: list of chains for the load to be generated.
   ///   Ld:      load to widen
   ///   ExtType: extension element type
-  SDValue GenWidenVectorExtLoads(SmallVector<SDValue, 16>& LdChain,
+  SDValue GenWidenVectorExtLoads(SmallVectorImpl<SDValue> &LdChain,
                                  LoadSDNode *LD, ISD::LoadExtType ExtType);
 
   /// Helper genWidenVectorStores - Helper function to generate a set of
   /// stores to store a widen vector into non widen memory
   ///   StChain: list of chains for the stores we have generated
   ///   ST:      store of a widen value
-  void GenWidenVectorStores(SmallVector<SDValue, 16>& StChain, StoreSDNode *ST);
+  void GenWidenVectorStores(SmallVectorImpl<SDValue> &StChain, StoreSDNode *ST);
 
   /// Helper genWidenVectorTruncStores - Helper function to generate a set of
   /// stores to store a truncate widen vector into non widen memory
   ///   StChain: list of chains for the stores we have generated
   ///   ST:      store of a widen value
-  void GenWidenVectorTruncStores(SmallVector<SDValue, 16>& StChain,
+  void GenWidenVectorTruncStores(SmallVectorImpl<SDValue> &StChain,
                                  StoreSDNode *ST);
 
   /// Modifies a vector input (widen or narrows) to a vector of NVT.  The

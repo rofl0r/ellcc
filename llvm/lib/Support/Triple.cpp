@@ -29,6 +29,7 @@ const char *Triple::getArchTypeName(ArchType Kind) {
   case mips64el:return "mips64el";
   case msp430:  return "msp430";
   case ppc64:   return "ppc64";
+  case ppc64le: return "ppc64le";
   case ppc:     return "ppc";
   case r600:    return "r600";
   case sparc:   return "sparc";
@@ -64,6 +65,7 @@ const char *Triple::getArchTypePrefix(ArchType Kind) {
   case thumb:   return "arm";
 
   case ppc64:
+  case ppc64le:
   case ppc:     return "ppc";
 
   case mblaze:  return "mblaze";
@@ -179,6 +181,7 @@ Triple::ArchType Triple::getArchTypeForLLVMName(StringRef Name) {
     .Case("ppc64", ppc64)
     .Case("ppc32", ppc)
     .Case("ppc", ppc)
+    .Case("ppc64le", ppc64le)
     .Case("mblaze", mblaze)
     .Case("nios2", nios2)
     .Case("r600", r600)
@@ -210,6 +213,7 @@ const char *Triple::getArchNameForAssembler() {
     .Case("x86_64", "x86_64")
     .Case("powerpc", "ppc")
     .Case("powerpc64", "ppc64")
+    .Case("powerpc64le", "ppc64le")
     .Cases("mblaze", "microblaze", "mblaze")
     .Case("nios2", "nios2")
     .Case("arm", "arm")
@@ -234,9 +238,10 @@ static Triple::ArchType parseArch(StringRef ArchName) {
     // FIXME: Do we need to support these?
     .Cases("i786", "i886", "i986", Triple::x86)
     .Cases("amd64", "x86_64", Triple::x86_64)
+    .Cases("mblaze", "microblaze", Triple::mblaze)
     .Cases("powerpc", "ppc", Triple::ppc)
     .Cases("powerpc64", "ppc64", "ppu", Triple::ppc64)
-    .Cases("mblaze", "microblaze", Triple::mblaze)
+    .Cases("powerpc64le", "ppc64le", Triple::ppc64le)
     .Case("aarch64", Triple::aarch64)
     .Case("xscale", Triple::arm)
     .StartsWith("arm", ArchName.endswith("ebsf") || ArchName.endswith("eb") ?
@@ -716,6 +721,7 @@ static unsigned getArchPointerBitWidth(llvm::Triple::ArchType Arch) {
   case llvm::Triple::mips64el:
   case llvm::Triple::nvptx64:
   case llvm::Triple::ppc64:
+  case llvm::Triple::ppc64le:
   case llvm::Triple::sparcv9:
   case llvm::Triple::systemz:
   case llvm::Triple::x86_64:
@@ -744,6 +750,7 @@ Triple Triple::get32BitArchVariant() const {
   case Triple::aarch64:
   case Triple::msp430:
   case Triple::systemz:
+  case Triple::ppc64le:
     T.setArch(UnknownArch);
     break;
 
@@ -804,6 +811,7 @@ Triple Triple::get64BitArchVariant() const {
   case Triple::mips64el:
   case Triple::nvptx64:
   case Triple::ppc64:
+  case Triple::ppc64le:
   case Triple::sparcv9:
   case Triple::systemz:
   case Triple::x86_64:

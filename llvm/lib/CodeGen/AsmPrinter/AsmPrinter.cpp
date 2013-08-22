@@ -50,9 +50,9 @@
 #include "llvm/Target/TargetRegisterInfo.h"
 using namespace llvm;
 
-static const char *DWARFGroupName = "DWARF Emission";
-static const char *DbgTimerName = "DWARF Debug Writer";
-static const char *EHTimerName = "DWARF Exception Writer";
+static const char *const DWARFGroupName = "DWARF Emission";
+static const char *const DbgTimerName = "DWARF Debug Writer";
+static const char *const EHTimerName = "DWARF Exception Writer";
 
 STATISTIC(EmittedInsts, "Number of machine instrs printed");
 
@@ -98,7 +98,7 @@ AsmPrinter::AsmPrinter(TargetMachine &tm, MCStreamer &Streamer)
     OutContext(Streamer.getContext()),
     OutStreamer(Streamer),
     LastMI(0), LastFn(0), Counter(~0U), SetCounter(0) {
-  DD = 0; DE = 0; MMI = 0; LI = 0;
+  DD = 0; DE = 0; MMI = 0; LI = 0; MF = 0;
   CurrentFnSym = CurrentFnSymForSize = 0;
   GCMetadataPrinters = 0;
   VerboseAsm = Streamer.isVerboseAsm();
@@ -155,14 +155,14 @@ void AsmPrinter::getAnalysisUsage(AnalysisUsage &AU) const {
 }
 
 bool AsmPrinter::doInitialization(Module &M) {
-  OutStreamer.InitStreamer();
-
   MMI = getAnalysisIfAvailable<MachineModuleInfo>();
   MMI->AnalyzeModule(M);
 
   // Initialize TargetLoweringObjectFile.
   const_cast<TargetLoweringObjectFile&>(getObjFileLowering())
     .Initialize(OutContext, TM);
+
+  OutStreamer.InitStreamer();
 
   Mang = new Mangler(OutContext, &TM);
 
@@ -368,9 +368,10 @@ void AsmPrinter::EmitGlobalVariable(const GlobalVariable *GV) {
     MCSymbol *MangSym =
       OutContext.GetOrCreateSymbol(GVSym->getName() + Twine("$tlv$init"));
 
-    if (GVKind.isThreadBSS())
+    if (GVKind.isThreadBSS()) {
+      TheSection = getObjFileLowering().getTLSBSSSection();
       OutStreamer.EmitTBSSSymbol(TheSection, MangSym, Size, 1 << AlignLog);
-    else if (GVKind.isThreadData()) {
+    } else if (GVKind.isThreadData()) {
       OutStreamer.SwitchSection(TheSection);
 
       EmitAlignment(AlignLog, GV);
@@ -570,8 +571,10 @@ static bool emitDebugValueComment(const MachineInstr *MI, AsmPrinter &AP) {
   }
   OS << V.getName() << " <- ";
 
-  int64_t Offset = MI->getOperand(1).getImm();
-  bool Deref = false;
+  // The second operand is only an offset if it's an immediate.
+  bool Deref = MI->getOperand(0).isReg() && MI->getOperand(1).isImm();
+  int64_t Offset = Deref ? MI->getOperand(1).getImm() : 0;
+
   // Register or immediate value. Register 0 means undef.
   if (MI->getOperand(0).isFPImm()) {
     APFloat APF = APFloat(MI->getOperand(0).getFPImm()->getValueAPF());
@@ -595,8 +598,6 @@ static bool emitDebugValueComment(const MachineInstr *MI, AsmPrinter &AP) {
     unsigned Reg;
     if (MI->getOperand(0).isReg()) {
       Reg = MI->getOperand(0).getReg();
-      Deref = Offset != 0; // FIXME: use a better sentinel value so that deref
-                           // of a reg with a zero offset is valid
     } else {
       assert(MI->getOperand(0).isFI() && "Unknown operand type");
       const TargetFrameLowering *TFI = AP.TM.getFrameLowering();
@@ -616,10 +617,9 @@ static bool emitDebugValueComment(const MachineInstr *MI, AsmPrinter &AP) {
     OS << AP.TM.getRegisterInfo()->getName(Reg);
   }
 
-  if (Offset)
-    OS << '+' << Offset;
   if (Deref)
-    OS << ']';
+    OS << '+' << Offset << ']';
+
   // NOTE: Want this comment at start of line, don't emit with AddComment.
   AP.OutStreamer.EmitRawText(OS.str());
   return true;
@@ -646,7 +646,7 @@ bool AsmPrinter::needsRelocationsForDwarfStringPool() const {
 }
 
 void AsmPrinter::emitPrologLabel(const MachineInstr &MI) {
-  MCSymbol *Label = MI.getOperand(0).getMCSymbol();
+  const MCSymbol *Label = MI.getOperand(0).getMCSymbol();
 
   if (MAI->getExceptionHandlingType() != ExceptionHandling::DwarfCFI)
     return;
@@ -657,12 +657,12 @@ void AsmPrinter::emitPrologLabel(const MachineInstr &MI) {
   if (MMI->getCompactUnwindEncoding() != 0)
     OutStreamer.EmitCompactUnwindEncoding(MMI->getCompactUnwindEncoding());
 
-  MachineModuleInfo &MMI = MF->getMMI();
-  std::vector<MCCFIInstruction> Instructions = MMI.getFrameInstructions();
+  const MachineModuleInfo &MMI = MF->getMMI();
+  const std::vector<MCCFIInstruction> &Instrs = MMI.getFrameInstructions();
   bool FoundOne = false;
   (void)FoundOne;
-  for (std::vector<MCCFIInstruction>::iterator I = Instructions.begin(),
-         E = Instructions.end(); I != E; ++I) {
+  for (std::vector<MCCFIInstruction>::const_iterator I = Instrs.begin(),
+         E = Instrs.end(); I != E; ++I) {
     if (I->getLabel() == Label) {
       emitCFIInstruction(*I);
       FoundOne = true;
@@ -1415,8 +1415,12 @@ void AsmPrinter::EmitLabelOffsetDifference(const MCSymbol *Hi, uint64_t Offset,
 /// where the size in bytes of the directive is specified by Size and Label
 /// specifies the label.  This implicitly uses .set if it is available.
 void AsmPrinter::EmitLabelPlusOffset(const MCSymbol *Label, uint64_t Offset,
-                                      unsigned Size)
+                                      unsigned Size, bool IsSectionRelative)
   const {
+  if (MAI->needsDwarfSectionOffsetDirective() && IsSectionRelative) { 
+    OutStreamer.EmitCOFFSecRel32(Label);
+    return;
+  }
 
   // Emit Label+Offset (or just Label if Offset is zero)
   const MCExpr *Expr = MCSymbolRefExpr::Create(Label, OutContext);

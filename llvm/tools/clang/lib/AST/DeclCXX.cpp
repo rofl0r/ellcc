@@ -662,7 +662,7 @@ void CXXRecordDecl::addedMember(Decl *D) {
       if (!Context.getLangOpts().ObjCAutoRefCount ||
           T.getObjCLifetime() != Qualifiers::OCL_ExplicitNone)
         setHasObjectMember(true);
-    } else if (!T.isPODType(Context))
+    } else if (!T.isCXX98PODType(Context))
       data().PlainOldData = false;
     
     if (T->isReferenceType()) {
@@ -1406,7 +1406,8 @@ bool CXXMethodDecl::isCopyAssignmentOperator() const {
   //  type X, X&, const X&, volatile X& or const volatile X&.
   if (/*operator=*/getOverloadedOperator() != OO_Equal ||
       /*non-static*/ isStatic() || 
-      /*non-template*/getPrimaryTemplate() || getDescribedFunctionTemplate())
+      /*non-template*/getPrimaryTemplate() || getDescribedFunctionTemplate() ||
+      getNumParams() != 1)
     return false;
       
   QualType ParamType = getParamDecl(0)->getType();
@@ -1425,7 +1426,8 @@ bool CXXMethodDecl::isMoveAssignmentOperator() const {
   //  non-template member function of class X with exactly one parameter of type
   //  X&&, const X&&, volatile X&&, or const volatile X&&.
   if (getOverloadedOperator() != OO_Equal || isStatic() ||
-      getPrimaryTemplate() || getDescribedFunctionTemplate())
+      getPrimaryTemplate() || getDescribedFunctionTemplate() ||
+      getNumParams() != 1)
     return false;
 
   QualType ParamType = getParamDecl(0)->getType();
@@ -1957,14 +1959,20 @@ void UsingDecl::removeShadowDecl(UsingShadowDecl *S) {
 UsingDecl *UsingDecl::Create(ASTContext &C, DeclContext *DC, SourceLocation UL,
                              NestedNameSpecifierLoc QualifierLoc,
                              const DeclarationNameInfo &NameInfo,
-                             bool IsTypeNameArg) {
-  return new (C) UsingDecl(DC, UL, QualifierLoc, NameInfo, IsTypeNameArg);
+                             bool HasTypename) {
+  return new (C) UsingDecl(DC, UL, QualifierLoc, NameInfo, HasTypename);
 }
 
 UsingDecl *UsingDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   void *Mem = AllocateDeserializedDecl(C, ID, sizeof(UsingDecl));
   return new (Mem) UsingDecl(0, SourceLocation(), NestedNameSpecifierLoc(),
                              DeclarationNameInfo(), false);
+}
+
+SourceRange UsingDecl::getSourceRange() const {
+  SourceLocation Begin = isAccessDeclaration()
+    ? getQualifierLoc().getBeginLoc() : UsingLocation;
+  return SourceRange(Begin, getNameInfo().getEndLoc());
 }
 
 void UnresolvedUsingValueDecl::anchor() { }
@@ -1984,6 +1992,12 @@ UnresolvedUsingValueDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   return new (Mem) UnresolvedUsingValueDecl(0, QualType(), SourceLocation(),
                                             NestedNameSpecifierLoc(),
                                             DeclarationNameInfo());
+}
+
+SourceRange UnresolvedUsingValueDecl::getSourceRange() const {
+  SourceLocation Begin = isAccessDeclaration()
+    ? getQualifierLoc().getBeginLoc() : UsingLocation;
+  return SourceRange(Begin, getNameInfo().getEndLoc());
 }
 
 void UnresolvedUsingTypenameDecl::anchor() { }

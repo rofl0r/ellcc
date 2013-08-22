@@ -88,6 +88,10 @@ unsigned TargetTransformInfo::getUserCost(const User *U) const {
   return PrevTTI->getUserCost(U);
 }
 
+bool TargetTransformInfo::hasBranchDivergence() const {
+  return PrevTTI->hasBranchDivergence();
+}
+
 bool TargetTransformInfo::isLoweredToCall(const Function *F) const {
   return PrevTTI->isLoweredToCall(F);
 }
@@ -206,8 +210,9 @@ unsigned TargetTransformInfo::getNumberOfParts(Type *Tp) const {
   return PrevTTI->getNumberOfParts(Tp);
 }
 
-unsigned TargetTransformInfo::getAddressComputationCost(Type *Tp) const {
-  return PrevTTI->getAddressComputationCost(Tp);
+unsigned TargetTransformInfo::getAddressComputationCost(Type *Tp,
+                                                        bool IsComplex) const {
+  return PrevTTI->getAddressComputationCost(Tp, IsComplex);
 }
 
 namespace {
@@ -419,6 +424,8 @@ struct NoTTI : ImmutablePass, TargetTransformInfo {
                                 U->getOperand(0)->getType() : 0);
   }
 
+  bool hasBranchDivergence() const { return false; }
+
   bool isLoweredToCall(const Function *F) const {
     // FIXME: These should almost certainly not be handled here, and instead
     // handled with the help of TLI or the target itself. This was largely
@@ -559,7 +566,7 @@ struct NoTTI : ImmutablePass, TargetTransformInfo {
     return 0;
   }
 
-  unsigned getAddressComputationCost(Type *Tp) const {
+  unsigned getAddressComputationCost(Type *Tp, bool) const {
     return 0;
   }
 };

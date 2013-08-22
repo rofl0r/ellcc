@@ -19,6 +19,7 @@
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/BranchProbabilityInfo.h"
+#include "llvm/Analysis/CFG.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/CodeGen/FastISel.h"
 #include "llvm/CodeGen/FunctionLoweringInfo.h"
@@ -421,12 +422,13 @@ bool SelectionDAGISel::runOnMachineFunction(MachineFunction &mf) {
       MachineBasicBlock::iterator InsertPos = Def;
       const MDNode *Variable =
         MI->getOperand(MI->getNumOperands()-1).getMetadata();
-      unsigned Offset = MI->getOperand(1).getImm();
+      bool IsIndirect = MI->getOperand(1).isImm();
+      unsigned Offset = IsIndirect ? MI->getOperand(1).getImm() : 0;
       // Def is never a terminator here, so it is ok to increment InsertPos.
       BuildMI(*EntryMBB, ++InsertPos, MI->getDebugLoc(),
-              TII.get(TargetOpcode::DBG_VALUE))
-        .addReg(LDI->second, RegState::Debug)
-        .addImm(Offset).addMetadata(Variable);
+              TII.get(TargetOpcode::DBG_VALUE),
+              IsIndirect,
+              LDI->second, Offset, Variable);
 
       // If this vreg is directly copied into an exported register then
       // that COPY instructions also need DBG_VALUE, if it is the only
@@ -445,9 +447,10 @@ bool SelectionDAGISel::runOnMachineFunction(MachineFunction &mf) {
       if (CopyUseMI) {
         MachineInstr *NewMI =
           BuildMI(*MF, CopyUseMI->getDebugLoc(),
-                  TII.get(TargetOpcode::DBG_VALUE))
-          .addReg(CopyUseMI->getOperand(0).getReg(), RegState::Debug)
-          .addImm(Offset).addMetadata(Variable);
+                  TII.get(TargetOpcode::DBG_VALUE),
+                  IsIndirect,
+                  CopyUseMI->getOperand(0).getReg(),
+                  Offset, Variable);
         MachineBasicBlock::iterator Pos = CopyUseMI;
         EntryMBB->insertAfter(Pos, NewMI);
       }
@@ -494,6 +497,10 @@ bool SelectionDAGISel::runOnMachineFunction(MachineFunction &mf) {
       if (J == E) break;
       To = J->second;
     }
+    // Make sure the new register has a sufficiently constrained register class.
+    if (TargetRegisterInfo::isVirtualRegister(From) &&
+        TargetRegisterInfo::isVirtualRegister(To))
+      MRI.constrainRegClass(To, MRI.getRegClass(From));
     // Replace it.
     MRI.replaceRegWith(From, To);
   }
@@ -2429,7 +2436,7 @@ SelectCodeCommon(SDNode *NodeToMatch, const unsigned char *MatcherTable,
     }
 
     case OPC_SwitchType: {
-      MVT CurNodeVT = N.getValueType().getSimpleVT();
+      MVT CurNodeVT = N.getSimpleValueType();
       unsigned SwitchStart = MatcherIndex-1; (void)SwitchStart;
       unsigned CaseSize;
       while (1) {

@@ -356,7 +356,7 @@ namespace {
                      Instruction *J, unsigned o, bool IBeforeJ);
 
     void getReplacementInputsForPair(LLVMContext& Context, Instruction *I,
-                     Instruction *J, SmallVector<Value *, 3> &ReplacedOperands,
+                     Instruction *J, SmallVectorImpl<Value *> &ReplacedOperands,
                      bool IBeforeJ);
 
     void replaceOutputsOfPair(LLVMContext& Context, Instruction *I,
@@ -1182,6 +1182,8 @@ namespace {
       // Look for an instruction with which to pair instruction *I...
       DenseSet<Value *> Users;
       AliasSetTracker WriteSet(*AA);
+      if (I->mayWriteToMemory()) WriteSet.add(I);
+
       bool JAfterStart = IAfterStart;
       BasicBlock::iterator J = llvm::next(I);
       for (unsigned ss = 0; J != E && ss <= Config.SearchLimit; ++J, ++ss) {
@@ -1403,6 +1405,8 @@ namespace {
 
       DenseSet<Value *> Users;
       AliasSetTracker WriteSet(*AA);
+      if (I->mayWriteToMemory()) WriteSet.add(I);
+
       for (BasicBlock::iterator J = llvm::next(I); J != E; ++J) {
         (void) trackUsesOfI(Users, WriteSet, I, J);
 
@@ -2687,7 +2691,7 @@ namespace {
   // to the vector instruction that fuses I with J.
   void BBVectorize::getReplacementInputsForPair(LLVMContext& Context,
                      Instruction *I, Instruction *J,
-                     SmallVector<Value *, 3> &ReplacedOperands,
+                     SmallVectorImpl<Value *> &ReplacedOperands,
                      bool IBeforeJ) {
     unsigned NumOperands = I->getNumOperands();
 
@@ -2804,6 +2808,8 @@ namespace {
 
     DenseSet<Value *> Users;
     AliasSetTracker WriteSet(*AA);
+    if (I->mayWriteToMemory()) WriteSet.add(I);
+
     for (; cast<Instruction>(L) != J; ++L)
       (void) trackUsesOfI(Users, WriteSet, I, L, true, &LoadMoveSetPairs);
 
@@ -2824,6 +2830,8 @@ namespace {
 
     DenseSet<Value *> Users;
     AliasSetTracker WriteSet(*AA);
+    if (I->mayWriteToMemory()) WriteSet.add(I);
+
     for (; cast<Instruction>(L) != J;) {
       if (trackUsesOfI(Users, WriteSet, I, L, true, &LoadMoveSetPairs)) {
         // Move this instruction
@@ -2853,6 +2861,7 @@ namespace {
 
     DenseSet<Value *> Users;
     AliasSetTracker WriteSet(*AA);
+    if (I->mayWriteToMemory()) WriteSet.add(I);
 
     // Note: We cannot end the loop when we reach J because J could be moved
     // farther down the use chain by another instruction pairing. Also, J

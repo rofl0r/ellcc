@@ -459,11 +459,16 @@ namespace llvm {
     /// relative to software emulation.
     virtual bool allowsUnalignedMemoryAccesses(EVT VT, bool *Fast = 0) const;
 
-    /// isFMAFasterThanMulAndAdd - Return true if an FMA operation is faster than
-    /// a pair of mul and add instructions. fmuladd intrinsics will be expanded to
-    /// FMAs when this method returns true (and FMAs are legal), otherwise fmuladd
-    /// is expanded to mul + add.
-    virtual bool isFMAFasterThanMulAndAdd(EVT VT) const;
+    /// isFMAFasterThanFMulAndFAdd - Return true if an FMA operation is faster
+    /// than a pair of fmul and fadd instructions. fmuladd intrinsics will be
+    /// expanded to FMAs when this method returns true, otherwise fmuladd is
+    /// expanded to fmul + fadd.
+    virtual bool isFMAFasterThanFMulAndFAdd(EVT VT) const;
+
+    /// createFastISel - This method returns a target-specific FastISel object,
+    /// or null if the target does not support "fast" instruction selection.
+    virtual FastISel *createFastISel(FunctionLoweringInfo &FuncInfo,
+                                     const TargetLibraryInfo *LibInfo) const;
 
   private:
     SDValue getFramePointerFrameIndex(SelectionDAG & DAG) const;
@@ -498,6 +503,8 @@ namespace llvm {
                          const PPCSubtarget &Subtarget) const;
     SDValue LowerVAARG(SDValue Op, SelectionDAG &DAG,
                        const PPCSubtarget &Subtarget) const;
+    SDValue LowerVACOPY(SDValue Op, SelectionDAG &DAG,
+                        const PPCSubtarget &Subtarget) const;
     SDValue LowerSTACKRESTORE(SDValue Op, SelectionDAG &DAG,
                                 const PPCSubtarget &Subtarget) const;
     SDValue LowerDYNAMIC_STACKALLOC(SDValue Op, SelectionDAG &DAG,
@@ -621,6 +628,11 @@ namespace llvm {
     SDValue DAGCombineFastRecip(SDValue Op, DAGCombinerInfo &DCI) const;
     SDValue DAGCombineFastRecipFSQRT(SDValue Op, DAGCombinerInfo &DCI) const;
   };
+
+  namespace PPC {
+    FastISel *createFastISel(FunctionLoweringInfo &FuncInfo,
+                             const TargetLibraryInfo *LibInfo);
+  }
 
   bool CC_PPC32_SVR4_Custom_Dummy(unsigned &ValNo, MVT &ValVT, MVT &LocVT,
                                   CCValAssign::LocInfo &LocInfo,

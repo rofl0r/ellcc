@@ -849,10 +849,15 @@ Value *InstCombiner::FoldAndOfICmps(ICmpInst *LHS, ICmpInst *RHS) {
     case ICmpInst::ICMP_SGT:        // (X != 13 & X s> 15) -> X s> 15
       return RHS;
     case ICmpInst::ICMP_NE:
+      // Special case to get the ordering right when the values wrap around
+      // zero.
+      if (LHSCst->getValue() == 0 && RHSCst->getValue().isAllOnesValue())
+        std::swap(LHSCst, RHSCst);
       if (LHSCst == SubOne(RHSCst)){// (X != 13 & X != 14) -> X-13 >u 1
         Constant *AddCST = ConstantExpr::getNeg(LHSCst);
         Value *Add = Builder->CreateAdd(Val, AddCST, Val->getName()+".off");
-        return Builder->CreateICmpUGT(Add, ConstantInt::get(Add->getType(), 1));
+        return Builder->CreateICmpUGT(Add, ConstantInt::get(Add->getType(), 1),
+                                      Val->getName()+".cmp");
       }
       break;                        // (X != 13 & X != 15) -> no change
     }
@@ -1299,7 +1304,7 @@ Instruction *InstCombiner::visitAnd(BinaryOperator &I) {
 /// always in the local (OverallLeftShift) coordinate space.
 ///
 static bool CollectBSwapParts(Value *V, int OverallLeftShift, uint32_t ByteMask,
-                              SmallVector<Value*, 8> &ByteValues) {
+                              SmallVectorImpl<Value *> &ByteValues) {
   if (Instruction *I = dyn_cast<Instruction>(V)) {
     // If this is an or instruction, it may be an inner node of the bswap.
     if (I->getOpcode() == Instruction::Or) {
@@ -1477,10 +1482,37 @@ Value *InstCombiner::FoldOrOfICmps(ICmpInst *LHS, ICmpInst *RHS) {
   if (Value *V = foldLogOpOfMaskedICmps(LHS, RHS, ICmpInst::ICMP_NE, Builder))
     return V;
 
-  // This only handles icmp of constants: (icmp1 A, C1) | (icmp2 B, C2).
   Value *Val = LHS->getOperand(0), *Val2 = RHS->getOperand(0);
   ConstantInt *LHSCst = dyn_cast<ConstantInt>(LHS->getOperand(1));
   ConstantInt *RHSCst = dyn_cast<ConstantInt>(RHS->getOperand(1));
+
+  if (LHS->hasOneUse() || RHS->hasOneUse()) {
+    // (icmp eq B, 0) | (icmp ult A, B) -> (icmp ule A, B-1)
+    // (icmp eq B, 0) | (icmp ugt B, A) -> (icmp ule A, B-1)
+    Value *A = 0, *B = 0;
+    if (LHSCC == ICmpInst::ICMP_EQ && LHSCst && LHSCst->isZero()) {
+      B = Val;
+      if (RHSCC == ICmpInst::ICMP_ULT && Val == RHS->getOperand(1))
+        A = Val2;
+      else if (RHSCC == ICmpInst::ICMP_UGT && Val == Val2)
+        A = RHS->getOperand(1);
+    }
+    // (icmp ult A, B) | (icmp eq B, 0) -> (icmp ule A, B-1)
+    // (icmp ugt B, A) | (icmp eq B, 0) -> (icmp ule A, B-1)
+    else if (RHSCC == ICmpInst::ICMP_EQ && RHSCst && RHSCst->isZero()) {
+      B = Val2;
+      if (LHSCC == ICmpInst::ICMP_ULT && Val2 == LHS->getOperand(1))
+        A = Val;
+      else if (LHSCC == ICmpInst::ICMP_UGT && Val2 == Val)
+        A = LHS->getOperand(1);
+    }
+    if (A && B)
+      return Builder->CreateICmp(
+          ICmpInst::ICMP_UGE,
+          Builder->CreateAdd(B, ConstantInt::getSigned(B->getType(), -1)), A);
+  }
+
+  // This only handles icmp of constants: (icmp1 A, C1) | (icmp2 B, C2).
   if (LHSCst == 0 || RHSCst == 0) return 0;
 
   if (LHSCst == RHSCst && LHSCC == RHSCC) {

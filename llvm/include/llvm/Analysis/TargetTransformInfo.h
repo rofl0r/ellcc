@@ -171,6 +171,12 @@ public:
   /// comments for a detailed explanation of the cost values.
   virtual unsigned getUserCost(const User *U) const;
 
+  /// \brief hasBranchDivergence - Return true if branch divergence exists.
+  /// Branch divergence has a significantly negative impact on GPU performance
+  /// when threads in the same wavefront take different paths due to conditional
+  /// branches.
+  virtual bool hasBranchDivergence() const;
+
   /// \brief Test whether calls to a function lower to actual program function
   /// calls.
   ///
@@ -339,7 +345,11 @@ public:
   /// merged into the instruction indexing mode. Some targets might want to
   /// distinguish between address computation for memory operations on vector
   /// types and scalar types. Such targets should override this function.
-  virtual unsigned getAddressComputationCost(Type *Ty) const;
+  /// The 'IsComplex' parameter is a hint that the address computation is likely
+  /// to involve multiple instructions and as such unlikely to be merged into
+  /// the address indexing mode.
+  virtual unsigned getAddressComputationCost(Type *Ty,
+                                             bool IsComplex = false) const;
 
   /// @}
 

@@ -30,7 +30,6 @@ static uint64_t adjustFixupValue(unsigned Kind, uint64_t Value) {
   case FK_Data_2:
   case FK_Data_4:
   case FK_Data_8:
-  case PPC::fixup_ppc_tlsreg:
   case PPC::fixup_ppc_nofixup:
     return Value;
   case PPC::fixup_ppc_brcond14:
@@ -64,26 +63,12 @@ static unsigned getFixupKindNumBytes(unsigned Kind) {
     return 4;
   case FK_Data_8:
     return 8;
-  case PPC::fixup_ppc_tlsreg:
   case PPC::fixup_ppc_nofixup:
     return 0;
   }
 }
 
 namespace {
-class PPCMachObjectWriter : public MCMachObjectTargetWriter {
-public:
-  PPCMachObjectWriter(bool Is64Bit, uint32_t CPUType,
-                      uint32_t CPUSubtype)
-    : MCMachObjectTargetWriter(Is64Bit, CPUType, CPUSubtype) {}
-
-  void RecordRelocation(MachObjectWriter *Writer,
-                        const MCAssembler &Asm, const MCAsmLayout &Layout,
-                        const MCFragment *Fragment, const MCFixup &Fixup,
-                        MCValue Target, uint64_t &FixedValue) {
-    llvm_unreachable("Relocation emission for MachO/PPC unimplemented!");
-  }
-};
 
 class PPCAsmBackend : public MCAsmBackend {
 const Target &TheTarget;
@@ -101,7 +86,6 @@ public:
       { "fixup_ppc_brcond14abs", 16,     14,   0 },
       { "fixup_ppc_half16",       0,     16,   0 },
       { "fixup_ppc_half16ds",     0,     14,   0 },
-      { "fixup_ppc_tlsreg",       0,      0,   0 },
       { "fixup_ppc_nofixup",      0,      0,   0 }
     };
 
@@ -148,16 +132,20 @@ public:
   }
 
   bool writeNopData(uint64_t Count, MCObjectWriter *OW) const {
-    // FIXME: Zero fill for now. That's not right, but at least will get the
-    // section size right.
-    for (uint64_t i = 0; i != Count; ++i)
-      OW->Write8(0);
+    // Can't emit NOP with size not multiple of 32-bits
+    if (Count % 4 != 0)
+      return false;
+
+    uint64_t NumNops = Count / 4;
+    for (uint64_t i = 0; i != NumNops; ++i)
+      OW->Write32(0x60000000);
+
     return true;
   }
 
   unsigned getPointerSize() const {
     StringRef Name = TheTarget.getName();
-    if (Name == "ppc64") return 8;
+    if (Name == "ppc64" || Name == "ppc64le") return 8;
     assert(Name == "ppc32" && "Unknown target name!");
     return 4;
   }
@@ -173,12 +161,11 @@ namespace {
 
     MCObjectWriter *createObjectWriter(raw_ostream &OS) const {
       bool is64 = getPointerSize() == 8;
-      return createMachObjectWriter(new PPCMachObjectWriter(
-                                      /*Is64Bit=*/is64,
-                                      (is64 ? object::mach::CTM_PowerPC64 :
-                                       object::mach::CTM_PowerPC),
-                                      object::mach::CSPPC_ALL),
-                                    OS, /*IsLittleEndian=*/false);
+      return createPPCMachObjectWriter(
+          OS,
+          /*Is64Bit=*/is64,
+          (is64 ? object::mach::CTM_PowerPC64 : object::mach::CTM_PowerPC),
+          object::mach::CSPPC_ALL);
     }
 
     virtual bool doesSectionRequireSymbols(const MCSection &Section) const {

@@ -13,6 +13,7 @@
 
 #include "clang/CodeGen/ModuleBuilder.h"
 #include "CodeGenModule.h"
+#include "CGDebugInfo.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/Expr.h"
@@ -59,6 +60,9 @@ namespace {
       TD.reset(new llvm::DataLayout(Ctx->getTargetInfo().getTargetDescription()));
       Builder.reset(new CodeGen::CodeGenModule(Context, CodeGenOpts, *M, *TD,
                                                Diags));
+
+      for (size_t i = 0, e = CodeGenOpts.DependentLibraries.size(); i < e; ++i)
+        HandleDependentLibrary(CodeGenOpts.DependentLibraries[i]);
     }
 
     virtual void HandleCXXStaticMemberVarInstantiation(VarDecl *VD) {
@@ -91,6 +95,12 @@ namespace {
                  Method->hasAttr<ConstructorAttr>()))
               Builder->EmitTopLevelDecl(Method);
       }
+    }
+
+    virtual void HandleTagDeclRequiredDefinition(const TagDecl *D) LLVM_OVERRIDE {
+      if (CodeGen::CGDebugInfo *DI = Builder->getModuleDebugInfo())
+        if (const RecordDecl *RD = dyn_cast<RecordDecl>(D))
+          DI->completeRequiredType(RD);
     }
 
     virtual void HandleTranslationUnit(ASTContext &Ctx) {

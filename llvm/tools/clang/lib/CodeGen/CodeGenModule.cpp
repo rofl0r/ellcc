@@ -67,25 +67,23 @@ static CGCXXABI &createCXXABI(CodeGenModule &CGM) {
   llvm_unreachable("invalid C++ ABI kind");
 }
 
-
 CodeGenModule::CodeGenModule(ASTContext &C, const CodeGenOptions &CGO,
                              llvm::Module &M, const llvm::DataLayout &TD,
                              DiagnosticsEngine &diags)
-  : Context(C), LangOpts(C.getLangOpts()), CodeGenOpts(CGO), TheModule(M),
-    Diags(diags), TheDataLayout(TD), Target(C.getTargetInfo()),
-    ABI(createCXXABI(*this)), VMContext(M.getContext()), TBAA(0),
-    TheTargetCodeGenInfo(0), Types(*this), VTables(*this),
-    ObjCRuntime(0), OpenCLRuntime(0), CUDARuntime(0),
-    DebugInfo(0), ARCData(0), NoObjCARCExceptionsMetadata(0),
-    RRData(0), CFConstantStringClassRef(0),
-    ConstantStringClassRef(0), NSConstantStringType(0),
-    NSConcreteGlobalBlock(0), NSConcreteStackBlock(0),
-    BlockObjectAssign(0), BlockObjectDispose(0),
-    BlockDescriptorType(0), GenericBlockLiteralType(0),
-    LifetimeStartFn(0), LifetimeEndFn(0),
-    SanitizerBlacklist(CGO.SanitizerBlacklistFile),
-    SanOpts(SanitizerBlacklist.isIn(M) ?
-            SanitizerOptions::Disabled : LangOpts.Sanitize) {
+    : Context(C), LangOpts(C.getLangOpts()), CodeGenOpts(CGO), TheModule(M),
+      Diags(diags), TheDataLayout(TD), Target(C.getTargetInfo()),
+      ABI(createCXXABI(*this)), VMContext(M.getContext()), TBAA(0),
+      TheTargetCodeGenInfo(0), Types(*this), VTables(*this), ObjCRuntime(0),
+      OpenCLRuntime(0), CUDARuntime(0), DebugInfo(0), ARCData(0),
+      NoObjCARCExceptionsMetadata(0), RRData(0), CFConstantStringClassRef(0),
+      ConstantStringClassRef(0), NSConstantStringType(0),
+      NSConcreteGlobalBlock(0), NSConcreteStackBlock(0), BlockObjectAssign(0),
+      BlockObjectDispose(0), BlockDescriptorType(0), GenericBlockLiteralType(0),
+      LifetimeStartFn(0), LifetimeEndFn(0),
+      SanitizerBlacklist(
+          llvm::SpecialCaseList::createOrDie(CGO.SanitizerBlacklistFile)),
+      SanOpts(SanitizerBlacklist->isIn(M) ? SanitizerOptions::Disabled
+                                          : LangOpts.Sanitize) {
 
   // Initialize the type cache.
   llvm::LLVMContext &LLVMContext = M.getContext();
@@ -434,9 +432,6 @@ StringRef CodeGenModule::getMangledName(GlobalDecl GD) {
     getCXXABI().getMangleContext().mangleCXXCtor(D, GD.getCtorType(), Out);
   else if (const CXXDestructorDecl *D = dyn_cast<CXXDestructorDecl>(ND))
     getCXXABI().getMangleContext().mangleCXXDtor(D, GD.getDtorType(), Out);
-  else if (const BlockDecl *BD = dyn_cast<BlockDecl>(ND))
-    getCXXABI().getMangleContext().mangleBlock(BD, Out,
-      dyn_cast_or_null<VarDecl>(initializedGlobalDecl.getDecl()));
   else
     getCXXABI().getMangleContext().mangleName(ND, Out);
 
@@ -516,6 +511,12 @@ void CodeGenModule::EmitCtorList(const CtorList &Fns, const char *GlobalName) {
 llvm::GlobalValue::LinkageTypes
 CodeGenModule::getFunctionLinkage(GlobalDecl GD) {
   const FunctionDecl *D = cast<FunctionDecl>(GD.getDecl());
+
+  if (isa<CXXDestructorDecl>(D) &&
+      getCXXABI().useThunkForDtorVariant(cast<CXXDestructorDecl>(D),
+                                         GD.getDtorType()))
+    return llvm::Function::LinkOnceODRLinkage;
+
   GVALinkage Linkage = getContext().GetGVALinkageForFunction(D);
 
   if (Linkage == GVA_Internal)
@@ -640,7 +641,7 @@ void CodeGenModule::SetLLVMFunctionAttributesForDefinition(const Decl *D,
     B.addAttribute(llvm::Attribute::StackProtectReq);
 
   // Add sanitizer attributes if function is not blacklisted.
-  if (!SanitizerBlacklist.isIn(*F)) {
+  if (!SanitizerBlacklist->isIn(*F)) {
     // When AddressSanitizer is enabled, set SanitizeAddress attribute
     // unless __attribute__((no_sanitize_address)) is used.
     if (SanOpts.Address && !D->hasAttr<NoSanitizeAddressAttr>())
@@ -747,6 +748,12 @@ void CodeGenModule::SetFunctionAttributes(GlobalDecl GD,
 
   if (const SectionAttr *SA = FD->getAttr<SectionAttr>())
     F->setSection(SA->getName());
+
+  // A replaceable global allocation function does not act like a builtin by
+  // default, only if it is invoked by a new-expression or delete-expression.
+  if (FD->isReplaceableGlobalAllocationFunction())
+    F->addAttribute(llvm::AttributeSet::FunctionIndex,
+                    llvm::Attribute::NoBuiltin);
 }
 
 void CodeGenModule::AddUsedGlobal(llvm::GlobalValue *GV) {
@@ -1039,18 +1046,9 @@ llvm::Constant *CodeGenModule::GetAddrOfUuidDescriptor(
     const CXXUuidofExpr* E) {
   // Sema has verified that IIDSource has a __declspec(uuid()), and that its
   // well-formed.
-  StringRef Uuid;
-  if (E->isTypeOperand())
-    Uuid = CXXUuidofExpr::GetUuidAttrOfType(E->getTypeOperand())->getGuid();
-  else {
-    // Special case: __uuidof(0) means an all-zero GUID.
-    Expr *Op = E->getExprOperand();
-    if (!Op->isNullPointerConstant(Context, Expr::NPC_ValueDependentIsNull))
-      Uuid = CXXUuidofExpr::GetUuidAttrOfType(Op->getType())->getGuid();
-    else
-      Uuid = "00000000-0000-0000-0000-000000000000";
-  }
-  std::string Name = "__uuid_" + Uuid.str();
+  StringRef Uuid = E->getUuidAsStringRef(Context);
+  std::string Name = "_GUID_" + Uuid.lower();
+  std::replace(Name.begin(), Name.end(), '-', '_');
 
   // Look for an existing global.
   if (llvm::GlobalVariable *GV = getModule().getNamedGlobal(Name))
@@ -1059,22 +1057,9 @@ llvm::Constant *CodeGenModule::GetAddrOfUuidDescriptor(
   llvm::Constant *Init = EmitUuidofInitializer(Uuid, E->getType());
   assert(Init && "failed to initialize as constant");
 
-  // GUIDs are assumed to be 16 bytes, spread over 4-2-2-8 bytes. However, the
-  // first field is declared as "long", which for many targets is 8 bytes.
-  // Those architectures are not supported. (With the MS abi, long is always 4
-  // bytes.)
-  llvm::Type *GuidType = getTypes().ConvertType(E->getType());
-  if (Init->getType() != GuidType) {
-    DiagnosticsEngine &Diags = getDiags();
-    unsigned DiagID = Diags.getCustomDiagID(DiagnosticsEngine::Error,
-        "__uuidof codegen is not supported on this architecture");
-    Diags.Report(E->getExprLoc(), DiagID) << E->getSourceRange();
-    Init = llvm::UndefValue::get(GuidType);
-  }
-
-  llvm::GlobalVariable *GV = new llvm::GlobalVariable(getModule(), GuidType,
-      /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage, Init, Name);
-  GV->setUnnamedAddr(true);
+  llvm::GlobalVariable *GV = new llvm::GlobalVariable(
+      getModule(), Init->getType(),
+      /*isConstant=*/true, llvm::GlobalValue::ExternalLinkage, Init, Name);
   return GV;
 }
 
@@ -1325,13 +1310,15 @@ void CodeGenModule::EmitGlobalDefinition(GlobalDecl GD) {
 llvm::Constant *
 CodeGenModule::GetOrCreateLLVMFunction(StringRef MangledName,
                                        llvm::Type *Ty,
-                                       GlobalDecl D, bool ForVTable,
+                                       GlobalDecl GD, bool ForVTable,
                                        llvm::AttributeSet ExtraAttrs) {
+  const Decl *D = GD.getDecl();
+
   // Lookup the entry, lazily creating it if necessary.
   llvm::GlobalValue *Entry = GetGlobalValue(MangledName);
   if (Entry) {
     if (WeakRefReferences.erase(Entry)) {
-      const FunctionDecl *FD = cast_or_null<FunctionDecl>(D.getDecl());
+      const FunctionDecl *FD = cast_or_null<FunctionDecl>(D);
       if (FD && !FD->hasAttr<WeakAttr>())
         Entry->setLinkage(llvm::Function::ExternalLinkage);
     }
@@ -1342,6 +1329,14 @@ CodeGenModule::GetOrCreateLLVMFunction(StringRef MangledName,
     // Make sure the result is of the correct type.
     return llvm::ConstantExpr::getBitCast(Entry, Ty->getPointerTo());
   }
+
+  // All MSVC dtors other than the base dtor are linkonce_odr and delegate to
+  // each other bottoming out with the base dtor.  Therefore we emit non-base
+  // dtors on usage, even if there is no dtor definition in the TU.
+  if (D && isa<CXXDestructorDecl>(D) &&
+      getCXXABI().useThunkForDtorVariant(cast<CXXDestructorDecl>(D),
+                                         GD.getDtorType()))
+    DeferredDeclsToEmit.push_back(GD);
 
   // This function doesn't have a complete type (for example, the return
   // type is an incomplete struct). Use a fake type instead, and make
@@ -1360,8 +1355,8 @@ CodeGenModule::GetOrCreateLLVMFunction(StringRef MangledName,
                                              llvm::Function::ExternalLinkage,
                                              MangledName, &getModule());
   assert(F->getName() == MangledName && "name was uniqued!");
-  if (D.getDecl())
-    SetFunctionAttributes(D, F, IsIncompleteFunction);
+  if (D)
+    SetFunctionAttributes(GD, F, IsIncompleteFunction);
   if (ExtraAttrs.hasAttributes(llvm::AttributeSet::FunctionIndex)) {
     llvm::AttrBuilder B(ExtraAttrs, llvm::AttributeSet::FunctionIndex);
     F->addAttributes(llvm::AttributeSet::FunctionIndex,
@@ -1391,18 +1386,18 @@ CodeGenModule::GetOrCreateLLVMFunction(StringRef MangledName,
   //
   // We also don't emit a definition for a function if it's going to be an entry
   // in a vtable, unless it's already marked as used.
-  } else if (getLangOpts().CPlusPlus && D.getDecl()) {
+  } else if (getLangOpts().CPlusPlus && D) {
     // Look for a declaration that's lexically in a record.
-    const FunctionDecl *FD = cast<FunctionDecl>(D.getDecl());
+    const FunctionDecl *FD = cast<FunctionDecl>(D);
     FD = FD->getMostRecentDecl();
     do {
       if (isa<CXXRecordDecl>(FD->getLexicalDeclContext())) {
         if (FD->isImplicit() && !ForVTable) {
           assert(FD->isUsed() && "Sema didn't mark implicit function as used!");
-          DeferredDeclsToEmit.push_back(D.getWithDecl(FD));
+          DeferredDeclsToEmit.push_back(GD.getWithDecl(FD));
           break;
         } else if (FD->doesThisDeclarationHaveABody()) {
-          DeferredDeclsToEmit.push_back(D.getWithDecl(FD));
+          DeferredDeclsToEmit.push_back(GD.getWithDecl(FD));
           break;
         }
       }
@@ -2822,8 +2817,12 @@ void CodeGenModule::EmitTopLevelDecl(Decl *D) {
 
     EmitGlobal(cast<FunctionDecl>(D));
     break;
-      
+
   case Decl::Var:
+    // Skip variable templates
+    if (cast<VarDecl>(D)->getDescribedVarTemplate())
+      return;
+  case Decl::VarTemplateSpecialization:
     EmitGlobal(cast<VarDecl>(D));
     break;
 
@@ -2840,6 +2839,8 @@ void CodeGenModule::EmitTopLevelDecl(Decl *D) {
   case Decl::UsingShadow:
   case Decl::Using:
   case Decl::ClassTemplate:
+  case Decl::VarTemplate:
+  case Decl::VarTemplatePartialSpecialization:
   case Decl::FunctionTemplate:
   case Decl::TypeAliasTemplate:
   case Decl::Block:
@@ -2859,12 +2860,12 @@ void CodeGenModule::EmitTopLevelDecl(Decl *D) {
         cast<FunctionDecl>(D)->isLateTemplateParsed())
       return;
       
-    EmitCXXConstructors(cast<CXXConstructorDecl>(D));
+    getCXXABI().EmitCXXConstructors(cast<CXXConstructorDecl>(D));
     break;
   case Decl::CXXDestructor:
     if (cast<FunctionDecl>(D)->isLateTemplateParsed())
       return;
-    EmitCXXDestructors(cast<CXXDestructorDecl>(D));
+    getCXXABI().EmitCXXDestructors(cast<CXXDestructorDecl>(D));
     break;
 
   case Decl::StaticAssert:
@@ -3063,26 +3064,24 @@ llvm::Constant *CodeGenModule::EmitUuidofInitializer(StringRef Uuid,
   // Sema has checked that all uuid strings are of the form
   // "12345678-1234-1234-1234-1234567890ab".
   assert(Uuid.size() == 36);
-  const char *Uuidstr = Uuid.data();
-  for (int i = 0; i < 36; ++i) {
-    if (i == 8 || i == 13 || i == 18 || i == 23) assert(Uuidstr[i] == '-');
-    else                                         assert(isHexDigit(Uuidstr[i]));
+  for (unsigned i = 0; i < 36; ++i) {
+    if (i == 8 || i == 13 || i == 18 || i == 23) assert(Uuid[i] == '-');
+    else                                         assert(isHexDigit(Uuid[i]));
   }
-  
-  llvm::APInt Field0(32, StringRef(Uuidstr     , 8), 16);
-  llvm::APInt Field1(16, StringRef(Uuidstr +  9, 4), 16);
-  llvm::APInt Field2(16, StringRef(Uuidstr + 14, 4), 16);
-  static const int Field3ValueOffsets[] = { 19, 21, 24, 26, 28, 30, 32, 34 };
 
-  APValue InitStruct(APValue::UninitStruct(), /*NumBases=*/0, /*NumFields=*/4);
-  InitStruct.getStructField(0) = APValue(llvm::APSInt(Field0));
-  InitStruct.getStructField(1) = APValue(llvm::APSInt(Field1));
-  InitStruct.getStructField(2) = APValue(llvm::APSInt(Field2));
-  APValue& Arr = InitStruct.getStructField(3);
-  Arr = APValue(APValue::UninitArray(), 8, 8);
-  for (int t = 0; t < 8; ++t)
-    Arr.getArrayInitializedElt(t) = APValue(llvm::APSInt(
-          llvm::APInt(8, StringRef(Uuidstr + Field3ValueOffsets[t], 2), 16)));
+  const unsigned Field3ValueOffsets[8] = { 19, 21, 24, 26, 28, 30, 32, 34 };
 
-  return EmitConstantValue(InitStruct, GuidType);
+  llvm::Constant *Field3[8];
+  for (unsigned Idx = 0; Idx < 8; ++Idx)
+    Field3[Idx] = llvm::ConstantInt::get(
+        Int8Ty, Uuid.substr(Field3ValueOffsets[Idx], 2), 16);
+
+  llvm::Constant *Fields[4] = {
+    llvm::ConstantInt::get(Int32Ty, Uuid.substr(0,  8), 16),
+    llvm::ConstantInt::get(Int16Ty, Uuid.substr(9,  4), 16),
+    llvm::ConstantInt::get(Int16Ty, Uuid.substr(14, 4), 16),
+    llvm::ConstantArray::get(llvm::ArrayType::get(Int8Ty, 8), Field3)
+  };
+
+  return llvm::ConstantStruct::getAnon(Fields);
 }

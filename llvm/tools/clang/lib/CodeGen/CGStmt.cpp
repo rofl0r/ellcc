@@ -75,6 +75,7 @@ void CodeGenFunction::EmitStmt(const Stmt *S) {
   case Stmt::SEHExceptStmtClass:
   case Stmt::SEHFinallyStmtClass:
   case Stmt::MSDependentExistsStmtClass:
+  case Stmt::OMPParallelDirectiveClass:
     llvm_unreachable("invalid statement class to emit generically");
   case Stmt::NullStmtClass:
   case Stmt::CompoundStmtClass:
@@ -425,12 +426,7 @@ void CodeGenFunction::EmitIndirectGotoStmt(const IndirectGotoStmt &S) {
 void CodeGenFunction::EmitIfStmt(const IfStmt &S) {
   // C99 6.8.4.1: The first substatement is executed if the expression compares
   // unequal to 0.  The condition must be a scalar type.
-  RunCleanupsScope ConditionScope(*this);
-
-  // Also open a debugger-visible lexical scope for the condition.
-  CGDebugInfo *DI = getDebugInfo();
-  if (DI)
-    DI->EmitLexicalBlockStart(Builder, S.getSourceRange().getBegin());
+  LexicalScope ConditionScope(*this, S.getSourceRange());
 
   if (S.getConditionVariable())
     EmitAutoVarDecl(*S.getConditionVariable());
@@ -452,8 +448,6 @@ void CodeGenFunction::EmitIfStmt(const IfStmt &S) {
         RunCleanupsScope ExecutedScope(*this);
         EmitStmt(Executed);
       }
-      if (DI)
-        DI->EmitLexicalBlockEnd(Builder, S.getSourceRange().getEnd());
       return;
     }
   }
@@ -490,9 +484,6 @@ void CodeGenFunction::EmitIfStmt(const IfStmt &S) {
       Builder.SetCurrentDebugLocation(llvm::DebugLoc());
     EmitBranch(ContBlock);
   }
-
-  if (DI)
-    DI->EmitLexicalBlockEnd(Builder, S.getSourceRange().getEnd());
 
   // Emit the continuation block for code after the if.
   EmitBlock(ContBlock, true);
@@ -1353,7 +1344,7 @@ SimplifyConstraint(const char *Constraint, const TargetInfo &Target,
       break;
     case '#': // Ignore the rest of the constraint alternative.
       while (Constraint[1] && Constraint[1] != ',')
-	Constraint++;
+        Constraint++;
       break;
     case ',':
       Result += "|";

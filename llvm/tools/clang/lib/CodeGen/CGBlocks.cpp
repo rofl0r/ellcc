@@ -355,14 +355,9 @@ static void computeBlockInfo(CodeGenModule &CGM, CodeGenFunction *CGF,
 
   // First, 'this'.
   if (block->capturesCXXThis()) {
-    const DeclContext *DC = block->getDeclContext();
-    for (; isa<BlockDecl>(DC); DC = cast<BlockDecl>(DC)->getDeclContext())
-      ;
-    QualType thisType;
-    if (const CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(DC))
-      thisType = C.getPointerType(C.getRecordType(RD));
-    else
-      thisType = cast<CXXMethodDecl>(DC)->getThisType(C);
+    assert(CGF && CGF->CurFuncDecl && isa<CXXMethodDecl>(CGF->CurFuncDecl) &&
+           "Can't capture 'this' outside a method");
+    QualType thisType = cast<CXXMethodDecl>(CGF->CurFuncDecl)->getThisType(C);
 
     llvm::Type *llvmType = CGM.getTypes().ConvertType(thisType);
     std::pair<CharUnits,CharUnits> tinfo
@@ -1169,9 +1164,8 @@ CodeGenFunction::GenerateBlockFunction(GlobalDecl GD,
     Alloca->setAlignment(Align);
     // Set the DebugLocation to empty, so the store is recognized as a
     // frame setup instruction by llvm::DwarfDebug::beginFunction().
-    Builder.DisableDebugLocations();
+    NoLocation NL(*this, Builder);
     Builder.CreateAlignedStore(BlockPointer, Alloca, Align);
-    Builder.EnableDebugLocations();
     BlockPointerDbgLoc = Alloca;
   }
 
@@ -1319,7 +1313,10 @@ CodeGenFunction::GenerateCopyHelperFunction(const CGBlockInfo &blockInfo) {
                                           SC_Static,
                                           false,
                                           false);
+  // Create a scope with an artificial location for the body of this function.
+  ArtificialLocation AL(*this, Builder);
   StartFunction(FD, C.VoidTy, Fn, FI, args, SourceLocation());
+  AL.Emit();
 
   llvm::Type *structPtrTy = blockInfo.StructureType->getPointerTo();
 
@@ -1492,7 +1489,10 @@ CodeGenFunction::GenerateDestroyHelperFunction(const CGBlockInfo &blockInfo) {
                                           SourceLocation(), II, C.VoidTy, 0,
                                           SC_Static,
                                           false, false);
+  // Create a scope with an artificial location for the body of this function.
+  ArtificialLocation AL(*this, Builder);
   StartFunction(FD, C.VoidTy, Fn, FI, args, SourceLocation());
+  AL.Emit();
 
   llvm::Type *structPtrTy = blockInfo.StructureType->getPointerTo();
 

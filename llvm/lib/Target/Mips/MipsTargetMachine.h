@@ -45,6 +45,7 @@ class MipsTargetMachine : public LLVMTargetMachine {
   OwningPtr<const MipsFrameLowering> FrameLoweringSE;
   OwningPtr<const MipsTargetLowering> TLInfoSE;
   MipsSelectionDAGInfo TSInfo;
+  const InstrItineraryData &InstrItins;
   MipsJITInfo JITInfo;
   MipsIntrinsicInfo   IntrinsicInfo;
 
@@ -67,6 +68,11 @@ public:
   { return &Subtarget; }
   virtual const DataLayout *getDataLayout()    const
   { return &DL;}
+
+  virtual const InstrItineraryData *getInstrItineraryData() const {
+    return Subtarget.inMips16Mode() ? 0 : &InstrItins;
+  }
+
   virtual MipsJITInfo *getJITInfo()
   { return &JITInfo; }
 

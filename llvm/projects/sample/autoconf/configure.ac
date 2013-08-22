@@ -629,10 +629,10 @@ case "$enableval" in
             AArch64)     TARGETS_TO_BUILD="AArch64 $TARGETS_TO_BUILD" ;;
             ARM)         TARGETS_TO_BUILD="ARM $TARGETS_TO_BUILD" ;;
             Mips)        TARGETS_TO_BUILD="Mips $TARGETS_TO_BUILD" ;;
-            MBlaze)      TARGETS_TO_BUILD="MBlaze $TARGETS_TO_BUILD" ;;
             XCore)       TARGETS_TO_BUILD="XCore $TARGETS_TO_BUILD" ;;
             MSP430)      TARGETS_TO_BUILD="MSP430 $TARGETS_TO_BUILD" ;;
             Hexagon)     TARGETS_TO_BUILD="Hexagon $TARGETS_TO_BUILD" ;;
+            MBlaze)      TARGETS_TO_BUILD="MBlaze $TARGETS_TO_BUILD" ;;
             NVPTX)       TARGETS_TO_BUILD="NVPTX $TARGETS_TO_BUILD" ;;
             SystemZ)     TARGETS_TO_BUILD="SystemZ $TARGETS_TO_BUILD" ;;
             *)       AC_MSG_ERROR([Can not set target to build]) ;;
@@ -989,7 +989,7 @@ AC_LINK_GET_VERSION
 dnl Determine whether the linker supports the -R option.
 AC_LINK_USE_R
 
-dnl Determine whether the linker supports the -export-dynamic option.
+dnl Determine whether the compiler supports the -rdynamic option.
 AC_LINK_EXPORT_DYNAMIC
 
 dnl Determine whether the linker supports the --version-script option.
@@ -1468,7 +1468,7 @@ AC_SUBST(RPATH)
 
 dnl Determine linker rdynamic flag
 if test "$llvm_cv_link_use_export_dynamic" = "yes" ; then
-  RDYNAMIC="-Wl,-export-dynamic"
+  RDYNAMIC="-rdynamic"
 else
   RDYNAMIC=""
 fi

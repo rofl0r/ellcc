@@ -169,7 +169,7 @@ public:
   int getFrameIndex()                const { return FrameIndex; }
   void setFrameIndex(int FI)               { FrameIndex = FI; }
   // Translate tag to proper Dwarf tag.
-  unsigned getTag()                  const {
+  uint16_t getTag()                  const {
     if (Var.getTag() == dwarf::DW_TAG_arg_variable)
       return dwarf::DW_TAG_formal_parameter;
 
@@ -193,15 +193,15 @@ public:
   }
 
   bool variableHasComplexAddress()   const {
-    assert(Var.Verify() && "Invalid complex DbgVariable!");
+    assert(Var.isVariable() && "Invalid complex DbgVariable!");
     return Var.hasComplexAddress();
   }
   bool isBlockByrefVariable()        const {
-    assert(Var.Verify() && "Invalid complex DbgVariable!");
+    assert(Var.isVariable() && "Invalid complex DbgVariable!");
     return Var.isBlockByrefVariable();
   }
   unsigned getNumAddrElements()      const {
-    assert(Var.Verify() && "Invalid complex DbgVariable!");
+    assert(Var.isVariable() && "Invalid complex DbgVariable!");
     return Var.getNumAddrElements();
   }
   uint64_t getAddrElement(unsigned i) const {
@@ -311,10 +311,7 @@ class DwarfDebug {
   // All DIEValues are allocated through this allocator.
   BumpPtrAllocator DIEValueAllocator;
 
-  //===--------------------------------------------------------------------===//
-  // Attribute used to construct specific Dwarf sections.
-  //
-
+  // Handle to the a compile unit used for the inline extension handling.
   CompileUnit *FirstCU;
 
   // Maps MDNode with its corresponding CompileUnit.
@@ -338,7 +335,7 @@ class DwarfDebug {
   // Provides a unique id per text section.
   SetVector<const MCSection*> SectionMap;
 
-  // List of Arguments (DbgValues) for current function.
+  // List of arguments for current function.
   SmallVector<DbgVariable *, 8> CurrentFnArguments;
 
   LexicalScopes LScopes;
@@ -430,6 +427,9 @@ class DwarfDebug {
   typedef SmallVector<std::pair<const MDNode *, const MDNode *>, 32>
     ImportedEntityMap;
   ImportedEntityMap ScopesWithImportedEntities;
+
+  // Holder for types that are going to be extracted out into a type unit.
+  std::vector<DIE *> TypeUnits;
 
   // DWARF5 Experimental Options
   bool HasDwarfAccelTables;
@@ -653,6 +653,10 @@ public:
 
   /// \brief Process end of an instruction.
   void endInstruction(const MachineInstr *MI);
+
+  /// \brief Add a DIE to the set of types that we're going to pull into
+  /// type units.
+  void addTypeUnitType(DIE *Die) { TypeUnits.push_back(Die); }
 
   /// \brief Look up the source id with the given directory and source file
   /// names. If none currently exists, create a new id and insert it in the

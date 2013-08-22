@@ -1809,22 +1809,15 @@ InitListChecker::CheckDesignatedInitializer(const InitializedEntity &Entity,
         // Name lookup didn't find anything. Determine whether this
         // was a typo for another field name.
         FieldInitializerValidatorCCC Validator(RT->getDecl());
-        TypoCorrection Corrected = SemaRef.CorrectTypo(
-            DeclarationNameInfo(FieldName, D->getFieldLoc()),
-            Sema::LookupMemberName, /*Scope=*/0, /*SS=*/0, Validator,
-            RT->getDecl());
-        if (Corrected) {
-          std::string CorrectedStr(
-              Corrected.getAsString(SemaRef.getLangOpts()));
-          std::string CorrectedQuotedStr(
-              Corrected.getQuoted(SemaRef.getLangOpts()));
+        if (TypoCorrection Corrected = SemaRef.CorrectTypo(
+                DeclarationNameInfo(FieldName, D->getFieldLoc()),
+                Sema::LookupMemberName, /*Scope=*/ 0, /*SS=*/ 0, Validator,
+                RT->getDecl())) {
+          SemaRef.diagnoseTypo(
+              Corrected,
+              SemaRef.PDiag(diag::err_field_designator_unknown_suggest)
+                  << FieldName << CurrentObjectType);
           ReplacementField = Corrected.getCorrectionDeclAs<FieldDecl>();
-          SemaRef.Diag(D->getFieldLoc(),
-                       diag::err_field_designator_unknown_suggest)
-            << FieldName << CurrentObjectType << CorrectedQuotedStr
-            << FixItHint::CreateReplacement(D->getFieldLoc(), CorrectedStr);
-          SemaRef.Diag(ReplacementField->getLocation(),
-                       diag::note_previous_decl) << CorrectedQuotedStr;
           hadError = true;
         } else {
           SemaRef.Diag(D->getFieldLoc(), diag::err_field_designator_unknown)
@@ -2455,10 +2448,10 @@ InitializedEntity::InitializedEntity(ASTContext &Context, unsigned Index,
   }
 }
 
-InitializedEntity InitializedEntity::InitializeBase(ASTContext &Context,
-                                                    CXXBaseSpecifier *Base,
-                                                    bool IsInheritedVirtualBase)
-{
+InitializedEntity
+InitializedEntity::InitializeBase(ASTContext &Context,
+                                  const CXXBaseSpecifier *Base,
+                                  bool IsInheritedVirtualBase) {
   InitializedEntity Result;
   Result.Kind = EK_Base;
   Result.Parent = 0;
@@ -2472,7 +2465,8 @@ InitializedEntity InitializedEntity::InitializeBase(ASTContext &Context,
 
 DeclarationName InitializedEntity::getName() const {
   switch (getKind()) {
-  case EK_Parameter: {
+  case EK_Parameter:
+  case EK_Parameter_CF_Audited: {
     ParmVarDecl *D = reinterpret_cast<ParmVarDecl*>(Parameter & ~0x1);
     return (D ? D->getDeclName() : DeclarationName());
   }
@@ -2495,6 +2489,7 @@ DeclarationName InitializedEntity::getName() const {
   case EK_ComplexElement:
   case EK_BlockElement:
   case EK_CompoundLiteralInit:
+  case EK_RelatedResult:
     return DeclarationName();
   }
 
@@ -2508,6 +2503,7 @@ DeclaratorDecl *InitializedEntity::getDecl() const {
     return VariableOrMember;
 
   case EK_Parameter:
+  case EK_Parameter_CF_Audited:
     return reinterpret_cast<ParmVarDecl*>(Parameter & ~0x1);
 
   case EK_Result:
@@ -2522,6 +2518,7 @@ DeclaratorDecl *InitializedEntity::getDecl() const {
   case EK_BlockElement:
   case EK_LambdaCapture:
   case EK_CompoundLiteralInit:
+  case EK_RelatedResult:
     return 0;
   }
 
@@ -2536,6 +2533,7 @@ bool InitializedEntity::allowsNRVO() const {
 
   case EK_Variable:
   case EK_Parameter:
+  case EK_Parameter_CF_Audited:
   case EK_Member:
   case EK_New:
   case EK_Temporary:
@@ -2547,6 +2545,7 @@ bool InitializedEntity::allowsNRVO() const {
   case EK_ComplexElement:
   case EK_BlockElement:
   case EK_LambdaCapture:
+  case EK_RelatedResult:
     break;
   }
 
@@ -2562,12 +2561,15 @@ unsigned InitializedEntity::dumpImpl(raw_ostream &OS) const {
   switch (getKind()) {
   case EK_Variable: OS << "Variable"; break;
   case EK_Parameter: OS << "Parameter"; break;
+  case EK_Parameter_CF_Audited: OS << "CF audited function Parameter";
+    break;
   case EK_Result: OS << "Result"; break;
   case EK_Exception: OS << "Exception"; break;
   case EK_Member: OS << "Member"; break;
   case EK_New: OS << "New"; break;
   case EK_Temporary: OS << "Temporary"; break;
   case EK_CompoundLiteralInit: OS << "CompoundLiteral";break;
+  case EK_RelatedResult: OS << "RelatedResult"; break;
   case EK_Base: OS << "Base"; break;
   case EK_Delegating: OS << "Delegating"; break;
   case EK_ArrayElement: OS << "ArrayElement " << Index; break;
@@ -2916,7 +2918,7 @@ static void MaybeProduceObjCObject(Sema &S,
 
   /// When initializing a parameter, produce the value if it's marked
   /// __attribute__((ns_consumed)).
-  if (Entity.getKind() == InitializedEntity::EK_Parameter) {
+  if (Entity.isParameterKind()) {
     if (!Entity.isParameterConsumed())
       return;
 
@@ -4489,7 +4491,7 @@ InitializationSequence::InitializationSequence(Sema &S,
   // Determine whether we should consider writeback conversions for 
   // Objective-C ARC.
   bool allowObjCWritebackConversion = S.getLangOpts().ObjCAutoRefCount &&
-    Entity.getKind() == InitializedEntity::EK_Parameter;
+         Entity.isParameterKind();
 
   // We're at the end of the line for C: it's either a write-back conversion
   // or it's a C assignment. There's no need to check anything else.
@@ -4615,7 +4617,7 @@ InitializationSequence::~InitializationSequence() {
 // Perform initialization
 //===----------------------------------------------------------------------===//
 static Sema::AssignmentAction
-getAssignmentAction(const InitializedEntity &Entity) {
+getAssignmentAction(const InitializedEntity &Entity, bool Diagnose = false) {
   switch(Entity.getKind()) {
   case InitializedEntity::EK_Variable:
   case InitializedEntity::EK_New:
@@ -4631,10 +4633,18 @@ getAssignmentAction(const InitializedEntity &Entity) {
 
     return Sema::AA_Passing;
 
+  case InitializedEntity::EK_Parameter_CF_Audited:
+    if (Entity.getDecl() &&
+      isa<ObjCMethodDecl>(Entity.getDecl()->getDeclContext()))
+      return Sema::AA_Sending;
+      
+    return !Diagnose ? Sema::AA_Passing : Sema::AA_Passing_CFAudited;
+      
   case InitializedEntity::EK_Result:
     return Sema::AA_Returning;
 
   case InitializedEntity::EK_Temporary:
+  case InitializedEntity::EK_RelatedResult:
     // FIXME: Can we tell apart casting vs. converting?
     return Sema::AA_Casting;
 
@@ -4671,7 +4681,9 @@ static bool shouldBindAsTemporary(const InitializedEntity &Entity) {
     return false;
 
   case InitializedEntity::EK_Parameter:
+  case InitializedEntity::EK_Parameter_CF_Audited:
   case InitializedEntity::EK_Temporary:
+  case InitializedEntity::EK_RelatedResult:
     return true;
   }
 
@@ -4695,10 +4707,12 @@ static bool shouldDestroyTemporary(const InitializedEntity &Entity) {
     case InitializedEntity::EK_Member:
     case InitializedEntity::EK_Variable:
     case InitializedEntity::EK_Parameter:
+    case InitializedEntity::EK_Parameter_CF_Audited:
     case InitializedEntity::EK_Temporary:
     case InitializedEntity::EK_ArrayElement:
     case InitializedEntity::EK_Exception:
     case InitializedEntity::EK_CompoundLiteralInit:
+    case InitializedEntity::EK_RelatedResult:
       return true;
   }
 
@@ -4773,6 +4787,7 @@ static SourceLocation getInitializationLoc(const InitializedEntity &Entity,
   case InitializedEntity::EK_ArrayElement:
   case InitializedEntity::EK_Member:
   case InitializedEntity::EK_Parameter:
+  case InitializedEntity::EK_Parameter_CF_Audited:
   case InitializedEntity::EK_Temporary:
   case InitializedEntity::EK_New:
   case InitializedEntity::EK_Base:
@@ -4781,6 +4796,7 @@ static SourceLocation getInitializationLoc(const InitializedEntity &Entity,
   case InitializedEntity::EK_ComplexElement:
   case InitializedEntity::EK_BlockElement:
   case InitializedEntity::EK_CompoundLiteralInit:
+  case InitializedEntity::EK_RelatedResult:
     return Initializer->getLocStart();
   }
   llvm_unreachable("missed an InitializedEntity kind?");
@@ -4991,7 +5007,7 @@ static void CheckCXX98CompatAccessibleCopy(Sema &S,
 
 void InitializationSequence::PrintInitLocationNote(Sema &S,
                                               const InitializedEntity &Entity) {
-  if (Entity.getKind() == InitializedEntity::EK_Parameter && Entity.getDecl()) {
+  if (Entity.isParameterKind() && Entity.getDecl()) {
     if (Entity.getDecl()->getLocation().isInvalid())
       return;
 
@@ -5001,6 +5017,11 @@ void InitializationSequence::PrintInitLocationNote(Sema &S,
     else
       S.Diag(Entity.getDecl()->getLocation(), diag::note_parameter_here);
   }
+  else if (Entity.getKind() == InitializedEntity::EK_RelatedResult &&
+           Entity.getMethodDecl())
+    S.Diag(Entity.getMethodDecl()->getLocation(),
+           diag::note_method_return_type_change)
+      << Entity.getMethodDecl()->getDeclName();
 }
 
 static bool isReferenceBinding(const InitializationSequence::Step &s) {
@@ -5016,6 +5037,7 @@ static bool isExplicitTemporary(const InitializedEntity &Entity,
   switch (Entity.getKind()) {
   case InitializedEntity::EK_Temporary:
   case InitializedEntity::EK_CompoundLiteralInit:
+  case InitializedEntity::EK_RelatedResult:
     break;
   default:
     return false;
@@ -5183,9 +5205,11 @@ InitializedEntityOutlivesFullExpression(const InitializedEntity &Entity) {
     return false;
 
   case InitializedEntity::EK_Parameter:
+  case InitializedEntity::EK_Parameter_CF_Audited:
   case InitializedEntity::EK_Temporary:
   case InitializedEntity::EK_LambdaCapture:
   case InitializedEntity::EK_CompoundLiteralInit:
+  case InitializedEntity::EK_RelatedResult:
     // The entity being initialized might not outlive the full-expression.
     return false;
   }
@@ -5217,6 +5241,7 @@ getDeclForTemporaryLifetimeExtension(const InitializedEntity &Entity,
     return Entity.getDecl();
 
   case InitializedEntity::EK_Parameter:
+  case InitializedEntity::EK_Parameter_CF_Audited:
     //   -- A temporary bound to a reference parameter in a function call
     //      persists until the completion of the full-expression containing
     //      the call.
@@ -5232,6 +5257,7 @@ getDeclForTemporaryLifetimeExtension(const InitializedEntity &Entity,
 
   case InitializedEntity::EK_Temporary:
   case InitializedEntity::EK_CompoundLiteralInit:
+  case InitializedEntity::EK_RelatedResult:
     // We don't yet know the storage duration of the surrounding temporary.
     // Assume it's got full-expression duration for now, it will patch up our
     // storage duration if that's not correct.
@@ -5468,7 +5494,7 @@ InitializationSequence::Perform(Sema &S,
 
   if (S.getLangOpts().CPlusPlus11 && Entity.getType()->isReferenceType() &&
       Args.size() == 1 && isa<InitListExpr>(Args[0]) &&
-      Entity.getKind() != InitializedEntity::EK_Parameter) {
+      !Entity.isParameterKind()) {
     // Produce a C++98 compatibility warning if we are initializing a reference
     // from an initializer list. For parameters, we produce a better warning
     // elsewhere.
@@ -5952,7 +5978,8 @@ InitializationSequence::Perform(Sema &S,
       QualType SourceType = CurInit.get()->getType();
       ExprResult Result = CurInit;
       Sema::AssignConvertType ConvTy =
-        S.CheckSingleAssignmentConstraints(Step->Type, Result);
+        S.CheckSingleAssignmentConstraints(Step->Type, Result, true,
+            Entity.getKind() == InitializedEntity::EK_Parameter_CF_Audited);
       if (Result.isInvalid())
         return ExprError();
       CurInit = Result;
@@ -5960,7 +5987,7 @@ InitializationSequence::Perform(Sema &S,
       // If this is a call, allow conversion to a transparent union.
       ExprResult CurInitExprRes = CurInit;
       if (ConvTy != Sema::Compatible &&
-          Entity.getKind() == InitializedEntity::EK_Parameter &&
+          Entity.isParameterKind() &&
           S.CheckTransparentUnionArgumentConstraints(Step->Type, CurInitExprRes)
             == Sema::Compatible)
         ConvTy = Sema::Compatible;
@@ -5972,7 +5999,7 @@ InitializationSequence::Perform(Sema &S,
       if (S.DiagnoseAssignmentResult(ConvTy, Kind.getLocation(),
                                      Step->Type, SourceType,
                                      CurInit.get(),
-                                     getAssignmentAction(Entity),
+                                     getAssignmentAction(Entity, true),
                                      &Complained)) {
         PrintInitLocationNote(S, Entity);
         return ExprError();
@@ -6073,13 +6100,12 @@ InitializationSequence::Perform(Sema &S,
              "Sampler initialization on non sampler type.");
 
       QualType SourceType = CurInit.get()->getType();
-      InitializedEntity::EntityKind EntityKind = Entity.getKind();
 
-      if (EntityKind == InitializedEntity::EK_Parameter) {
+      if (Entity.isParameterKind()) {
         if (!SourceType->isSamplerT())
           S.Diag(Kind.getLocation(), diag::err_sampler_argument_required)
             << SourceType;
-      } else if (EntityKind != InitializedEntity::EK_Variable) {
+      } else if (Entity.getKind() != InitializedEntity::EK_Variable) {
         llvm_unreachable("Invalid EntityKind!");
       }
 

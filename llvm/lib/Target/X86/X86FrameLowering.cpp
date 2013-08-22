@@ -627,8 +627,8 @@ uint32_t X86FrameLowering::getCompactUnwindEncoding(MachineFunction &MF) const {
 /// to use the stack, and if we don't adjust the stack we clobber the first
 /// frame index.
 /// See X86InstrInfo::copyPhysReg.
-static bool usesTheStack(MachineFunction &MF) {
-  MachineRegisterInfo &MRI = MF.getRegInfo();
+static bool usesTheStack(const MachineFunction &MF) {
+  const MachineRegisterInfo &MRI = MF.getRegInfo();
 
   for (MachineRegisterInfo::reg_iterator ri = MRI.reg_begin(X86::EFLAGS),
        re = MRI.reg_end(); ri != re; ++ri)
@@ -914,11 +914,14 @@ void X86FrameLowering::emitPrologue(MachineFunction &MF) const {
       .addReg(X86::EFLAGS, RegState::Define | RegState::Implicit)
       .setMIFlag(MachineInstr::FrameSetup);
 
-    // MSVC x64's __chkstk needs to adjust %rsp.
-    // FIXME: %rax preserves the offset and should be available.
-    if (isSPUpdateNeeded)
-      emitSPUpdate(MBB, MBBI, StackPtr, -(int64_t)NumBytes, Is64Bit, IsLP64,
-                   UseLEA, TII, *RegInfo);
+    // MSVC x64's __chkstk does not adjust %rsp itself.
+    // It also does not clobber %rax so we can reuse it when adjusting %rsp.
+    if (isSPUpdateNeeded) {
+      BuildMI(MBB, MBBI, DL, TII.get(X86::SUB64rr), StackPtr)
+        .addReg(StackPtr)
+        .addReg(X86::RAX)
+        .setMIFlag(MachineInstr::FrameSetup);
+    }
 
     if (isEAXAlive) {
         // Restore EAX
@@ -1320,7 +1323,7 @@ X86FrameLowering::processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
   unsigned SlotSize = RegInfo->getSlotSize();
 
   X86MachineFunctionInfo *X86FI = MF.getInfo<X86MachineFunctionInfo>();
-  int32_t TailCallReturnAddrDelta = X86FI->getTCReturnAddrDelta();
+  int64_t TailCallReturnAddrDelta = X86FI->getTCReturnAddrDelta();
 
   if (TailCallReturnAddrDelta < 0) {
     // create RETURNADDR area
@@ -1333,7 +1336,7 @@ X86FrameLowering::processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
     //   }
     //   [EBP]
     MFI->CreateFixedObject(-TailCallReturnAddrDelta,
-                           (-1U*SlotSize)+TailCallReturnAddrDelta, true);
+                           TailCallReturnAddrDelta - SlotSize, true);
   }
 
   if (hasFP(MF)) {

@@ -18,6 +18,7 @@
 #include <cctype>
 #include <cstdio>
 #include <cstring>
+#include <fcntl.h>
 
 #if !defined(_MSC_VER) && !defined(__MINGW32__)
 #include <unistd.h>
@@ -76,7 +77,7 @@ namespace {
       return path.substr(0, 1);
 
     // * {file,directory}name
-    size_t end = path.find_first_of(separators, 2);
+    size_t end = path.find_first_of(separators);
     return path.substr(0, end);
   }
 
@@ -637,22 +638,60 @@ bool is_relative(const Twine &path) {
 
 namespace fs {
 
-// This is a mkostemps with a different pattern. Unfortunatelly OS X (ond *BSD)
-// don't have it. We should try using mkostemps on systems that have it.
-error_code unique_file(const Twine &Model, int &ResultFD,
-                       SmallVectorImpl<char> &ResultPath, bool MakeAbsolute,
-                       unsigned Mode) {
-  return createUniqueEntity(Model, ResultFD, ResultPath, MakeAbsolute, Mode,
-                            FS_File);
+error_code getUniqueID(const Twine Path, UniqueID &Result) {
+  file_status Status;
+  error_code EC = status(Path, Status);
+  if (EC)
+    return EC;
+  Result = Status.getUniqueID();
+  return error_code::success();
 }
 
-// This is a mktemp with a differet pattern. We use createUniqueEntity mostly
-// for consistency. We should try using mktemp.
-error_code unique_file(const Twine &Model, SmallVectorImpl<char> &ResultPath,
-                       bool MakeAbsolute) {
-  int Dummy;
-  return createUniqueEntity(Model, Dummy, ResultPath, MakeAbsolute, 0, FS_Name);
+error_code createUniqueFile(const Twine &Model, int &ResultFd,
+                            SmallVectorImpl<char> &ResultPath, unsigned Mode) {
+  return createUniqueEntity(Model, ResultFd, ResultPath, false, Mode, FS_File);
 }
+
+error_code createUniqueFile(const Twine &Model,
+                            SmallVectorImpl<char> &ResultPath) {
+  int Dummy;
+  return createUniqueEntity(Model, Dummy, ResultPath, false, 0, FS_Name);
+}
+
+static error_code createTemporaryFile(const Twine &Model, int &ResultFD,
+                                      llvm::SmallVectorImpl<char> &ResultPath,
+                                      FSEntity Type) {
+  SmallString<128> Storage;
+  StringRef P = Model.toNullTerminatedStringRef(Storage);
+  assert(P.find_first_of(separators) == StringRef::npos &&
+         "Model must be a simple filename.");
+  // Use P.begin() so that createUniqueEntity doesn't need to recreate Storage.
+  return createUniqueEntity(P.begin(), ResultFD, ResultPath,
+                            true, owner_read | owner_write, Type);
+}
+
+static error_code
+createTemporaryFile(const Twine &Prefix, StringRef Suffix, int &ResultFD,
+                    llvm::SmallVectorImpl<char> &ResultPath,
+                    FSEntity Type) {
+  const char *Middle = Suffix.empty() ? "-%%%%%%" : "-%%%%%%.";
+  return createTemporaryFile(Prefix + Middle + Suffix, ResultFD, ResultPath,
+                             Type);
+}
+
+
+error_code createTemporaryFile(const Twine &Prefix, StringRef Suffix,
+                               int &ResultFD,
+                               SmallVectorImpl<char> &ResultPath) {
+  return createTemporaryFile(Prefix, Suffix, ResultFD, ResultPath, FS_File);
+}
+
+error_code createTemporaryFile(const Twine &Prefix, StringRef Suffix,
+                               SmallVectorImpl<char> &ResultPath) {
+  int Dummy;
+  return createTemporaryFile(Prefix, Suffix, Dummy, ResultPath, FS_Name);
+}
+
 
 // This is a mkdtemp with a different pattern. We use createUniqueEntity mostly
 // for consistency. We should try using mkdtemp.

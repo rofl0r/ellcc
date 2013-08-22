@@ -162,8 +162,9 @@ static FrontendAction *CreateFrontendAction(CompilerInstance &CI) {
 
   if (FEOpts.ObjCMTAction != FrontendOptions::ObjCMT_None) {
     Act = new arcmt::ObjCMigrateAction(Act, FEOpts.MTMigrateDir,
-                   FEOpts.ObjCMTAction & ~FrontendOptions::ObjCMT_Literals,
-                   FEOpts.ObjCMTAction & ~FrontendOptions::ObjCMT_Subscripting);
+                   FEOpts.ObjCMTAction & FrontendOptions::ObjCMT_Literals,
+                   FEOpts.ObjCMTAction & FrontendOptions::ObjCMT_Subscripting,
+                   FEOpts.ObjCMTAction & FrontendOptions::ObjCMT_Property);
   }
 #endif
 
@@ -182,7 +183,7 @@ bool clang::ExecuteCompilerInvocation(CompilerInstance *Clang) {
     Opts->PrintHelp(llvm::outs(), "clang -cc1",
                     "LLVM 'Clang' Compiler: http://clang.llvm.org",
                     /*Include=*/ driver::options::CC1Option, /*Exclude=*/ 0);
-    return 0;
+    return true;
   }
 
   // Honor -version.
@@ -190,7 +191,7 @@ bool clang::ExecuteCompilerInvocation(CompilerInstance *Clang) {
   // FIXME: Use a better -version message?
   if (Clang->getFrontendOpts().ShowVersion) {
     llvm::cl::PrintVersionMessage();
-    return 0;
+    return true;
   }
 
   // Load any requested plugins.
@@ -222,7 +223,7 @@ bool clang::ExecuteCompilerInvocation(CompilerInstance *Clang) {
   // This should happen AFTER plugins have been loaded!
   if (Clang->getAnalyzerOpts()->ShowCheckerHelp) {
     ento::printCheckerHelp(llvm::outs(), Clang->getFrontendOpts().Plugins);
-    return 0;
+    return true;
   }
 #endif
 

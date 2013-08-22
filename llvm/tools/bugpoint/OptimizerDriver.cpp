@@ -44,6 +44,9 @@ namespace {
   // ChildOutput - This option captures the name of the child output file that
   // is set up by the parent bugpoint process
   cl::opt<std::string> ChildOutput("child-output", cl::ReallyHidden);
+  cl::opt<std::string> OptCmd("opt-command", cl::init(""),
+                              cl::desc("Path to opt. (default: search path "
+                                       "for 'opt'.)"));
 }
 
 /// writeProgramToFile - This writes the current "Program" to the named bitcode
@@ -68,7 +71,7 @@ bool BugDriver::writeProgramToFile(const std::string &Filename, int FD,
 bool BugDriver::writeProgramToFile(const std::string &Filename,
                                    const Module *M) const {
   std::string ErrInfo;
-  tool_output_file Out(Filename.c_str(), ErrInfo, raw_fd_ostream::F_Binary);
+  tool_output_file Out(Filename.c_str(), ErrInfo, sys::fs::F_Binary);
   if (ErrInfo.empty())
     return writeProgramToFileAux(Out, M);
   return true;
@@ -124,8 +127,8 @@ bool BugDriver::runPasses(Module *Program,
   // setup the output file name
   outs().flush();
   SmallString<128> UniqueFilename;
-  error_code EC =
-      sys::fs::unique_file(OutputPrefix + "-output-%%%%%%%.bc", UniqueFilename);
+  error_code EC = sys::fs::createUniqueFile(
+      OutputPrefix + "-output-%%%%%%%.bc", UniqueFilename);
   if (EC) {
     errs() << getToolName() << ": Error making unique filename: "
            << EC.message() << "\n";
@@ -136,8 +139,8 @@ bool BugDriver::runPasses(Module *Program,
   // set up the input file name
   SmallString<128> InputFilename;
   int InputFD;
-  EC = sys::fs::unique_file(OutputPrefix + "-input-%%%%%%%.bc", InputFD,
-                            InputFilename);
+  EC = sys::fs::createUniqueFile(OutputPrefix + "-input-%%%%%%%.bc", InputFD,
+                                 InputFilename);
   if (EC) {
     errs() << getToolName() << ": Error making unique filename: "
            << EC.message() << "\n";
@@ -154,7 +157,7 @@ bool BugDriver::runPasses(Module *Program,
     return 1;
   }
 
-  std::string tool = sys::FindProgramByName("opt");
+  std::string tool = OptCmd.empty()? sys::FindProgramByName("opt") : OptCmd;
   if (tool.empty()) {
     errs() << "Cannot find `opt' in PATH!\n";
     return 1;

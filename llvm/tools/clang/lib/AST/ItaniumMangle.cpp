@@ -56,6 +56,13 @@ static const DeclContext *getEffectiveDeclContext(const Decl *D) {
             = dyn_cast_or_null<ParmVarDecl>(RD->getLambdaContextDecl()))
         return ContextParam->getDeclContext();
   }
+
+  // Perform the same check for block literals.
+  if (const BlockDecl *BD = dyn_cast<BlockDecl>(D)) {
+    if (ParmVarDecl *ContextParam
+          = dyn_cast_or_null<ParmVarDecl>(BD->getBlockManglingContextDecl()))
+      return ContextParam->getDeclContext();
+  }
   
   const DeclContext *DC = D->getDeclContext();
   if (const CapturedDecl *CD = dyn_cast<CapturedDecl>(DC))
@@ -72,11 +79,11 @@ static bool isLocalContainerContext(const DeclContext *DC) {
   return isa<FunctionDecl>(DC) || isa<ObjCMethodDecl>(DC) || isa<BlockDecl>(DC);
 }
 
-static const CXXRecordDecl *GetLocalClassDecl(const Decl *D) {
+static const RecordDecl *GetLocalClassDecl(const Decl *D) {
   const DeclContext *DC = getEffectiveDeclContext(D);
   while (!DC->isNamespace() && !DC->isTranslationUnit()) {
     if (isLocalContainerContext(DC))
-      return dyn_cast<CXXRecordDecl>(D);
+      return dyn_cast<RecordDecl>(D);
     D = cast<Decl>(DC);
     DC = getEffectiveDeclContext(D);
   }
@@ -99,7 +106,8 @@ static const unsigned UnknownArity = ~0U;
 
 class ItaniumMangleContext : public MangleContext {
   llvm::DenseMap<const TagDecl *, uint64_t> AnonStructIds;
-  unsigned Discriminator;
+  typedef std::pair<const DeclContext*, IdentifierInfo*> DiscriminatorKeyTy;
+  llvm::DenseMap<DiscriminatorKeyTy, unsigned> Discriminator;
   llvm::DenseMap<const NamedDecl*, unsigned> Uniquifier;
   
 public:
@@ -112,11 +120,6 @@ public:
       uint64_t>::iterator, bool> Result =
       AnonStructIds.insert(std::make_pair(TD, AnonStructIds.size()));
     return Result.first->second;
-  }
-
-  void startNewFunction() {
-    MangleContext::startNewFunction();
-    mangleInitDiscriminator();
   }
 
   /// @name Mangler Entry Points
@@ -153,21 +156,33 @@ public:
   void mangleItaniumThreadLocalInit(const VarDecl *D, raw_ostream &);
   void mangleItaniumThreadLocalWrapper(const VarDecl *D, raw_ostream &);
 
-  void mangleInitDiscriminator() {
-    Discriminator = 0;
-  }
-
   bool getNextDiscriminator(const NamedDecl *ND, unsigned &disc) {
-    // Lambda closure types with external linkage (indicated by a 
-    // non-zero lambda mangling number) have their own numbering scheme, so
-    // they do not need a discriminator.
+    // Lambda closure types are already numbered.
     if (const CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(ND))
-      if (RD->isLambda() && RD->getLambdaManglingNumber() > 0)
+      if (RD->isLambda())
         return false;
-        
+
+    // Anonymous tags are already numbered.
+    if (const TagDecl *Tag = dyn_cast<TagDecl>(ND)) {
+      if (Tag->getName().empty() && !Tag->getTypedefNameForAnonDecl())
+        return false;
+    }
+
+    // Use the canonical number for externally visible decls.
+    if (ND->isExternallyVisible()) {
+      unsigned discriminator = getASTContext().getManglingNumber(ND);
+      if (discriminator == 1)
+        return false;
+      disc = discriminator - 2;
+      return true;
+    }
+
+    // Make up a reasonable number for internal decls.
     unsigned &discriminator = Uniquifier[ND];
-    if (!discriminator)
-      discriminator = ++Discriminator;
+    if (!discriminator) {
+      const DeclContext *DC = getEffectiveDeclContext(ND);
+      discriminator = ++Discriminator[std::make_pair(DC, ND->getIdentifier())];
+    }
     if (discriminator == 1)
       return false;
     disc = discriminator-2;
@@ -326,7 +341,7 @@ private:
   void manglePrefix(NestedNameSpecifier *qualifier);
   void manglePrefix(const DeclContext *DC, bool NoFunction=false);
   void manglePrefix(QualType type);
-  void mangleTemplatePrefix(const TemplateDecl *ND);
+  void mangleTemplatePrefix(const TemplateDecl *ND, bool NoFunction=false);
   void mangleTemplatePrefix(TemplateName Template);
   void mangleOperatorName(OverloadedOperatorKind OO, unsigned Arity);
   void mangleQualifiers(Qualifiers Quals);
@@ -345,6 +360,7 @@ private:
   void mangleBareFunctionType(const FunctionType *T,
                               bool MangleReturnType);
   void mangleNeonVectorType(const VectorType *T);
+  void mangleAArch64NeonVectorType(const VectorType *T);
 
   void mangleIntegerLiteral(QualType T, const llvm::APSInt &Value);
   void mangleMemberExpr(const Expr *base, bool isArrow,
@@ -416,7 +432,8 @@ bool ItaniumMangleContext::shouldMangleDeclName(const NamedDecl *D) {
     if (DC->isFunctionOrMethod() && D->hasLinkage())
       while (!DC->isNamespace() && !DC->isTranslationUnit())
         DC = getEffectiveParentContext(DC);
-    if (DC->isTranslationUnit() && D->getFormalLinkage() != InternalLinkage)
+    if (DC->isTranslationUnit() && D->getFormalLinkage() != InternalLinkage &&
+        !isa<VarTemplateSpecializationDecl>(D))
       return false;
   }
 
@@ -534,6 +551,13 @@ isTemplate(const NamedDecl *ND, const TemplateArgumentList *&TemplateArgs) {
   // Check if we have a class template.
   if (const ClassTemplateSpecializationDecl *Spec =
         dyn_cast<ClassTemplateSpecializationDecl>(ND)) {
+    TemplateArgs = &Spec->getTemplateArgs();
+    return Spec->getSpecializedTemplate();
+  }
+
+  // Check if we have a variable template.
+  if (const VarTemplateSpecializationDecl *Spec =
+          dyn_cast<VarTemplateSpecializationDecl>(ND)) {
     TemplateArgs = &Spec->getTemplateArgs();
     return Spec->getSpecializedTemplate();
   }
@@ -1141,11 +1165,11 @@ void CXXNameMangler::mangleUnqualifiedName(const NamedDecl *ND,
       }
     }
 
-    int UnnamedMangle = Context.getASTContext().getUnnamedTagManglingNumber(TD);
-    if (UnnamedMangle != -1) {
+    if (TD->isExternallyVisible()) {
+      unsigned UnnamedMangle = getASTContext().getManglingNumber(TD);
       Out << "Ut";
-      if (UnnamedMangle != 0)
-        Out << llvm::utostr(UnnamedMangle - 1);
+      if (UnnamedMangle > 1)
+        Out << llvm::utostr(UnnamedMangle - 2);
       Out << '_';
       break;
     }
@@ -1250,7 +1274,7 @@ void CXXNameMangler::mangleNestedName(const NamedDecl *ND,
   // Check if we have a template.
   const TemplateArgumentList *TemplateArgs = 0;
   if (const TemplateDecl *TD = isTemplate(ND, TemplateArgs)) {
-    mangleTemplatePrefix(TD);
+    mangleTemplatePrefix(TD, NoFunction);
     mangleTemplateArgs(*TemplateArgs);
   }
   else {
@@ -1280,7 +1304,7 @@ void CXXNameMangler::mangleLocalName(const Decl *D) {
   //                 _ <entity name>
   // <discriminator> := _ <non-negative number>
   assert(isa<NamedDecl>(D) || isa<BlockDecl>(D));
-  const CXXRecordDecl *RD = GetLocalClassDecl(D);
+  const RecordDecl *RD = GetLocalClassDecl(D);
   const DeclContext *DC = getEffectiveDeclContext(RD ? RD : D);
 
   Out << 'Z';
@@ -1300,10 +1324,10 @@ void CXXNameMangler::mangleLocalName(const Decl *D) {
     // <entity name> will of course contain a <closure-type-name>: Its 
     // numbering will be local to the particular argument in which it appears
     // -- other default arguments do not affect its encoding.
-    bool SkipDiscriminator = false;
-    if (RD->isLambda()) {
+    const CXXRecordDecl *CXXRD = dyn_cast<CXXRecordDecl>(RD);
+    if (CXXRD->isLambda()) {
       if (const ParmVarDecl *Parm
-                 = dyn_cast_or_null<ParmVarDecl>(RD->getLambdaContextDecl())) {
+              = dyn_cast_or_null<ParmVarDecl>(CXXRD->getLambdaContextDecl())) {
         if (const FunctionDecl *Func
               = dyn_cast<FunctionDecl>(Parm->getDeclContext())) {
           Out << 'd';
@@ -1311,7 +1335,6 @@ void CXXNameMangler::mangleLocalName(const Decl *D) {
           if (Num > 1)
             mangleNumber(Num - 2);
           Out << '_';
-          SkipDiscriminator = true;
         }
       }
     }
@@ -1327,24 +1350,35 @@ void CXXNameMangler::mangleLocalName(const Decl *D) {
       const NamedDecl *ND = cast<NamedDecl>(D);
       mangleNestedName(ND, getEffectiveDeclContext(ND), true /*NoFunction*/);
     }
-
-    if (!SkipDiscriminator) {
-      unsigned disc;
-      if (Context.getNextDiscriminator(RD, disc)) {
-        if (disc < 10)
-          Out << '_' << disc;
-        else
-          Out << "__" << disc << '_';
+  } else if (const BlockDecl *BD = dyn_cast<BlockDecl>(D)) {
+    // Mangle a block in a default parameter; see above explanation for
+    // lambdas.
+    if (const ParmVarDecl *Parm
+            = dyn_cast_or_null<ParmVarDecl>(BD->getBlockManglingContextDecl())) {
+      if (const FunctionDecl *Func
+            = dyn_cast<FunctionDecl>(Parm->getDeclContext())) {
+        Out << 'd';
+        unsigned Num = Func->getNumParams() - Parm->getFunctionScopeIndex();
+        if (Num > 1)
+          mangleNumber(Num - 2);
+        Out << '_';
       }
     }
-    
-    return;
+
+    mangleUnqualifiedBlock(BD);
+  } else {
+    mangleUnqualifiedName(cast<NamedDecl>(D));
   }
 
-  if (const BlockDecl *BD = dyn_cast<BlockDecl>(D))
-    mangleUnqualifiedBlock(BD);
-  else
-    mangleUnqualifiedName(cast<NamedDecl>(D));
+  if (const NamedDecl *ND = dyn_cast<NamedDecl>(RD ? RD : D)) {
+    unsigned disc;
+    if (Context.getNextDiscriminator(ND, disc)) {
+      if (disc < 10)
+        Out << '_' << disc;
+      else
+        Out << "__" << disc << '_';
+    }
+  }
 }
 
 void CXXNameMangler::mangleBlockForPrefix(const BlockDecl *Block) {
@@ -1513,7 +1547,8 @@ void CXXNameMangler::mangleTemplatePrefix(TemplateName Template) {
   mangleUnscopedTemplateName(Template);
 }
 
-void CXXNameMangler::mangleTemplatePrefix(const TemplateDecl *ND) {
+void CXXNameMangler::mangleTemplatePrefix(const TemplateDecl *ND,
+                                          bool NoFunction) {
   // <template-prefix> ::= <prefix> <template unqualified-name>
   //                   ::= <template-param>
   //                   ::= <substitution>
@@ -1530,7 +1565,7 @@ void CXXNameMangler::mangleTemplatePrefix(const TemplateDecl *ND) {
     return;
   }
 
-  manglePrefix(getEffectiveDeclContext(ND));
+  manglePrefix(getEffectiveDeclContext(ND), NoFunction);
   mangleUnqualifiedName(ND->getTemplatedDecl());
   addSubstitution(ND);
 }
@@ -2148,7 +2183,9 @@ void CXXNameMangler::mangleNeonVectorType(const VectorType *T) {
     case BuiltinType::LongLong:  EltName = "int64_t"; break;
     case BuiltinType::ULongLong: EltName = "uint64_t"; break;
     case BuiltinType::Float:     EltName = "float32_t"; break;
-    default: llvm_unreachable("unexpected Neon vector element type");
+    case BuiltinType::Half:      EltName = "float16_t";break;
+    default:
+      llvm_unreachable("unexpected Neon vector element type");
     }
   }
   const char *BaseName = 0;
@@ -2164,6 +2201,71 @@ void CXXNameMangler::mangleNeonVectorType(const VectorType *T) {
   Out << BaseName << EltName;
 }
 
+static StringRef mangleAArch64VectorBase(const BuiltinType *EltType) {
+  switch (EltType->getKind()) {
+  case BuiltinType::SChar:
+    return "Int8";
+  case BuiltinType::Short:
+    return "Int16";
+  case BuiltinType::Int:
+    return "Int32";
+  case BuiltinType::LongLong:
+    return "Int64";
+  case BuiltinType::UChar:
+    return "Uint8";
+  case BuiltinType::UShort:
+    return "Uint16";
+  case BuiltinType::UInt:
+    return "Uint32";
+  case BuiltinType::ULongLong:
+    return "Uint64";
+  case BuiltinType::Half:
+    return "Float16";
+  case BuiltinType::Float:
+    return "Float32";
+  case BuiltinType::Double:
+    return "Float64";
+  default:
+    llvm_unreachable("Unexpected vector element base type");
+  }
+}
+
+// AArch64's ABI for Neon vector types specifies that they should be mangled as
+// the equivalent internal name. The vector type must be one of the special
+// types predefined by ARM.
+void CXXNameMangler::mangleAArch64NeonVectorType(const VectorType *T) {
+  QualType EltType = T->getElementType();
+  assert(EltType->isBuiltinType() && "Neon vector element not a BuiltinType");
+  unsigned BitSize =
+      (T->getNumElements() * getASTContext().getTypeSize(EltType));
+  (void)BitSize; // Silence warning.
+
+  assert((BitSize == 64 || BitSize == 128) &&
+         "Neon vector type not 64 or 128 bits");
+
+  assert(getASTContext().getTypeSize(EltType) != BitSize &&
+         "Vector of 1 element not permitted");
+
+  StringRef EltName;
+  if (T->getVectorKind() == VectorType::NeonPolyVector) {
+    switch (cast<BuiltinType>(EltType)->getKind()) {
+    case BuiltinType::UChar:
+      EltName = "Poly8";
+      break;
+    case BuiltinType::UShort:
+      EltName = "Poly16";
+      break;
+    default:
+      llvm_unreachable("unexpected Neon polynomial vector element type");
+    }
+  } else
+    EltName = mangleAArch64VectorBase(cast<BuiltinType>(EltType));
+
+  std::string TypeName =
+      ("__" + EltName + "x" + llvm::utostr(T->getNumElements()) + "_t").str();
+  Out << TypeName.length() << TypeName;
+}
+
 // GNU extension: vector types
 // <type>                  ::= <vector-type>
 // <vector-type>           ::= Dv <positive dimension number> _
@@ -2175,7 +2277,11 @@ void CXXNameMangler::mangleNeonVectorType(const VectorType *T) {
 void CXXNameMangler::mangleType(const VectorType *T) {
   if ((T->getVectorKind() == VectorType::NeonVector ||
        T->getVectorKind() == VectorType::NeonPolyVector)) {
-    mangleNeonVectorType(T);
+    if (getASTContext().getTargetInfo().getTriple().getArch() ==
+        llvm::Triple::aarch64)
+      mangleAArch64NeonVectorType(T);
+    else
+      mangleNeonVectorType(T);
     return;
   }
   Out << "Dv" << T->getNumElements() << '_';

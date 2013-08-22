@@ -1532,17 +1532,18 @@ CharUnits RecordLayoutBuilder::LayoutBase(const BaseSubobjectInfo *Base) {
     }
   }
   
+  CharUnits UnpackedBaseAlign = Layout.getNonVirtualAlign();
+  CharUnits BaseAlign = (Packed) ? CharUnits::One() : UnpackedBaseAlign;
+ 
   // If we have an empty base class, try to place it at offset 0.
   if (Base->Class->isEmpty() &&
       (!HasExternalLayout || Offset == CharUnits::Zero()) &&
       EmptySubobjects->CanPlaceBaseAtOffset(Base, CharUnits::Zero())) {
     setSize(std::max(getSize(), Layout.getSize()));
+    UpdateAlignment(BaseAlign, UnpackedBaseAlign);
 
     return CharUnits::Zero();
   }
-
-  CharUnits UnpackedBaseAlign = Layout.getNonVirtualAlign();
-  CharUnits BaseAlign = (Packed) ? CharUnits::One() : UnpackedBaseAlign;
 
   // The maximum field alignment overrides base align.
   if (!MaxFieldAlignment.isZero()) {
@@ -2423,8 +2424,8 @@ ASTContext::getASTRecordLayout(const RecordDecl *D) const {
   ASTRecordLayouts[D] = NewEntry;
 
   if (getLangOpts().DumpRecordLayouts) {
-    llvm::errs() << "\n*** Dumping AST Record Layout\n";
-    DumpRecordLayout(D, llvm::errs(), getLangOpts().DumpRecordLayoutsSimple);
+    llvm::outs() << "\n*** Dumping AST Record Layout\n";
+    DumpRecordLayout(D, llvm::outs(), getLangOpts().DumpRecordLayoutsSimple);
   }
 
   return *NewEntry;

@@ -13,7 +13,7 @@
 // CHECK001:   "-internal-externc-isystem" "{{.*}}/Inputs/hexagon_tree/qc/bin/../../gnu/hexagon/include"
 // CHECK001-NEXT: "{{.*}}/Inputs/hexagon_tree/qc/bin/../../gnu/bin{{/|\\}}hexagon-as"
 
-// RUN: %clang -ccc-cxx -x c++ -### -target hexagon-unknown-linux     \
+// RUN: %clangxx -### -target hexagon-unknown-linux     \
 // RUN:   -ccc-install-dir %S/Inputs/hexagon_tree/qc/bin \
 // RUN:   %s 2>&1 \
 // RUN:   | FileCheck -check-prefix=CHECK002 %s
@@ -49,7 +49,7 @@
 // CHECK004-NOT: "-internal-externc-isystem" "{{.*}}/Inputs/hexagon_tree/qc/bin/../../gnu/hexagon/include"
 // CHECK004-NEXT: "{{.*}}/Inputs/hexagon_tree/qc/bin/../../gnu/bin{{/|\\}}hexagon-as"
 
-// RUN: %clang -ccc-cxx -x c++ -### -target hexagon-unknown-linux     \
+// RUN: %clangxx -### -target hexagon-unknown-linux     \
 // RUN:   -ccc-install-dir %S/Inputs/hexagon_tree/qc/bin \
 // RUN:   -nostdlibinc \
 // RUN:   %s 2>&1 \
@@ -61,7 +61,7 @@
 // CHECK005-NOT: "-internal-externc-isystem" "{{.*}}/Inputs/hexagon_tree/qc/bin/../../gnu/hexagon/include"
 // CHECK005-NEXT: "{{.*}}/Inputs/hexagon_tree/qc/bin/../../gnu/bin{{/|\\}}hexagon-as"
 
-// RUN: %clang -ccc-cxx -x c++ -### -target hexagon-unknown-linux     \
+// RUN: %clangxx -### -target hexagon-unknown-linux     \
 // RUN:   -ccc-install-dir %S/Inputs/hexagon_tree/qc/bin \
 // RUN:   -nostdinc++ \
 // RUN:   %s 2>&1 \
@@ -108,19 +108,19 @@
 // CHECK010-NEXT: "{{.*}}/Inputs/hexagon_tree/qc/bin/../../gnu/bin{{/|\\}}hexagon-as"{{.*}} "-march=v4"
 // CHECK010-NEXT: "{{.*}}/Inputs/hexagon_tree/qc/bin/../../gnu/bin{{/|\\}}hexagon-ld"{{.*}} "-mv4"
 
-// RUN: %clang -march=hexagonv2 -target hexagon-unknown-linux \
+// RUN: not %clang -march=hexagonv2 -target hexagon-unknown-linux \
 // RUN:   %s 2>&1 | FileCheck -check-prefix=CHECK-UNKNOWN-V2 %s
-// RUN: %clang -mcpu=hexagonv2  -target hexagon-unknown-linux \
+// RUN: not %clang -mcpu=hexagonv2  -target hexagon-unknown-linux \
 // RUN:   %s 2>&1 | FileCheck -check-prefix=CHECK-UNKNOWN-V2 %s
-// RUN: %clang -mv2             -target hexagon-unknown-linux \
+// RUN: not %clang -mv2             -target hexagon-unknown-linux \
 // RUN:   %s 2>&1 | FileCheck -check-prefix=CHECK-UNKNOWN-V2 %s
 // CHECK-UNKNOWN-V2: error: unknown target CPU 'hexagonv2'
 
-// RUN: %clang -march=hexagonv3 -target hexagon-unknown-linux \
+// RUN: not %clang -march=hexagonv3 -target hexagon-unknown-linux \
 // RUN:   %s 2>&1 | FileCheck -check-prefix=CHECK-UNKNOWN-V3 %s
-// RUN: %clang -mcpu=hexagonv3  -target hexagon-unknown-linux \
+// RUN: not %clang -mcpu=hexagonv3  -target hexagon-unknown-linux \
 // RUN:   %s 2>&1 | FileCheck -check-prefix=CHECK-UNKNOWN-V3 %s
-// RUN: %clang -mv3             -target hexagon-unknown-linux \
+// RUN: not %clang -mv3             -target hexagon-unknown-linux \
 // RUN:   %s 2>&1 | FileCheck -check-prefix=CHECK-UNKNOWN-V3 %s
 // CHECK-UNKNOWN-V3: error: unknown target CPU 'hexagonv3'
 
@@ -155,7 +155,7 @@
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 // Defaults for C++
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-// RUN: %clang -ccc-cxx -x c++ -### -target hexagon-unknown-linux     \
+// RUN: %clangxx -### -target hexagon-unknown-linux     \
 // RUN:   -ccc-install-dir %S/Inputs/hexagon_tree/qc/bin \
 // RUN:   %s 2>&1 \
 // RUN:   | FileCheck -check-prefix=CHECK012 %s
@@ -287,7 +287,7 @@
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 // -nostdlib, -nostartfiles, -nodefaultlibs
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-// RUN: %clang -ccc-cxx -x c++ -### -target hexagon-unknown-linux     \
+// RUN: %clangxx -### -target hexagon-unknown-linux     \
 // RUN:   -ccc-install-dir %S/Inputs/hexagon_tree/qc/bin \
 // RUN:   -nostdlib \
 // RUN:   %s 2>&1 \
@@ -313,7 +313,7 @@
 // CHECK017-NOT: "--end-group"
 // CHECK017-NOT: fini.o
 
-// RUN: %clang -ccc-cxx -x c++ -### -target hexagon-unknown-linux     \
+// RUN: %clangxx -### -target hexagon-unknown-linux     \
 // RUN:   -ccc-install-dir %S/Inputs/hexagon_tree/qc/bin \
 // RUN:   -nostartfiles \
 // RUN:   %s 2>&1 \
@@ -339,7 +339,7 @@
 // CHECK018: "--end-group"
 // CHECK018-NOT: fini.o
 
-// RUN: %clang -ccc-cxx -x c++ -### -target hexagon-unknown-linux     \
+// RUN: %clangxx -### -target hexagon-unknown-linux     \
 // RUN:   -ccc-install-dir %S/Inputs/hexagon_tree/qc/bin \
 // RUN:   -nodefaultlibs \
 // RUN:   %s 2>&1 \
@@ -421,7 +421,7 @@
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 // Other args to pass to linker
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-// RUN: %clang -ccc-cxx -x c++ -### -target hexagon-unknown-linux     \
+// RUN: %clangxx -### -target hexagon-unknown-linux     \
 // RUN:   -ccc-install-dir %S/Inputs/hexagon_tree/qc/bin \
 // RUN:   -s \
 // RUN:   -Tbss 0xdead -Tdata 0xbeef -Ttext 0xcafe \

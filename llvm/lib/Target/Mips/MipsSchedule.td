@@ -17,13 +17,18 @@ def IMULDIV : FuncUnit;
 // Instruction Itinerary classes used for Mips
 //===----------------------------------------------------------------------===//
 def IIAlu              : InstrItinClass;
+def IIArith            : InstrItinClass;
+def IILogic            : InstrItinClass;
 def IILoad             : InstrItinClass;
 def IIStore            : InstrItinClass;
 def IIXfer             : InstrItinClass;
 def IIBranch           : InstrItinClass;
 def IIHiLo             : InstrItinClass;
 def IIImul             : InstrItinClass;
+def IIImult            : InstrItinClass;
 def IIIdiv             : InstrItinClass;
+def IIseb              : InstrItinClass;
+def IIslt              : InstrItinClass;
 def IIFcvt             : InstrItinClass;
 def IIFmove            : InstrItinClass;
 def IIFcmp             : InstrItinClass;
@@ -45,6 +50,8 @@ def IIPseudo           : InstrItinClass;
 //===----------------------------------------------------------------------===//
 def MipsGenericItineraries : ProcessorItineraries<[ALU, IMULDIV], [], [
   InstrItinData<IIAlu              , [InstrStage<1,  [ALU]>]>,
+  InstrItinData<IIArith            , [InstrStage<1,  [ALU]>]>,
+  InstrItinData<IILogic            , [InstrStage<1,  [ALU]>]>,
   InstrItinData<IILoad             , [InstrStage<3,  [ALU]>]>,
   InstrItinData<IIStore            , [InstrStage<1,  [ALU]>]>,
   InstrItinData<IIXfer             , [InstrStage<2,  [ALU]>]>,

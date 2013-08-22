@@ -654,9 +654,9 @@ SparcTargetLowering::LowerCall_32(TargetLowering::CallLoweringInfo &CLI,
                                   SmallVectorImpl<SDValue> &InVals) const {
   SelectionDAG &DAG                     = CLI.DAG;
   SDLoc &dl                             = CLI.DL;
-  SmallVector<ISD::OutputArg, 32> &Outs = CLI.Outs;
-  SmallVector<SDValue, 32> &OutVals     = CLI.OutVals;
-  SmallVector<ISD::InputArg, 32> &Ins   = CLI.Ins;
+  SmallVectorImpl<ISD::OutputArg> &Outs = CLI.Outs;
+  SmallVectorImpl<SDValue> &OutVals     = CLI.OutVals;
+  SmallVectorImpl<ISD::InputArg> &Ins   = CLI.Ins;
   SDValue Chain                         = CLI.Chain;
   SDValue Callee                        = CLI.Callee;
   bool &isTailCall                      = CLI.IsTailCall;
@@ -1722,20 +1722,22 @@ static SDValue LowerFRAMEADDR(SDValue Op, SelectionDAG &DAG) {
   return FrameAddr;
 }
 
-static SDValue LowerRETURNADDR(SDValue Op, SelectionDAG &DAG) {
-  MachineFrameInfo *MFI = DAG.getMachineFunction().getFrameInfo();
+static SDValue LowerRETURNADDR(SDValue Op, SelectionDAG &DAG,
+                               const SparcTargetLowering &TLI) {
+  MachineFunction &MF = DAG.getMachineFunction();
+  MachineFrameInfo *MFI = MF.getFrameInfo();
   MFI->setReturnAddressIsTaken(true);
 
   EVT VT = Op.getValueType();
   SDLoc dl(Op);
-  unsigned RetReg = SP::I7;
-
   uint64_t depth = Op.getConstantOperandVal(0);
 
   SDValue RetAddr;
-  if (depth == 0)
+  if (depth == 0) {
+    unsigned RetReg = MF.addLiveIn(SP::I7,
+                                   TLI.getRegClassFor(TLI.getPointerTy()));
     RetAddr = DAG.getCopyFromReg(DAG.getEntryNode(), dl, RetReg, VT);
-  else {
+  } else {
     // Need frame address to find return address of the caller.
     MFI->setFrameAddressIsTaken(true);
 
@@ -1793,7 +1795,7 @@ LowerOperation(SDValue Op, SelectionDAG &DAG) const {
   case ISD::FNEG:
   case ISD::FABS:               return LowerF64Op(Op, DAG);
 
-  case ISD::RETURNADDR:         return LowerRETURNADDR(Op, DAG);
+  case ISD::RETURNADDR:         return LowerRETURNADDR(Op, DAG, *this);
   case ISD::FRAMEADDR:          return LowerFRAMEADDR(Op, DAG);
   case ISD::GlobalTLSAddress:
     llvm_unreachable("TLS not implemented for Sparc.");

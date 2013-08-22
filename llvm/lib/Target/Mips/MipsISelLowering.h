@@ -386,7 +386,7 @@ namespace llvm {
     /// passByValArg - Pass a byval argument in registers or on stack.
     void passByValArg(SDValue Chain, SDLoc DL,
                       std::deque< std::pair<unsigned, SDValue> > &RegsToPass,
-                      SmallVector<SDValue, 8> &MemOpChains, SDValue StackPtr,
+                      SmallVectorImpl<SDValue> &MemOpChains, SDValue StackPtr,
                       MachineFrameInfo *MFI, SelectionDAG &DAG, SDValue Arg,
                       const MipsCC &CC, const ByValArgInfo &ByVal,
                       const ISD::ArgFlagsTy &Flags, bool isLittle) const;
@@ -432,6 +432,11 @@ namespace llvm {
     /// The operand object must already have been set up with the operand type.
     ConstraintWeight getSingleConstraintMatchWeight(
       AsmOperandInfo &info, const char *constraint) const;
+
+    /// This function parses registers that appear in inline-asm constraints.
+    /// It returns pair (0, 0) on failure.
+    std::pair<unsigned, const TargetRegisterClass *>
+    parseRegForInlineAsmConstraint(const StringRef &C, MVT VT) const;
 
     std::pair<unsigned, const TargetRegisterClass*>
               getRegForInlineAsmConstraint(const std::string &Constraint,

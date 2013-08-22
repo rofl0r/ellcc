@@ -114,6 +114,7 @@
 #include <cassert>
 #include <map>
 #include <set>
+#include <sstream>
 using namespace llvm;
 
 static cl::opt<std::string>
@@ -836,9 +837,11 @@ void MatchableInfo::tokenizeAsmString(const AsmMatcherInfo &Info) {
     }
 
     case '.':
-      if (InTok)
-        AsmOperands.push_back(AsmOperand(String.slice(Prev, i)));
-      Prev = i;
+      if (!Info.AsmParser->getValueAsBit("MnemonicContainsDot")) {
+        if (InTok)
+          AsmOperands.push_back(AsmOperand(String.slice(Prev, i)));
+        Prev = i;
+      }
       InTok = true;
       break;
 
@@ -2066,9 +2069,12 @@ static void emitIsSubclass(CodeGenTarget &Target,
   OS << "  if (A == B)\n";
   OS << "    return true;\n\n";
 
-  OS << "  switch (A) {\n";
-  OS << "  default:\n";
-  OS << "    return false;\n";
+  std::string OStr;
+  raw_string_ostream SS(OStr);
+  unsigned Count = 0;
+  SS << "  switch (A) {\n";
+  SS << "  default:\n";
+  SS << "    return false;\n";
   for (std::vector<ClassInfo*>::iterator it = Infos.begin(),
          ie = Infos.end(); it != ie; ++it) {
     ClassInfo &A = **it;
@@ -2084,21 +2090,35 @@ static void emitIsSubclass(CodeGenTarget &Target,
 
     if (SuperClasses.empty())
       continue;
+    ++Count;
 
-    OS << "\n  case " << A.Name << ":\n";
+    SS << "\n  case " << A.Name << ":\n";
 
     if (SuperClasses.size() == 1) {
-      OS << "    return B == " << SuperClasses.back() << ";\n";
+      SS << "    return B == " << SuperClasses.back().str() << ";\n";
       continue;
     }
 
-    OS << "    switch (B) {\n";
-    OS << "    default: return false;\n";
-    for (unsigned i = 0, e = SuperClasses.size(); i != e; ++i)
-      OS << "    case " << SuperClasses[i] << ": return true;\n";
-    OS << "    }\n";
+    if (!SuperClasses.empty()) {
+      SS << "    switch (B) {\n";
+      SS << "    default: return false;\n";
+      for (unsigned i = 0, e = SuperClasses.size(); i != e; ++i)
+        SS << "    case " << SuperClasses[i].str() << ": return true;\n";
+      SS << "    }\n";
+    } else {
+      // No case statement to emit
+      SS << "    return false;\n";
+    }
   }
-  OS << "  }\n";
+  SS << "  }\n";
+
+  // If there were case statements emitted into the string stream, write them
+  // to the output stream, otherwise write the default.
+  if (Count)
+    OS << SS.str();
+  else
+    OS << "  return false;\n";
+
   OS << "}\n\n";
 }
 
@@ -2194,18 +2214,24 @@ static void emitOperandDiagnosticTypes(AsmMatcherInfo &Info, raw_ostream &OS) {
 static void emitGetSubtargetFeatureName(AsmMatcherInfo &Info, raw_ostream &OS) {
   OS << "// User-level names for subtarget features that participate in\n"
      << "// instruction matching.\n"
-     << "static const char *getSubtargetFeatureName(unsigned Val) {\n"
-     << "  switch(Val) {\n";
-  for (std::map<Record*, SubtargetFeatureInfo*>::const_iterator
-         it = Info.SubtargetFeatures.begin(),
-         ie = Info.SubtargetFeatures.end(); it != ie; ++it) {
-    SubtargetFeatureInfo &SFI = *it->second;
-    // FIXME: Totally just a placeholder name to get the algorithm working.
-    OS << "  case " << SFI.getEnumName() << ": return \""
-       << SFI.TheDef->getValueAsString("PredicateName") << "\";\n";
+     << "static const char *getSubtargetFeatureName(unsigned Val) {\n";
+  if (!Info.SubtargetFeatures.empty()) {
+    OS << "  switch(Val) {\n";
+    for (std::map<Record*, SubtargetFeatureInfo*>::const_iterator
+           it = Info.SubtargetFeatures.begin(),
+           ie = Info.SubtargetFeatures.end(); it != ie; ++it) {
+      SubtargetFeatureInfo &SFI = *it->second;
+      // FIXME: Totally just a placeholder name to get the algorithm working.
+      OS << "  case " << SFI.getEnumName() << ": return \""
+         << SFI.TheDef->getValueAsString("PredicateName") << "\";\n";
+    }
+    OS << "  default: return \"(unknown)\";\n";
+    OS << "  }\n";
+  } else {
+    // Nothing to emit, so skip the switch
+    OS << "  return \"(unknown)\";\n";
   }
-  OS << "  default: return \"(unknown)\";\n";
-  OS << "  }\n}\n\n";
+  OS << "}\n\n";
 }
 
 /// emitComputeAvailableFeatures - Emit the function to compute the list of
@@ -2303,7 +2329,7 @@ static void emitMnemonicAliasVariant(raw_ostream &OS,const AsmMatcherInfo &Info,
   }
   if (AliasesFromMnemonic.empty())
     return;
-    
+
   // Process each alias a "from" mnemonic at a time, building the code executed
   // by the string remapper.
   std::vector<StringMatcher::StringPair> Cases;
@@ -2632,7 +2658,7 @@ void AsmMatcherEmitter::run(raw_ostream &OS) {
      << "&Operands);\n";
   OS << "  void convertToMapAndConstraints(unsigned Kind,\n                ";
   OS << "           const SmallVectorImpl<MCParsedAsmOperand*> &Operands);\n";
-  OS << "  bool mnemonicIsValid(StringRef Mnemonic);\n";
+  OS << "  bool mnemonicIsValid(StringRef Mnemonic, unsigned VariantID);\n";
   OS << "  unsigned MatchInstructionImpl(\n";
   OS.indent(27);
   OS << "const SmallVectorImpl<MCParsedAsmOperand*> &Operands,\n"
@@ -2754,7 +2780,6 @@ void AsmMatcherEmitter::run(raw_ostream &OS) {
                << " RequiredFeatures;\n";
   OS << "    " << getMinimalTypeForRange(Info.Classes.size())
                << " Classes[" << MaxNumOperands << "];\n";
-  OS << "    uint8_t AsmVariantID;\n\n";
   OS << "    StringRef getMnemonic() const {\n";
   OS << "      return StringRef(MnemonicTable + Mnemonic + 1,\n";
   OS << "                       MnemonicTable[Mnemonic]);\n";
@@ -2776,51 +2801,73 @@ void AsmMatcherEmitter::run(raw_ostream &OS) {
 
   OS << "} // end anonymous namespace.\n\n";
 
-  OS << "static const MatchEntry MatchTable["
-     << Info.Matchables.size() << "] = {\n";
+  unsigned VariantCount = Target.getAsmParserVariantCount();
+  for (unsigned VC = 0; VC != VariantCount; ++VC) {
+    Record *AsmVariant = Target.getAsmParserVariant(VC);
+    std::string CommentDelimiter =
+      AsmVariant->getValueAsString("CommentDelimiter");
+    std::string RegisterPrefix = AsmVariant->getValueAsString("RegisterPrefix");
+    int AsmVariantNo = AsmVariant->getValueAsInt("Variant");
 
-  for (std::vector<MatchableInfo*>::const_iterator it =
-       Info.Matchables.begin(), ie = Info.Matchables.end();
-       it != ie; ++it) {
-    MatchableInfo &II = **it;
+    OS << "static const MatchEntry MatchTable" << VC << "[] = {\n";
 
-    // Store a pascal-style length byte in the mnemonic.
-    std::string LenMnemonic = char(II.Mnemonic.size()) + II.Mnemonic.str();
-    OS << "  { " << StringTable.GetOrAddStringOffset(LenMnemonic, false)
-       << " /* " << II.Mnemonic << " */, "
-       << Target.getName() << "::"
-       << II.getResultInst()->TheDef->getName() << ", "
-       << II.ConversionFnKind << ", ";
+    for (std::vector<MatchableInfo*>::const_iterator it =
+         Info.Matchables.begin(), ie = Info.Matchables.end();
+         it != ie; ++it) {
+      MatchableInfo &II = **it;
+      if (II.AsmVariantID != AsmVariantNo)
+        continue;
 
-    // Write the required features mask.
-    if (!II.RequiredFeatures.empty()) {
-      for (unsigned i = 0, e = II.RequiredFeatures.size(); i != e; ++i) {
-        if (i) OS << "|";
-        OS << II.RequiredFeatures[i]->getEnumName();
+      // Store a pascal-style length byte in the mnemonic.
+      std::string LenMnemonic = char(II.Mnemonic.size()) + II.Mnemonic.str();
+      OS << "  { " << StringTable.GetOrAddStringOffset(LenMnemonic, false)
+         << " /* " << II.Mnemonic << " */, "
+         << Target.getName() << "::"
+         << II.getResultInst()->TheDef->getName() << ", "
+         << II.ConversionFnKind << ", ";
+
+      // Write the required features mask.
+      if (!II.RequiredFeatures.empty()) {
+        for (unsigned i = 0, e = II.RequiredFeatures.size(); i != e; ++i) {
+          if (i) OS << "|";
+          OS << II.RequiredFeatures[i]->getEnumName();
+        }
+      } else
+        OS << "0";
+
+      OS << ", { ";
+      for (unsigned i = 0, e = II.AsmOperands.size(); i != e; ++i) {
+        MatchableInfo::AsmOperand &Op = II.AsmOperands[i];
+
+        if (i) OS << ", ";
+        OS << Op.Class->Name;
       }
-    } else
-      OS << "0";
-
-    OS << ", { ";
-    for (unsigned i = 0, e = II.AsmOperands.size(); i != e; ++i) {
-      MatchableInfo::AsmOperand &Op = II.AsmOperands[i];
-
-      if (i) OS << ", ";
-      OS << Op.Class->Name;
+      OS << " }, },\n";
     }
-    OS << " }, " << II.AsmVariantID;
-    OS << "},\n";
-  }
 
-  OS << "};\n\n";
+    OS << "};\n\n";
+  }
 
   // A method to determine if a mnemonic is in the list.
   OS << "bool " << Target.getName() << ClassName << "::\n"
-     << "mnemonicIsValid(StringRef Mnemonic) {\n";
+     << "mnemonicIsValid(StringRef Mnemonic, unsigned VariantID) {\n";
+  OS << "  // Find the appropriate table for this asm variant.\n";
+  OS << "  const MatchEntry *Start, *End;\n";
+  OS << "  switch (VariantID) {\n";
+  OS << "  default: // unreachable\n";
+  for (unsigned VC = 0; VC != VariantCount; ++VC) {
+    Record *AsmVariant = Target.getAsmParserVariant(VC);
+    std::string CommentDelimiter =
+      AsmVariant->getValueAsString("CommentDelimiter");
+    std::string RegisterPrefix = AsmVariant->getValueAsString("RegisterPrefix");
+    int AsmVariantNo = AsmVariant->getValueAsInt("Variant");
+    OS << "  case " << AsmVariantNo << ": Start = MatchTable" << VC
+       << "; End = array_endof(MatchTable" << VC << "); break;\n";
+  }
+  OS << "  }\n";
   OS << "  // Search the table.\n";
   OS << "  std::pair<const MatchEntry*, const MatchEntry*> MnemonicRange =\n";
-  OS << "    std::equal_range(MatchTable, MatchTable+"
-     << Info.Matchables.size() << ", Mnemonic, LessOpcode());\n";
+  OS << "    std::equal_range(Start, End, Mnemonic, LessOpcode());\n";
   OS << "  return MnemonicRange.first != MnemonicRange.second;\n";
   OS << "}\n\n";
 
@@ -2862,10 +2909,23 @@ void AsmMatcherEmitter::run(raw_ostream &OS) {
   OS << "  ErrorInfo = ~0U;\n";
 
   // Emit code to search the table.
+  OS << "  // Find the appropriate table for this asm variant.\n";
+  OS << "  const MatchEntry *Start, *End;\n";
+  OS << "  switch (VariantID) {\n";
+  OS << "  default: // unreachable\n";
+  for (unsigned VC = 0; VC != VariantCount; ++VC) {
+    Record *AsmVariant = Target.getAsmParserVariant(VC);
+    std::string CommentDelimiter =
+      AsmVariant->getValueAsString("CommentDelimiter");
+    std::string RegisterPrefix = AsmVariant->getValueAsString("RegisterPrefix");
+    int AsmVariantNo = AsmVariant->getValueAsInt("Variant");
+    OS << "  case " << AsmVariantNo << ": Start = MatchTable" << VC
+       << "; End = array_endof(MatchTable" << VC << "); break;\n";
+  }
+  OS << "  }\n";
   OS << "  // Search the table.\n";
   OS << "  std::pair<const MatchEntry*, const MatchEntry*> MnemonicRange =\n";
-  OS << "    std::equal_range(MatchTable, MatchTable+"
-     << Info.Matchables.size() << ", Mnemonic, LessOpcode());\n\n";
+  OS << "    std::equal_range(Start, End, Mnemonic, LessOpcode());\n\n";
 
   OS << "  // Return a more specific error code if no mnemonics match.\n";
   OS << "  if (MnemonicRange.first == MnemonicRange.second)\n";
@@ -2879,7 +2939,6 @@ void AsmMatcherEmitter::run(raw_ostream &OS) {
   OS << "    assert(Mnemonic == it->getMnemonic());\n";
 
   // Emit check that the subclasses match.
-  OS << "    if (VariantID != it->AsmVariantID) continue;\n";
   OS << "    bool OperandsValid = true;\n";
   OS << "    for (unsigned i = 0; i != " << MaxNumOperands << "; ++i) {\n";
   OS << "      if (i + 1 >= Operands.size()) {\n";

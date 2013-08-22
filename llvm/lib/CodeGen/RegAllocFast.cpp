@@ -293,12 +293,13 @@ void RAFast::spillVirtReg(MachineBasicBlock::iterator MI,
     // If this register is used by DBG_VALUE then insert new DBG_VALUE to
     // identify spilled location as the place to find corresponding variable's
     // value.
-    SmallVector<MachineInstr *, 4> &LRIDbgValues =
+    SmallVectorImpl<MachineInstr *> &LRIDbgValues =
       LiveDbgValueMap[LRI->VirtReg];
     for (unsigned li = 0, le = LRIDbgValues.size(); li != le; ++li) {
       MachineInstr *DBG = LRIDbgValues[li];
       const MDNode *MDPtr = DBG->getOperand(2).getMetadata();
-      int64_t Offset = DBG->getOperand(1).getImm();
+      bool IsIndirect = DBG->getOperand(1).isImm(); // Register-indirect value?
+      uint64_t Offset = IsIndirect ? DBG->getOperand(1).getImm() : 0;
       DebugLoc DL;
       if (MI == MBB->end()) {
         // If MI is at basic block end then use last instruction's location.
@@ -855,7 +856,8 @@ void RAFast::AllocateBasicBlock() {
             }
             else {
               // Modify DBG_VALUE now that the value is in a spill slot.
-              int64_t Offset = MI->getOperand(1).getImm();
+              bool IsIndirect = MI->getOperand(1).isImm();
+              uint64_t Offset = IsIndirect ? MI->getOperand(1).getImm() : 0;
               const MDNode *MDPtr =
                 MI->getOperand(MI->getNumOperands()-1).getMetadata();
               DebugLoc DL = MI->getDebugLoc();

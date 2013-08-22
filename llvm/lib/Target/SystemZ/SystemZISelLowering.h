@@ -73,6 +73,33 @@ namespace SystemZISD {
     UDIVREM32,
     UDIVREM64,
 
+    // Use MVC to copy bytes from one memory location to another.
+    // The first operand is the target address, the second operand is the
+    // source address, and the third operand is the constant length.
+    // This isn't a memory opcode because we'd need to attach two
+    // MachineMemOperands rather than one.
+    MVC,
+
+    // Use CLC to compare two blocks of memory, with the same comments
+    // as for MVC.
+    CLC,
+
+    // Use an MVST-based sequence to implement stpcpy().
+    STPCPY,
+
+    // Use a CLST-based sequence to implement strcmp().  The two input operands
+    // are the addresses of the strings to compare.
+    STRCMP,
+
+    // Use an SRST-based sequence to search a block of memory.  The first
+    // operand is the end address, the second is the start, and the third
+    // is the character to search for.  CC is set to 1 on success and 2
+    // on failure.
+    SEARCH_STRING,
+
+    // Store the CC value in bits 29 and 28 of an integer.
+    IPM,
+
     // Wrappers around the inner loop of an 8- or 16-bit ATOMIC_SWAP or
     // ATOMIC_LOAD_<op>.
     //
@@ -119,14 +146,15 @@ public:
   virtual MVT getScalarShiftAmountTy(EVT LHSTy) const LLVM_OVERRIDE {
     return MVT::i32;
   }
-  virtual EVT getSetCCResultType(LLVMContext &, EVT) const {
+  virtual EVT getSetCCResultType(LLVMContext &, EVT) const LLVM_OVERRIDE {
     return MVT::i32;
   }
-  virtual bool isFMAFasterThanMulAndAdd(EVT) const LLVM_OVERRIDE {
-    return true;
-  }
-  virtual bool isFPImmLegal(const APFloat &Imm, EVT VT) const;
-  virtual bool allowsUnalignedMemoryAccesses(EVT VT, bool *Fast) const;
+  virtual bool isFMAFasterThanFMulAndFAdd(EVT VT) const LLVM_OVERRIDE;
+  virtual bool isFPImmLegal(const APFloat &Imm, EVT VT) const LLVM_OVERRIDE;
+  virtual bool isLegalAddressingMode(const AddrMode &AM, Type *Ty) const
+     LLVM_OVERRIDE;
+  virtual bool allowsUnalignedMemoryAccesses(EVT VT, bool *Fast) const
+    LLVM_OVERRIDE;
   virtual const char *getTargetNodeName(unsigned Opcode) const LLVM_OVERRIDE;
   virtual std::pair<unsigned, const TargetRegisterClass *>
     getRegForInlineAsmConstraint(const std::string &Constraint,
@@ -206,7 +234,8 @@ private:
                                 MachineBasicBlock *BB) const;
   MachineBasicBlock *emitCondStore(MachineInstr *MI,
                                    MachineBasicBlock *BB,
-                                   unsigned StoreOpcode, bool Invert) const;
+                                   unsigned StoreOpcode, unsigned STOCOpcode,
+                                   bool Invert) const;
   MachineBasicBlock *emitExt128(MachineInstr *MI,
                                 MachineBasicBlock *MBB,
                                 bool ClearEven, unsigned SubReg) const;
@@ -221,6 +250,12 @@ private:
                                           unsigned BitSize) const;
   MachineBasicBlock *emitAtomicCmpSwapW(MachineInstr *MI,
                                         MachineBasicBlock *BB) const;
+  MachineBasicBlock *emitMemMemWrapper(MachineInstr *MI,
+                                       MachineBasicBlock *BB,
+                                       unsigned Opcode) const;
+  MachineBasicBlock *emitStringWrapper(MachineInstr *MI,
+                                       MachineBasicBlock *BB,
+                                       unsigned Opcode) const;
 };
 } // end namespace llvm
 

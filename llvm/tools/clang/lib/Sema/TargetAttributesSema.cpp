@@ -30,7 +30,8 @@ static void HandleMSP430InterruptAttr(Decl *d,
                                       const AttributeList &Attr, Sema &S) {
     // Check the attribute arguments.
     if (Attr.getNumArgs() != 1) {
-      S.Diag(Attr.getLoc(), diag::err_attribute_wrong_number_arguments) << 1;
+      S.Diag(Attr.getLoc(), diag::err_attribute_wrong_number_arguments)
+        << Attr.getName() << 1;
       return;
     }
 
@@ -39,8 +40,9 @@ static void HandleMSP430InterruptAttr(Decl *d,
     Expr *NumParamsExpr = static_cast<Expr *>(Attr.getArg(0));
     llvm::APSInt NumParams(32);
     if (!NumParamsExpr->isIntegerConstantExpr(NumParams, S.Context)) {
-      S.Diag(Attr.getLoc(), diag::err_attribute_argument_not_int)
-        << "interrupt" << NumParamsExpr->getSourceRange();
+      S.Diag(Attr.getLoc(), diag::err_attribute_argument_type)
+        << Attr.getName() << AANT_ArgumentIntegerConstant
+        << NumParamsExpr->getSourceRange();
       return;
     }
 
@@ -125,7 +127,8 @@ static void HandleX86ForceAlignArgPointerAttr(Decl *D,
                                               Sema &S) {
   // Check the attribute arguments.
   if (Attr.getNumArgs() != 0) {
-    S.Diag(Attr.getLoc(), diag::err_attribute_wrong_number_arguments) << 0;
+    S.Diag(Attr.getLoc(), diag::err_attribute_wrong_number_arguments)
+      << Attr.getName() << 0;
     return;
   }
 
@@ -177,7 +180,8 @@ DLLImportAttr *Sema::mergeDLLImportAttr(Decl *D, SourceRange Range,
 static void HandleDLLImportAttr(Decl *D, const AttributeList &Attr, Sema &S) {
   // check the attribute arguments.
   if (Attr.getNumArgs() != 0) {
-    S.Diag(Attr.getLoc(), diag::err_attribute_wrong_number_arguments) << 0;
+    S.Diag(Attr.getLoc(), diag::err_attribute_wrong_number_arguments)
+      << Attr.getName() << 0;
     return;
   }
 
@@ -223,7 +227,8 @@ DLLExportAttr *Sema::mergeDLLExportAttr(Decl *D, SourceRange Range,
 static void HandleDLLExportAttr(Decl *D, const AttributeList &Attr, Sema &S) {
   // check the attribute arguments.
   if (Attr.getNumArgs() != 0) {
-    S.Diag(Attr.getLoc(), diag::err_attribute_wrong_number_arguments) << 0;
+    S.Diag(Attr.getLoc(), diag::err_attribute_wrong_number_arguments)
+      << Attr.getName() << 0;
     return;
   }
 
@@ -280,7 +285,8 @@ namespace {
 static void HandleMips16Attr(Decl *D, const AttributeList &Attr, Sema &S) {
   // check the attribute arguments.
   if (Attr.hasParameterOrArguments()) {
-    S.Diag(Attr.getLoc(), diag::err_attribute_wrong_number_arguments) << 0;
+    S.Diag(Attr.getLoc(), diag::err_attribute_wrong_number_arguments)
+      << Attr.getName() << 0;
     return;
   }
   // Attribute can only be applied to function types.
@@ -296,7 +302,8 @@ static void HandleMips16Attr(Decl *D, const AttributeList &Attr, Sema &S) {
 static void HandleNoMips16Attr(Decl *D, const AttributeList &Attr, Sema &S) {
   // check the attribute arguments.
   if (Attr.hasParameterOrArguments()) {
-    S.Diag(Attr.getLoc(), diag::err_attribute_wrong_number_arguments) << 0;
+    S.Diag(Attr.getLoc(), diag::err_attribute_wrong_number_arguments)
+      << Attr.getName() << 0;
     return;
   }
   // Attribute can only be applied to function types.

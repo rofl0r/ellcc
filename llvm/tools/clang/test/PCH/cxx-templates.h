@@ -276,3 +276,38 @@ template<typename T> class DependentSpecializedFuncClass {
   void foo() {}
   friend void DependentSpecializedFunc<>(DependentSpecializedFuncClass);
 };
+
+namespace cyclic_module_load {
+  // Reduced from a libc++ modules crasher.
+  namespace std {
+    template<class> class mask_array;
+    template<class> class valarray {
+    public:
+      valarray(const valarray &v);
+    };
+
+    class gslice {
+      valarray<int> x;
+      valarray<int> stride() const { return x; }
+    };
+
+    template<class> class mask_array {
+      template<class> friend class valarray;
+    };
+  }
+}
+
+namespace local_extern {
+  template<typename T> int f() {
+    extern int arr[3];
+    {
+      extern T arr;
+      return sizeof(arr);
+    }
+  }
+  template<typename T> int g() {
+    extern int arr[3];
+    extern T arr;
+    return sizeof(arr);
+  }
+}

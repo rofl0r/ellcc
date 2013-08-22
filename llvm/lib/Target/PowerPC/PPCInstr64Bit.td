@@ -36,8 +36,13 @@ def s17imm64 : Operand<i64> {
 def tocentry : Operand<iPTR> {
   let MIOperandInfo = (ops i64imm:$imm);
 }
+def PPCTLSRegOperand : AsmOperandClass {
+  let Name = "TLSReg"; let PredicateMethod = "isTLSReg";
+  let RenderMethod = "addTLSRegOperands";
+}
 def tlsreg : Operand<i64> {
   let EncoderMethod = "getTLSRegEncoding";
+  let ParserMatchClass = PPCTLSRegOperand;
 }
 def tlsgd : Operand<i64> {}
 def tlscall : Operand<i64> {
@@ -275,6 +280,7 @@ def MFCR8 : XFXForm_3<31, 19, (outs g8rc:$rT), (ins),
 } // neverHasSideEffects = 1
 
 let hasSideEffects = 1, isBarrier = 1, usesCustomInserter = 1 in {
+  let Defs = [CTR8] in
   def EH_SjLj_SetJmp64  : Pseudo<(outs gprc:$dst), (ins memr:$buf),
                             "#EH_SJLJ_SETJMP64",
                             [(set i32:$dst, (PPCeh_sjlj_setjmp addr:$buf))]>,
@@ -404,9 +410,8 @@ defm ADD8  : XOForm_1r<31, 266, 0, (outs g8rc:$rT), (ins g8rc:$rA, g8rc:$rB),
                        [(set i64:$rT, (add i64:$rA, i64:$rB))]>;
 // ADD8 has a special form: reg = ADD8(reg, sym@tls) for use by the
 // initial-exec thread-local storage model.
-let isCodeGenOnly = 1 in
 def ADD8TLS  : XOForm_1<31, 266, 0, (outs g8rc:$rT), (ins g8rc:$rA, tlsreg:$rB),
-                        "add $rT, $rA, $rB@tls", IntSimple,
+                        "add $rT, $rA, $rB", IntSimple,
                         [(set i64:$rT, (add i64:$rA, tglobaltlsaddr:$rB))]>;
                      
 defm ADDC8 : XOForm_1rc<31, 10, 0, (outs g8rc:$rT), (ins g8rc:$rA, g8rc:$rB),
@@ -537,6 +542,9 @@ defm DIVDU : XOForm_1r<31, 457, 0, (outs g8rc:$rT), (ins g8rc:$rA, g8rc:$rB),
 defm MULLD : XOForm_1r<31, 233, 0, (outs g8rc:$rT), (ins g8rc:$rA, g8rc:$rB),
                        "mulld", "$rT, $rA, $rB", IntMulHD,
                        [(set i64:$rT, (mul i64:$rA, i64:$rB))]>, isPPC64;
+def MULLI8 : DForm_2<7, (outs g8rc:$rD), (ins g8rc:$rA, s16imm64:$imm),
+                       "mulli $rD, $rA, $imm", IntMulLI,
+                       [(set i64:$rD, (mul i64:$rA, imm64SExt16:$imm))]>;
 }
 
 let neverHasSideEffects = 1 in {
