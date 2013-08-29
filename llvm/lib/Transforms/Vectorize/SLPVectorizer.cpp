@@ -278,7 +278,7 @@ private:
 
   /// \returns the pointer to the vectorized value if \p VL is already
   /// vectorized, or NULL. They may happen in cycles.
-  Value *alreadyVectorized(ArrayRef<Value *> VL);
+  Value *alreadyVectorized(ArrayRef<Value *> VL) const;
 
   /// \brief Take the pointer operand from the Load/Store instruction.
   /// \returns NULL if this is not a valid Load/Store instruction.
@@ -311,6 +311,10 @@ private:
   /// \returns the Instruction in the bundle \p VL.
   Instruction *getLastInstruction(ArrayRef<Value *> VL);
 
+  /// \brief Set the Builder insert point to one after the last instruction in
+  /// the bundle
+  void setInsertPointAfterBundle(ArrayRef<Value *> VL);
+
   /// \returns a vector from a collection of scalars in \p VL.
   Value *Gather(ArrayRef<Value *> VL, VectorType *Ty);
 
@@ -319,7 +323,7 @@ private:
     NeedToGather(0) {}
 
     /// \returns true if the scalars in VL are equal to this entry.
-    bool isSame(ArrayRef<Value *> VL) {
+    bool isSame(ArrayRef<Value *> VL) const {
       assert(VL.size() == Scalars.size() && "Invalid size");
       for (int i = 0, e = VL.size(); i != e; ++i)
         if (VL[i] != Scalars[i])
@@ -992,63 +996,29 @@ bool BoUpSLP::isConsecutiveAccess(Value *A, Value *B) {
   if (PtrA == PtrB || PtrA->getType() != PtrB->getType())
     return false;
 
-  // Calculate a constant offset from the base pointer without using SCEV
-  // in the supported cases.
-  // TODO: Add support for the case where one of the pointers is a GEP that
-  // uses the other pointer.
-  GetElementPtrInst *GepA = dyn_cast<GetElementPtrInst>(PtrA);
-  GetElementPtrInst *GepB = dyn_cast<GetElementPtrInst>(PtrB);
-
-  unsigned BW = DL->getPointerSizeInBits(ASA);
+  unsigned PtrBitWidth = DL->getPointerSizeInBits(ASA);
   Type *Ty = cast<PointerType>(PtrA->getType())->getElementType();
-  int64_t Sz = DL->getTypeStoreSize(Ty);
+  APInt Size(PtrBitWidth, DL->getTypeStoreSize(Ty));
 
-  // Check if PtrA is the base and PtrB is a constant offset.
-  if (GepB && GepB->getPointerOperand() == PtrA) {
-    APInt Offset(BW, 0);
-    if (GepB->accumulateConstantOffset(*DL, Offset))
-      return Offset.getSExtValue() == Sz;
-    return false;
-  }
+  APInt OffsetA(PtrBitWidth, 0), OffsetB(PtrBitWidth, 0);
+  PtrA = PtrA->stripAndAccumulateInBoundsConstantOffsets(*DL, OffsetA);
+  PtrB = PtrB->stripAndAccumulateInBoundsConstantOffsets(*DL, OffsetB);
 
-  // Check if PtrB is the base and PtrA is a constant offset.
-  if (GepA && GepA->getPointerOperand() == PtrB) {
-    APInt Offset(BW, 0);
-    if (GepA->accumulateConstantOffset(*DL, Offset))
-      return Offset.getSExtValue() == -Sz;
-    return false;
-  }
+  APInt OffsetDelta = OffsetB - OffsetA;
 
-  // If both pointers are GEPs:
-  if (GepA && GepB) {
-    // Check that they have the same base pointer and number of indices.
-    if (GepA->getPointerOperand() != GepB->getPointerOperand() ||
-        GepA->getNumIndices() != GepB->getNumIndices())
-      return false;
+  // Check if they are based on the same pointer. That makes the offsets
+  // sufficient.
+  if (PtrA == PtrB)
+    return OffsetDelta == Size;
 
-    // Try to strip the geps. This makes SCEV faster.
-    // Make sure that all of the indices except for the last are identical.
-    int LastIdx = GepA->getNumIndices();
-    for (int i = 0; i < LastIdx - 1; i++) {
-      if (GepA->getOperand(i+1) != GepB->getOperand(i+1))
-          return false;
-    }
+  // Compute the necessary base pointer delta to have the necessary final delta
+  // equal to the size.
+  APInt BaseDelta = Size - OffsetDelta;
 
-    PtrA = GepA->getOperand(LastIdx);
-    PtrB = GepB->getOperand(LastIdx);
-    Sz = 1;
-  }
-
-  ConstantInt *CA = dyn_cast<ConstantInt>(PtrA);
-  ConstantInt *CB = dyn_cast<ConstantInt>(PtrB);
-  if (CA && CB) {
-    return (CA->getSExtValue() + Sz == CB->getSExtValue());
-  }
-
-  // Calculate the distance.
+  // Otherwise compute the distance with SCEV between the base pointers.
   const SCEV *PtrSCEVA = SE->getSCEV(PtrA);
   const SCEV *PtrSCEVB = SE->getSCEV(PtrB);
-  const SCEV *C = SE->getConstant(PtrSCEVA->getType(), Sz);
+  const SCEV *C = SE->getConstant(BaseDelta);
   const SCEV *X = SE->getAddExpr(PtrSCEVA, C);
   return X == PtrSCEVB;
 }
@@ -1102,6 +1072,15 @@ Instruction *BoUpSLP::getLastInstruction(ArrayRef<Value *> VL) {
   return I;
 }
 
+void BoUpSLP::setInsertPointAfterBundle(ArrayRef<Value *> VL) {
+  Instruction *VL0 = cast<Instruction>(VL[0]);
+  Instruction *LastInst = getLastInstruction(VL);
+  BasicBlock::iterator NextInst = LastInst;
+  ++NextInst;
+  Builder.SetInsertPoint(VL0->getParent(), NextInst);
+  Builder.SetCurrentDebugLocation(VL0->getDebugLoc());
+}
+
 Value *BoUpSLP::Gather(ArrayRef<Value *> VL, VectorType *Ty) {
   Value *Vec = UndefValue::get(Ty);
   // Generate the 'InsertElement' instruction.
@@ -1132,10 +1111,12 @@ Value *BoUpSLP::Gather(ArrayRef<Value *> VL, VectorType *Ty) {
   return Vec;
 }
 
-Value *BoUpSLP::alreadyVectorized(ArrayRef<Value *> VL) {
-  if (ScalarToTreeEntry.count(VL[0])) {
-    int Idx = ScalarToTreeEntry[VL[0]];
-    TreeEntry *En = &VectorizableTree[Idx];
+Value *BoUpSLP::alreadyVectorized(ArrayRef<Value *> VL) const {
+  SmallDenseMap<Value*, int>::const_iterator Entry
+    = ScalarToTreeEntry.find(VL[0]);
+  if (Entry != ScalarToTreeEntry.end()) {
+    int Idx = Entry->second;
+    const TreeEntry *En = &VectorizableTree[Idx];
     if (En->isSame(VL) && En->VectorizedValue)
       return En->VectorizedValue;
   }
@@ -1166,16 +1147,17 @@ Value *BoUpSLP::vectorizeTree(TreeEntry *E) {
     return E->VectorizedValue;
   }
 
-  Type *ScalarTy = E->Scalars[0]->getType();
-  if (StoreInst *SI = dyn_cast<StoreInst>(E->Scalars[0]))
+  Instruction *VL0 = cast<Instruction>(E->Scalars[0]);
+  Type *ScalarTy = VL0->getType();
+  if (StoreInst *SI = dyn_cast<StoreInst>(VL0))
     ScalarTy = SI->getValueOperand()->getType();
   VectorType *VecTy = VectorType::get(ScalarTy, E->Scalars.size());
 
   if (E->NeedToGather) {
+    setInsertPointAfterBundle(E->Scalars);
     return Gather(E->Scalars, VecTy);
   }
 
-  Instruction *VL0 = cast<Instruction>(E->Scalars[0]);
   unsigned Opcode = VL0->getOpcode();
   assert(Opcode == getSameOpcode(E->Scalars) && "Invalid opcode");
 
@@ -1195,12 +1177,10 @@ Value *BoUpSLP::vectorizeTree(TreeEntry *E) {
         ValueList Operands;
         BasicBlock *IBB = PH->getIncomingBlock(i);
 
-        if (VisitedBBs.count(IBB)) {
+        if (!VisitedBBs.insert(IBB)) {
           NewPhi->addIncoming(NewPhi->getIncomingValueForBlock(IBB), IBB);
           continue;
         }
-
-        VisitedBBs.insert(IBB);
 
         // Prepare the operand vector.
         for (unsigned j = 0; j < E->Scalars.size(); ++j)
@@ -1242,8 +1222,7 @@ Value *BoUpSLP::vectorizeTree(TreeEntry *E) {
       for (int i = 0, e = E->Scalars.size(); i < e; ++i)
         INVL.push_back(cast<Instruction>(E->Scalars[i])->getOperand(0));
 
-      Builder.SetInsertPoint(getLastInstruction(E->Scalars));
-      Builder.SetCurrentDebugLocation(VL0->getDebugLoc());
+      setInsertPointAfterBundle(E->Scalars);
 
       Value *InVec = vectorizeTree(INVL);
 
@@ -1263,8 +1242,7 @@ Value *BoUpSLP::vectorizeTree(TreeEntry *E) {
         RHSV.push_back(cast<Instruction>(E->Scalars[i])->getOperand(1));
       }
 
-      Builder.SetInsertPoint(getLastInstruction(E->Scalars));
-      Builder.SetCurrentDebugLocation(VL0->getDebugLoc());
+      setInsertPointAfterBundle(E->Scalars);
 
       Value *L = vectorizeTree(LHSV);
       Value *R = vectorizeTree(RHSV);
@@ -1290,8 +1268,7 @@ Value *BoUpSLP::vectorizeTree(TreeEntry *E) {
         FalseVec.push_back(cast<Instruction>(E->Scalars[i])->getOperand(2));
       }
 
-      Builder.SetInsertPoint(getLastInstruction(E->Scalars));
-      Builder.SetCurrentDebugLocation(VL0->getDebugLoc());
+      setInsertPointAfterBundle(E->Scalars);
 
       Value *Cond = vectorizeTree(CondVec);
       Value *True = vectorizeTree(TrueVec);
@@ -1299,7 +1276,7 @@ Value *BoUpSLP::vectorizeTree(TreeEntry *E) {
 
       if (Value *V = alreadyVectorized(E->Scalars))
         return V;
-      
+
       Value *V = Builder.CreateSelect(Cond, True, False);
       E->VectorizedValue = V;
       return V;
@@ -1328,8 +1305,7 @@ Value *BoUpSLP::vectorizeTree(TreeEntry *E) {
         RHSVL.push_back(cast<Instruction>(E->Scalars[i])->getOperand(1));
       }
 
-      Builder.SetInsertPoint(getLastInstruction(E->Scalars));
-      Builder.SetCurrentDebugLocation(VL0->getDebugLoc());
+      setInsertPointAfterBundle(E->Scalars);
 
       Value *LHS = vectorizeTree(LHSVL);
       Value *RHS = vectorizeTree(RHSVL);
@@ -1349,8 +1325,7 @@ Value *BoUpSLP::vectorizeTree(TreeEntry *E) {
     case Instruction::Load: {
       // Loads are inserted at the head of the tree because we don't want to
       // sink them all the way down past store instructions.
-      Builder.SetInsertPoint(getLastInstruction(E->Scalars));
-      Builder.SetCurrentDebugLocation(VL0->getDebugLoc());
+      setInsertPointAfterBundle(E->Scalars);
 
       LoadInst *LI = cast<LoadInst>(VL0);
       Value *VecPtr =
@@ -1369,8 +1344,7 @@ Value *BoUpSLP::vectorizeTree(TreeEntry *E) {
       for (int i = 0, e = E->Scalars.size(); i < e; ++i)
         ValueOp.push_back(cast<StoreInst>(E->Scalars[i])->getValueOperand());
 
-      Builder.SetInsertPoint(getLastInstruction(E->Scalars));
-      Builder.SetCurrentDebugLocation(VL0->getDebugLoc());
+      setInsertPointAfterBundle(E->Scalars);
 
       Value *VecValue = vectorizeTree(ValueOp);
       Value *VecPtr =
@@ -1871,6 +1845,40 @@ bool SLPVectorizer::tryToVectorize(BinaryOperator *V, BoUpSLP &R) {
   return 0;
 }
 
+/// \brief Recognize construction of vectors like
+///  %ra = insertelement <4 x float> undef, float %s0, i32 0
+///  %rb = insertelement <4 x float> %ra, float %s1, i32 1
+///  %rc = insertelement <4 x float> %rb, float %s2, i32 2
+///  %rd = insertelement <4 x float> %rc, float %s3, i32 3
+///
+/// Returns true if it matches
+///
+static bool findBuildVector(InsertElementInst *IE,
+                            SmallVectorImpl<Value *> &Ops) {
+  if (!isa<UndefValue>(IE->getOperand(0)))
+    return false;
+
+  while (true) {
+    Ops.push_back(IE->getOperand(1));
+
+    if (IE->use_empty())
+      return false;
+
+    InsertElementInst *NextUse = dyn_cast<InsertElementInst>(IE->use_back());
+    if (!NextUse)
+      return true;
+
+    // If this isn't the final use, make sure the next insertelement is the only
+    // use. It's OK if the final constructed vector is used multiple times
+    if (!IE->hasOneUse())
+      return false;
+
+    IE = NextUse;
+  }
+
+  return false;
+}
+
 bool SLPVectorizer::vectorizeChainsInBlock(BasicBlock *BB, BoUpSLP &R) {
   bool Changed = false;
   SmallVector<Value *, 4> Incoming;
@@ -1885,9 +1893,8 @@ bool SLPVectorizer::vectorizeChainsInBlock(BasicBlock *BB, BoUpSLP &R) {
       break;
 
     // We may go through BB multiple times so skip the one we have checked.
-    if (VisitedInstrs.count(instr))
+    if (!VisitedInstrs.insert(instr))
       continue;
-    VisitedInstrs.insert(instr);
 
     // Stop constructing the list when you reach a different type.
     if (Incoming.size() && P->getType() != Incoming[0]->getType()) {
@@ -1911,11 +1918,9 @@ bool SLPVectorizer::vectorizeChainsInBlock(BasicBlock *BB, BoUpSLP &R) {
   VisitedInstrs.clear();
 
   for (BasicBlock::iterator it = BB->begin(), e = BB->end(); it != e; it++) {
-
     // We may go through BB multiple times so skip the one we have checked.
-    if (VisitedInstrs.count(it))
+    if (!VisitedInstrs.insert(it))
       continue;
-    VisitedInstrs.insert(it);
 
     if (isa<DbgInfoIntrinsic>(it))
       continue;
@@ -1970,6 +1975,21 @@ bool SLPVectorizer::vectorizeChainsInBlock(BasicBlock *BB, BoUpSLP &R) {
             }
          }
       }
+      continue;
+    }
+
+    // Try to vectorize trees that start at insertelement instructions.
+    if (InsertElementInst *IE = dyn_cast<InsertElementInst>(it)) {
+      SmallVector<Value *, 8> Ops;
+      if (!findBuildVector(IE, Ops))
+        continue;
+
+      if (tryToVectorizeList(Ops, R)) {
+        Changed = true;
+        it = BB->begin();
+        e = BB->end();
+      }
+
       continue;
     }
   }

@@ -253,7 +253,6 @@ void ASTTypeWriter::VisitAutoType(const AutoType *T) {
   Record.push_back(T->isDecltypeAuto());
   if (T->getDeducedType().isNull())
     Record.push_back(T->isDependentType());
-  Record.push_back(T->containsUnexpandedParameterPack());
   Code = TYPE_AUTO;
 }
 
@@ -4624,11 +4623,6 @@ DeclID ASTWriter::getDeclID(const Decl *D) {
   return DeclIDs[D];
 }
 
-static inline bool compLocDecl(std::pair<unsigned, serialization::DeclID> L,
-                               std::pair<unsigned, serialization::DeclID> R) {
-  return L.first < R.first;
-}
-
 void ASTWriter::associateDeclWithFile(const Decl *D, DeclID ID) {
   assert(ID);
   assert(D);
@@ -4667,8 +4661,8 @@ void ASTWriter::associateDeclWithFile(const Decl *D, DeclID ID) {
     return;
   }
 
-  LocDeclIDsTy::iterator
-    I = std::upper_bound(Decls.begin(), Decls.end(), LocDecl, compLocDecl);
+  LocDeclIDsTy::iterator I =
+      std::upper_bound(Decls.begin(), Decls.end(), LocDecl, llvm::less_first());
 
   Decls.insert(I, LocDecl);
 }
@@ -5137,7 +5131,6 @@ void ASTWriter::AddCXXDefinitionData(const CXXRecordDecl *D, RecordDataImpl &Rec
     Record.push_back(Lambda.ManglingNumber);
     AddDeclRef(Lambda.ContextDecl, Record);
     AddTypeSourceInfo(Lambda.MethodTyInfo, Record);
-    AddStmt(Lambda.TheLambdaExpr);
     for (unsigned I = 0, N = Lambda.NumCaptures; I != N; ++I) {
       LambdaExpr::Capture &Capture = Lambda.Captures[I];
       AddSourceLocation(Capture.getLocation(), Record);

@@ -165,7 +165,9 @@ bool SanitizerGetThreadName(char *name, int max_len);
 
 // Specific tools may override behavior of "Die" and "CheckFailed" functions
 // to do tool-specific job.
-void SetDieCallback(void (*callback)(void));
+typedef void (*DieCallbackType)(void);
+void SetDieCallback(DieCallbackType);
+DieCallbackType GetDieCallback();
 typedef void (*CheckFailedCallbackType)(const char *, int, const char *,
                                        u64, u64);
 void SetCheckFailedCallback(CheckFailedCallbackType callback);
@@ -376,6 +378,22 @@ void InternalSort(Container *v, uptr size, Compare comp) {
         break;
     }
   }
+}
+
+template<class Container, class Value, class Compare>
+uptr InternalBinarySearch(const Container &v, uptr first, uptr last,
+                          const Value &val, Compare comp) {
+  uptr not_found = last + 1;
+  while (last >= first) {
+    uptr mid = (first + last) / 2;
+    if (comp(v[mid], val))
+      first = mid + 1;
+    else if (comp(val, v[mid]))
+      last = mid - 1;
+    else
+      return mid;
+  }
+  return not_found;
 }
 
 }  // namespace __sanitizer

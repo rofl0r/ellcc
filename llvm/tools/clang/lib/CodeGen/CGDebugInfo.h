@@ -107,14 +107,14 @@ class CGDebugInfo {
   unsigned Checksum(const ObjCInterfaceDecl *InterfaceDecl);
   llvm::DIType CreateType(const BuiltinType *Ty);
   llvm::DIType CreateType(const ComplexType *Ty);
-  llvm::DIType CreateQualifiedType(QualType Ty, llvm::DIFile F, bool Declaration);
-  llvm::DIType CreateType(const TypedefType *Ty, llvm::DIFile F, bool Declaration);
+  llvm::DIType CreateQualifiedType(QualType Ty, llvm::DIFile Fg);
+  llvm::DIType CreateType(const TypedefType *Ty, llvm::DIFile Fg);
   llvm::DIType CreateType(const ObjCObjectPointerType *Ty,
                           llvm::DIFile F);
   llvm::DIType CreateType(const PointerType *Ty, llvm::DIFile F);
   llvm::DIType CreateType(const BlockPointerType *Ty, llvm::DIFile F);
   llvm::DIType CreateType(const FunctionType *Ty, llvm::DIFile F);
-  llvm::DIType CreateType(const RecordType *Ty, bool Declaration);
+  llvm::DIType CreateType(const RecordType *Tyg);
   llvm::DIType CreateTypeDefinition(const RecordType *Ty);
   llvm::DICompositeType CreateLimitedType(const RecordType *Ty);
   void CollectContainingType(const CXXRecordDecl *RD, llvm::DICompositeType CT);
@@ -126,7 +126,7 @@ class CGDebugInfo {
   llvm::DIType CreateType(const RValueReferenceType *Ty, llvm::DIFile Unit);
   llvm::DIType CreateType(const MemberPointerType *Ty, llvm::DIFile F);
   llvm::DIType CreateType(const AtomicType *Ty, llvm::DIFile F);
-  llvm::DIType CreateEnumType(const EnumDecl *ED);
+  llvm::DIType CreateEnumType(const EnumType *Ty);
   llvm::DIType CreateSelfType(const QualType &QualTy, llvm::DIType Ty);
   llvm::DIType getTypeOrNull(const QualType);
   llvm::DIType getCompletedTypeOrNull(const QualType);
@@ -309,7 +309,7 @@ private:
   llvm::DIScope getCurrentContextDescriptor(const Decl *Decl);
 
   /// \brief Create a forward decl for a RecordType in a given context.
-  llvm::DICompositeType getOrCreateRecordFwdDecl(const RecordDecl *,
+  llvm::DICompositeType getOrCreateRecordFwdDecl(const RecordType *,
                                                  llvm::DIDescriptor);
 
   /// createContextChain - Create a set of decls for the context chain.
@@ -330,14 +330,14 @@ private:
 
   /// getOrCreateType - Get the type from the cache or create a new type if
   /// necessary.
-  llvm::DIType getOrCreateType(QualType Ty, llvm::DIFile F, bool Declaration = false);
+  llvm::DIType getOrCreateType(QualType Ty, llvm::DIFile Fg);
 
   /// getOrCreateLimitedType - Get the type from the cache or create a new
   /// partial type if necessary.
   llvm::DIType getOrCreateLimitedType(const RecordType *Ty, llvm::DIFile F);
 
   /// CreateTypeNode - Create type metadata for a source language type.
-  llvm::DIType CreateTypeNode(QualType Ty, llvm::DIFile F, bool Declaration);
+  llvm::DIType CreateTypeNode(QualType Ty, llvm::DIFile Fg);
 
   /// getObjCInterfaceDecl - return the underlying ObjCInterfaceDecl
   /// if Ty is an ObjCInterface or a pointer to one.

@@ -6,6 +6,7 @@
 // Source Licenses. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
+// XFAIL: with_system_lib=x86_64-apple-darwin12
 
 // <complex>
 

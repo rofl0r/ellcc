@@ -1835,9 +1835,6 @@ CodeGenFunction::GenerateCapturedStmtFunction(const CapturedDecl *CD,
   assert(CapturedStmtInfo &&
     "CapturedStmtInfo should be set when generating the captured function");
 
-  // Check if we should generate debug info for this function.
-  maybeInitializeDebugInfo();
-
   // Build the argument list.
   ASTContext &Ctx = CGM.getContext();
   FunctionArgList Args;

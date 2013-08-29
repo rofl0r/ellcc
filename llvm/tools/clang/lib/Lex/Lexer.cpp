@@ -2410,10 +2410,28 @@ bool Lexer::LexEndOfFile(Token &Result, const char *CurPtr) {
 
   // C99 5.1.1.2p2: If the file is non-empty and didn't end in a newline, issue
   // a pedwarn.
-  if (CurPtr != BufferStart && (CurPtr[-1] != '\n' && CurPtr[-1] != '\r'))
-    Diag(BufferEnd, LangOpts.CPlusPlus11 ? // C++11 [lex.phases] 2.2 p2
-         diag::warn_cxx98_compat_no_newline_eof : diag::ext_no_newline_eof)
-    << FixItHint::CreateInsertion(getSourceLocation(BufferEnd), "\n");
+  if (CurPtr != BufferStart && (CurPtr[-1] != '\n' && CurPtr[-1] != '\r')) {
+    DiagnosticsEngine &Diags = PP->getDiagnostics();
+    SourceLocation EndLoc = getSourceLocation(BufferEnd);
+    unsigned DiagID;
+
+    if (LangOpts.CPlusPlus11) {
+      // C++11 [lex.phases] 2.2 p2
+      // Prefer the C++98 pedantic compatibility warning over the generic,
+      // non-extension, user-requested "missing newline at EOF" warning.
+      if (Diags.getDiagnosticLevel(diag::warn_cxx98_compat_no_newline_eof,
+                                   EndLoc) != DiagnosticsEngine::Ignored) {
+        DiagID = diag::warn_cxx98_compat_no_newline_eof;
+      } else {
+        DiagID = diag::warn_no_newline_eof;
+      }
+    } else {
+      DiagID = diag::ext_no_newline_eof;
+    }
+
+    Diag(BufferEnd, DiagID)
+      << FixItHint::CreateInsertion(EndLoc, "\n");
+  }
 
   BufferPtr = CurPtr;
 
@@ -2850,7 +2868,8 @@ LexNextToken:
     // If the next token is obviously a // or /* */ comment, skip it efficiently
     // too (without going through the big switch stmt).
     if (CurPtr[0] == '/' && CurPtr[1] == '/' && !inKeepCommentMode() &&
-        LangOpts.LineComment && !LangOpts.TraditionalCPP) {
+        LangOpts.LineComment &&
+        (LangOpts.CPlusPlus || !LangOpts.TraditionalCPP)) {
       if (SkipLineComment(Result, CurPtr+2))
         return; // There is a token to return.
       goto SkipIgnoredUnits;
@@ -3147,7 +3166,8 @@ LexNextToken:
       // "foo".  Check to see if the character after the second slash is a '*'.
       // If so, we will lex that as a "/" instead of the start of a comment.
       // However, we never do this if we are just preprocessing.
-      bool TreatAsComment = LangOpts.LineComment && !LangOpts.TraditionalCPP;
+      bool TreatAsComment = LangOpts.LineComment &&
+                            (LangOpts.CPlusPlus || !LangOpts.TraditionalCPP);
       if (!TreatAsComment)
         if (!(PP && PP->isPreprocessedOutput()))
           TreatAsComment = getCharAndSize(CurPtr+SizeTmp, SizeTmp2) != '*';

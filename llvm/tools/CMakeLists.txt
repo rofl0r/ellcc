@@ -2,13 +2,7 @@
 # three small executables. This is done to minimize memory load in parallel
 # builds.  Please retain this ordering.
 
-if( NOT WIN32 OR MSYS OR CYGWIN )
-  # We currently require 'sed' to build llvm-config, so don't try to build it
-  # on pure Win32.
-  add_llvm_tool_subdirectory(llvm-config)
-else()
-  ignore_llvm_tool_subdirectory(llvm-config)
-endif()
+add_llvm_tool_subdirectory(llvm-config)
 
 add_llvm_tool_subdirectory(opt)
 add_llvm_tool_subdirectory(llvm-as)
@@ -70,6 +64,10 @@ endif()
 add_llvm_external_project(clang)
 
 if( NOT LLVM_INCLUDE_TOOLS STREQUAL "bootstrap-only" )
+  add_llvm_external_project(lld)
+  add_llvm_external_project(lldb)
+  add_llvm_external_project(polly)
+
   # Automatically add remaining sub-directories containing a 'CMakeLists.txt'
   # file as external projects.
   add_llvm_implicit_external_projects()

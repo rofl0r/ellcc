@@ -188,6 +188,8 @@ def InMicroMips    :  Predicate<"Subtarget.inMicroMipsMode()">,
                       AssemblerPredicate<"FeatureMicroMips">;
 def NotInMicroMips :  Predicate<"!Subtarget.inMicroMipsMode()">,
                       AssemblerPredicate<"!FeatureMicroMips">;
+def IsLE           :  Predicate<"Subtarget.isLittle()">;
+def IsBE           :  Predicate<"!Subtarget.isLittle()">;
 
 class MipsPat<dag pattern, dag result> : Pat<pattern, result> {
   let Predicates = [HasStdEnc];
@@ -279,6 +281,11 @@ def MipsMemAsmOperand : AsmOperandClass {
   let ParserMethod = "parseMemOperand";
 }
 
+def PtrRegAsmOperand : AsmOperandClass {
+  let Name = "PtrReg";
+  let ParserMethod = "parsePtrReg";
+}
+
 // Address operand
 def mem : Operand<iPTR> {
   let PrintMethod = "printMemOperand";
@@ -297,6 +304,8 @@ def mem_ea : Operand<iPTR> {
 
 def PtrRC : Operand<iPTR> {
   let MIOperandInfo = (ops ptr_rc);
+  let DecoderMethod = "DecodePtrRegisterClass";
+  let ParserMatchClass = PtrRegAsmOperand;
 }
 
 // size operand of ext instruction
@@ -368,6 +377,9 @@ def addr :
 
 def addrRegImm :
   ComplexPattern<iPTR, 2, "selectAddrRegImm", [frameindex]>;
+
+def addrRegReg :
+  ComplexPattern<iPTR, 2, "selectAddrRegReg", [frameindex]>;
 
 def addrDefault :
   ComplexPattern<iPTR, 2, "selectAddrDefault", [frameindex]>;
@@ -632,6 +644,9 @@ class TEQ_FT<string opstr, RegisterOperand RO> :
   InstSE<(outs), (ins RO:$rs, RO:$rt, uimm16:$code_),
          !strconcat(opstr, "\t$rs, $rt, $code_"), [], NoItinerary, FrmI>;
 
+class TEQI_FT<string opstr, RegisterOperand RO> :
+  InstSE<(outs), (ins RO:$rs, uimm16:$imm16),
+         !strconcat(opstr, "\t$rs, $imm16"), [], NoItinerary, FrmOther>;
 // Mul, Div
 class Mult<string opstr, InstrItinClass itin, RegisterOperand RO,
            list<Register> DefRegs> :
@@ -770,8 +785,9 @@ class SCBase<string opstr, RegisterOperand RO> :
   let Constraints = "$rt = $dst";
 }
 
-class MFC3OP<dag outs, dag ins, string asmstr> :
-  InstSE<outs, ins, asmstr, [], NoItinerary, FrmFR>;
+class MFC3OP<string asmstr, RegisterOperand RO> :
+  InstSE<(outs RO:$rt, RO:$rd, uimm16:$sel), (ins),
+         !strconcat(asmstr, "\t$rt, $rd, $sel"), [], NoItinerary, FrmFR>;
 
 let isBarrier = 1, isTerminator = 1, isCodeGenOnly = 1 in
 def TRAP : InstSE<(outs), (ins), "break", [(trap)], NoItinerary, FrmOther> {
@@ -916,6 +932,18 @@ def SWR : StoreLeftRight<"swr", MipsSWR, GPR32Opnd>, LW_FM<0x2e>;
 
 def SYNC : SYNC_FT, SYNC_FM;
 def TEQ : TEQ_FT<"teq", GPR32Opnd>, TEQ_FM<0x34>;
+def TGE : TEQ_FT<"tge", GPR32Opnd>, TEQ_FM<0x30>;
+def TGEU : TEQ_FT<"tgeu", GPR32Opnd>, TEQ_FM<0x31>;
+def TLT : TEQ_FT<"tlt", GPR32Opnd>, TEQ_FM<0x32>;
+def TLTU : TEQ_FT<"tltu", GPR32Opnd>, TEQ_FM<0x33>;
+def TNE : TEQ_FT<"tne", GPR32Opnd>, TEQ_FM<0x36>;
+
+def TEQI : TEQI_FT<"teqi", GPR32Opnd>, TEQI_FM<0xc>;
+def TGEI : TEQI_FT<"tgei", GPR32Opnd>, TEQI_FM<0x8>;
+def TGEIU : TEQI_FT<"tgeiu", GPR32Opnd>, TEQI_FM<0x9>;
+def TLTI : TEQI_FT<"tlti", GPR32Opnd>, TEQI_FM<0xa>;
+def TTLTIU : TEQI_FT<"tltiu", GPR32Opnd>, TEQI_FM<0xb>;
+def TNEI : TEQI_FT<"tnei", GPR32Opnd>, TEQI_FM<0xe>;
 
 def BREAK : BRK_FT<"break">, BRK_FM<0xd>;
 def SYSCALL : SYS_FT<"syscall">, SYS_FM<0xc>;
@@ -1031,21 +1059,10 @@ def EXT : ExtBase<"ext", GPR32Opnd>, EXT_FM<0>;
 def INS : InsBase<"ins", GPR32Opnd>, EXT_FM<4>;
 
 /// Move Control Registers From/To CPU Registers
-def MFC0_3OP : MFC3OP<(outs GPR32Opnd:$rt),
-                      (ins GPR32Opnd:$rd, uimm16:$sel),
-                      "mfc0\t$rt, $rd, $sel">, MFC3OP_FM<0x10, 0>;
-
-def MTC0_3OP : MFC3OP<(outs GPR32Opnd:$rd, uimm16:$sel),
-                      (ins GPR32Opnd:$rt),
-                      "mtc0\t$rt, $rd, $sel">, MFC3OP_FM<0x10, 4>;
-
-def MFC2_3OP : MFC3OP<(outs GPR32Opnd:$rt),
-                      (ins GPR32Opnd:$rd, uimm16:$sel),
-                      "mfc2\t$rt, $rd, $sel">, MFC3OP_FM<0x12, 0>;
-
-def MTC2_3OP : MFC3OP<(outs GPR32Opnd:$rd, uimm16:$sel),
-                      (ins GPR32Opnd:$rt),
-                      "mtc2\t$rt, $rd, $sel">, MFC3OP_FM<0x12, 4>;
+def MFC0 : MFC3OP<"mfc0", GPR32Opnd>, MFC3OP_FM<0x10, 0>;
+def MTC0 : MFC3OP<"mtc0", GPR32Opnd>, MFC3OP_FM<0x10, 4>;
+def MFC2 : MFC3OP<"mfc2", GPR32Opnd>, MFC3OP_FM<0x12, 0>;
+def MTC2 : MFC3OP<"mtc2", GPR32Opnd>, MFC3OP_FM<0x12, 4>;
 
 //===----------------------------------------------------------------------===//
 // Instruction aliases
@@ -1077,14 +1094,10 @@ def : InstAlias<"xor $rs, $rt, $imm",
 def : InstAlias<"or $rs, $rt, $imm",
                 (ORi GPR32Opnd:$rs, GPR32Opnd:$rt, uimm16:$imm), 0>;
 def : InstAlias<"nop", (SLL ZERO, ZERO, 0), 1>;
-def : InstAlias<"mfc0 $rt, $rd",
-                (MFC0_3OP GPR32Opnd:$rt, GPR32Opnd:$rd, 0), 0>;
-def : InstAlias<"mtc0 $rt, $rd",
-                (MTC0_3OP GPR32Opnd:$rd, 0, GPR32Opnd:$rt), 0>;
-def : InstAlias<"mfc2 $rt, $rd",
-                (MFC2_3OP GPR32Opnd:$rt, GPR32Opnd:$rd, 0), 0>;
-def : InstAlias<"mtc2 $rt, $rd",
-                (MTC2_3OP GPR32Opnd:$rd, 0, GPR32Opnd:$rt), 0>;
+def : InstAlias<"mfc0 $rt, $rd", (MFC0 GPR32Opnd:$rt, GPR32Opnd:$rd, 0), 0>;
+def : InstAlias<"mtc0 $rt, $rd", (MTC0 GPR32Opnd:$rt, GPR32Opnd:$rd, 0), 0>;
+def : InstAlias<"mfc2 $rt, $rd", (MFC2 GPR32Opnd:$rt, GPR32Opnd:$rd, 0), 0>;
+def : InstAlias<"mtc2 $rt, $rd", (MTC2 GPR32Opnd:$rt, GPR32Opnd:$rd, 0), 0>;
 def : InstAlias<"bnez $rs,$offset",
                 (BNE GPR32Opnd:$rs, ZERO, brtarget:$offset), 0>;
 def : InstAlias<"beqz $rs,$offset",
@@ -1095,6 +1108,13 @@ def : InstAlias<"break $imm", (BREAK uimm10:$imm, 0), 1>;
 def : InstAlias<"break", (BREAK 0, 0), 1>;
 def : InstAlias<"ei", (EI ZERO), 1>;
 def : InstAlias<"di", (DI ZERO), 1>;
+
+def  : InstAlias<"teq $rs, $rt", (TEQ GPR32Opnd:$rs, GPR32Opnd:$rt, 0), 1>;
+def  : InstAlias<"tge $rs, $rt", (TGE GPR32Opnd:$rs, GPR32Opnd:$rt, 0), 1>;
+def  : InstAlias<"tgeu $rs, $rt", (TGEU GPR32Opnd:$rs, GPR32Opnd:$rt, 0), 1>;
+def  : InstAlias<"tlt $rs, $rt", (TLT GPR32Opnd:$rs, GPR32Opnd:$rt, 0), 1>;
+def  : InstAlias<"tltu $rs, $rt", (TLTU GPR32Opnd:$rs, GPR32Opnd:$rt, 0), 1>;
+def  : InstAlias<"tne $rs, $rt", (TNE GPR32Opnd:$rs, GPR32Opnd:$rt, 0), 1>;
 //===----------------------------------------------------------------------===//
 // Assembler Pseudo Instructions
 //===----------------------------------------------------------------------===//

@@ -60,7 +60,8 @@ public:
   ///
   /// If \p DryRun is \c false, also creates and stores the required
   /// \c Replacement.
-  unsigned addTokenToState(LineState &State, bool Newline, bool DryRun);
+  unsigned addTokenToState(LineState &State, bool Newline, bool DryRun,
+                           unsigned ExtraSpaces = 0);
 
   /// \brief Get the column limit for this line. This is the style's column
   /// limit, potentially reduced for preprocessor definitions.
@@ -83,6 +84,13 @@ private:
   unsigned breakProtrudingToken(const FormatToken &Current, LineState &State,
                                 bool DryRun);
 
+  /// \brief Returns \c true if the next token starts a multiline string
+  /// literal.
+  ///
+  /// This includes implicitly concatenated strings, strings that will be broken
+  /// by clang-format and string literals with escaped newlines.
+  bool NextIsMultilineString(const LineState &State);
+
   FormatStyle Style;
   SourceManager &SourceMgr;
   const AnnotatedLine &Line;
@@ -100,7 +108,8 @@ struct ParenState {
         AvoidBinPacking(AvoidBinPacking), BreakBeforeParameter(false),
         NoLineBreak(NoLineBreak), ColonPos(0), StartOfFunctionCall(0),
         StartOfArraySubscripts(0), NestedNameSpecifierContinuation(0),
-        CallContinuation(0), VariablePos(0), ContainsLineBreak(false) {}
+        CallContinuation(0), VariablePos(0), ContainsLineBreak(false),
+        ContainsUnwrappedBuilder(0) {}
 
   /// \brief The position to which a specific parenthesis level needs to be
   /// indented.
@@ -170,6 +179,10 @@ struct ParenState {
   /// parenthesis.
   bool ContainsLineBreak;
 
+  /// \brief \c true if this \c ParenState contains multiple segments of a
+  /// builder-type call on one line.
+  bool ContainsUnwrappedBuilder;
+
   bool operator<(const ParenState &Other) const {
     if (Indent != Other.Indent)
       return Indent < Other.Indent;
@@ -199,6 +212,8 @@ struct ParenState {
       return VariablePos < Other.VariablePos;
     if (ContainsLineBreak != Other.ContainsLineBreak)
       return ContainsLineBreak < Other.ContainsLineBreak;
+    if (ContainsUnwrappedBuilder != Other.ContainsUnwrappedBuilder)
+      return ContainsUnwrappedBuilder < Other.ContainsUnwrappedBuilder;
     return false;
   }
 };

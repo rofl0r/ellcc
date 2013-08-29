@@ -781,13 +781,7 @@ static QualType ConvertDeclSpecToType(TypeProcessingState &state) {
     // specified with a trailing return type or inferred.
     if (declarator.getContext() == Declarator::LambdaExprContext ||
         isOmittedBlockReturnType(declarator)) {
-      // In C++1y (n3690 CD), 5.1.2 [expr.prim.lambda]/4 : The lambda return 
-      // type is auto, which is replaced by the trailing-return-type if 
-      // provided and/or deduced from return statements as described 
-      // in 7.1.6.4. 
-      Result = S.getLangOpts().CPlusPlus1y &&
-               declarator.getContext() == Declarator::LambdaExprContext 
-                  ? Context.getAutoDeductType() : Context.DependentTy;
+      Result = Context.DependentTy;
       break;
     }
 
@@ -1012,17 +1006,11 @@ static QualType ConvertDeclSpecToType(TypeProcessingState &state) {
 
   case DeclSpec::TST_auto:
     // TypeQuals handled by caller.
-    Result = Context.getAutoType(QualType(), 
-                                /*decltype(auto)*/false, 
-                                /*IsDependent*/   false, 
-                                /*IsParameterPack*/ declarator.hasEllipsis());
+    Result = Context.getAutoType(QualType(), /*decltype(auto)*/false);
     break;
 
   case DeclSpec::TST_decltype_auto:
-    Result = Context.getAutoType(QualType(), 
-                                 /*decltype(auto)*/true, 
-                                 /*IsDependent*/   false, 
-                                 /*IsParameterPack*/ false);
+    Result = Context.getAutoType(QualType(), /*decltype(auto)*/true);
     break;
 
   case DeclSpec::TST_unknown_anytype:
@@ -1569,7 +1557,7 @@ QualType Sema::BuildArrayType(QualType T, ArrayType::ArraySizeModifier ASM,
         ASM = ArrayType::Normal;
       }
     } else if (!T->isDependentType() && !T->isVariablyModifiedType() &&
-               !T->isIncompleteType() && !T->isUndeducedType()) {
+               !T->isIncompleteType()) {
       // Is the array too large?
       unsigned ActiveSizeBits
         = ConstantArrayType::getNumAddressingBits(Context, T, ConstVal);
@@ -1795,6 +1783,8 @@ QualType Sema::BuildMemberPointerType(QualType T, QualType Class,
       }
     }
   }
+
+  // FIXME: Adjust member function pointer calling conventions.
 
   return Context.getMemberPointerType(T, Class.getTypePtr());
 }
@@ -2109,7 +2099,6 @@ static QualType GetDeclSpecTypeForDeclarator(TypeProcessingState &state,
   // In C++11, a function declarator using 'auto' must have a trailing return
   // type (this is checked later) and we can skip this. In other languages
   // using auto, we need to check regardless.
-  // Generic Lambdas (C++14) allow 'auto' in their parameters.
   if (ContainsPlaceholderType &&
       (!SemaRef.getLangOpts().CPlusPlus11 || !D.isFunctionDeclarator())) {
     int Error = -1;
@@ -2122,12 +2111,7 @@ static QualType GetDeclSpecTypeForDeclarator(TypeProcessingState &state,
     case Declarator::ObjCParameterContext:
     case Declarator::ObjCResultContext:
     case Declarator::PrototypeContext:
-      Error = 0;  
-      break;
-    case Declarator::LambdaExprParameterContext:
-      if (!(SemaRef.getLangOpts().CPlusPlus1y 
-              && D.getDeclSpec().getTypeSpecType() == DeclSpec::TST_auto))
-        Error = 0;
+      Error = 0; // Function prototype
       break;
     case Declarator::MemberContext:
       if (D.getDeclSpec().getStorageClassSpec() == DeclSpec::SCS_static)
@@ -2207,13 +2191,8 @@ static QualType GetDeclSpecTypeForDeclarator(TypeProcessingState &state,
       AutoRange = D.getName().getSourceRange();
 
     if (Error != -1) {
-      if (D.getDeclSpec().getTypeSpecType() == DeclSpec::TST_decltype_auto) {
-        SemaRef.Diag(AutoRange.getBegin(), 
-            diag::err_decltype_auto_function_declarator_not_declaration);
-      } else {
       SemaRef.Diag(AutoRange.getBegin(), diag::err_auto_not_allowed)
         << Error << AutoRange;
-      }
       T = SemaRef.Context.IntTy;
       D.setInvalidType(true);
     } else
@@ -2263,7 +2242,6 @@ static QualType GetDeclSpecTypeForDeclarator(TypeProcessingState &state,
       D.setInvalidType(true);
       break;
     case Declarator::PrototypeContext:
-    case Declarator::LambdaExprParameterContext:
     case Declarator::ObjCParameterContext:
     case Declarator::ObjCResultContext:
     case Declarator::KNRTypeListContext:
@@ -2442,6 +2420,53 @@ static void warnAboutAmbiguousFunction(Sema &S, Declarator &D,
           << FixItHint::CreateReplacement(ParenRange, Init);
     }
   }
+}
+
+/// Helper for figuring out the default CC for a function declarator type.  If
+/// this is the outermost chunk, then we can determine the CC from the
+/// declarator context.  If not, then this could be either a member function
+/// type or normal function type.
+static CallingConv
+getCCForDeclaratorChunk(Sema &S, Declarator &D,
+                        const DeclaratorChunk::FunctionTypeInfo &FTI,
+                        unsigned ChunkIndex) {
+  assert(D.getTypeObject(ChunkIndex).Kind == DeclaratorChunk::Function);
+
+  bool IsCXXInstanceMethod = false;
+
+  if (S.getLangOpts().CPlusPlus) {
+    // Look inwards through parentheses to see if this chunk will form a
+    // member pointer type or if we're the declarator.  Any type attributes
+    // between here and there will override the CC we choose here.
+    unsigned I = ChunkIndex;
+    bool FoundNonParen = false;
+    while (I && !FoundNonParen) {
+      --I;
+      if (D.getTypeObject(I).Kind != DeclaratorChunk::Paren)
+        FoundNonParen = true;
+    }
+
+    if (FoundNonParen) {
+      // If we're not the declarator, we're a regular function type unless we're
+      // in a member pointer.
+      IsCXXInstanceMethod =
+          D.getTypeObject(I).Kind == DeclaratorChunk::MemberPointer;
+    } else {
+      // We're the innermost decl chunk, so must be a function declarator.
+      assert(D.isFunctionDeclarator());
+
+      // If we're inside a record, we're declaring a method, but it could be
+      // static.
+      IsCXXInstanceMethod =
+          (D.getContext() == Declarator::MemberContext &&
+           D.getDeclSpec().getStorageClassSpec() != DeclSpec::SCS_typedef &&
+           D.getDeclSpec().getStorageClassSpec() != DeclSpec::SCS_static &&
+           !D.getDeclSpec().isFriendSpecified());
+    }
+  }
+
+  return S.Context.getDefaultCallingConvention(FTI.isVariadic,
+                                               IsCXXInstanceMethod);
 }
 
 static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
@@ -2637,11 +2662,8 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
           }
         }
       }
-      const AutoType *AT = T->getContainedAutoType();
-      // Allow arrays of auto if we are a generic lambda parameter.
-      // i.e. [](auto (&array)[5]) { return array[0]; }; OK
-      if (AT && !(S.getLangOpts().CPlusPlus1y && 
-                  D.getContext() == Declarator::LambdaExprParameterContext)) {
+
+      if (const AutoType *AT = T->getContainedAutoType()) {
         // We've already diagnosed this for decltype(auto).
         if (!AT->isDecltypeAuto())
           S.Diag(DeclType.Loc, diag::err_illegal_decl_array_of_auto)
@@ -2820,9 +2842,11 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
       if (FTI.isAmbiguous)
         warnAboutAmbiguousFunction(S, D, DeclType, T);
 
+      FunctionType::ExtInfo EI(getCCForDeclaratorChunk(S, D, FTI, chunkIndex));
+
       if (!FTI.NumArgs && !FTI.isVariadic && !LangOpts.CPlusPlus) {
         // Simple void foo(), where the incoming T is the result type.
-        T = Context.getFunctionNoProtoType(T);
+        T = Context.getFunctionNoProtoType(T, EI);
       } else {
         // We allow a zero-parameter variadic function in C if the
         // function is marked with the "overloadable" attribute. Scan
@@ -2847,11 +2871,12 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
           S.Diag(FTI.ArgInfo[0].IdentLoc, diag::err_ident_list_in_fn_declaration);
           D.setInvalidType(true);
           // Recover by creating a K&R-style function type.
-          T = Context.getFunctionNoProtoType(T);
+          T = Context.getFunctionNoProtoType(T, EI);
           break;
         }
 
         FunctionProtoType::ExtProtoInfo EPI;
+        EPI.ExtInfo = EI;
         EPI.Variadic = FTI.isVariadic;
         EPI.HasTrailingReturn = FTI.hasTrailingReturnType();
         EPI.TypeQuals = FTI.TypeQuals;
@@ -3137,7 +3162,6 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
     //   is a parameter pack (14.5.3). [...]
     switch (D.getContext()) {
     case Declarator::PrototypeContext:
-    case Declarator::LambdaExprParameterContext:
       // C++0x [dcl.fct]p13:
       //   [...] When it is part of a parameter-declaration-clause, the
       //   parameter pack is a function parameter pack (14.5.3). The type T
@@ -3156,6 +3180,7 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
         T = Context.getPackExpansionType(T, None);
       }
       break;
+
     case Declarator::TemplateParamContext:
       // C++0x [temp.param]p15:
       //   If a template-parameter is a [...] is a parameter-declaration that
@@ -4441,20 +4466,19 @@ static bool handleFunctionTypeAttr(TypeProcessingState &state,
 
   const FunctionType *fn = unwrapped.get();
   CallingConv CCOld = fn->getCallConv();
-  if (S.Context.getCanonicalCallConv(CC) ==
-      S.Context.getCanonicalCallConv(CCOld)) {
-    FunctionType::ExtInfo EI= unwrapped.get()->getExtInfo().withCallingConv(CC);
-    type = unwrapped.wrap(S, S.Context.adjustFunctionType(unwrapped.get(), EI));
-    return true;
-  }
+  AttributedType::Kind CCAttrKind = getCCTypeAttrKind(attr);
 
-  if (CCOld != (S.LangOpts.MRTD ? CC_X86StdCall : CC_Default)) {
-    // Should we diagnose reapplications of the same convention?
-    S.Diag(attr.getLoc(), diag::err_attributes_are_not_compatible)
-      << FunctionType::getNameForCallConv(CC)
-      << FunctionType::getNameForCallConv(CCOld);
-    attr.setInvalid();
-    return true;
+  if (CC != CCOld) {
+    // Error out on when there's already an attribute on the type
+    // and the CCs don't match.
+    const AttributedType *AT = S.getCallingConvAttributedType(type);
+    if (AT && AT->getAttrKind() != CCAttrKind) {
+      S.Diag(attr.getLoc(), diag::err_attributes_are_not_compatible)
+        << FunctionType::getNameForCallConv(CC)
+        << FunctionType::getNameForCallConv(CCOld);
+      attr.setInvalid();
+      return true;
+    }
   }
 
   // Diagnose the use of X86 fastcall on varargs or unprototyped functions.
@@ -4490,8 +4514,36 @@ static bool handleFunctionTypeAttr(TypeProcessingState &state,
   FunctionType::ExtInfo EI = unwrapped.get()->getExtInfo().withCallingConv(CC);
   QualType Equivalent =
       unwrapped.wrap(S, S.Context.adjustFunctionType(unwrapped.get(), EI));
-  type = S.Context.getAttributedType(getCCTypeAttrKind(attr), type, Equivalent);
+  type = S.Context.getAttributedType(CCAttrKind, type, Equivalent);
   return true;
+}
+
+void Sema::adjustMemberFunctionCC(QualType &T) {
+  const FunctionType *FT = T->castAs<FunctionType>();
+  bool IsVariadic = (isa<FunctionProtoType>(FT) &&
+                     cast<FunctionProtoType>(FT)->isVariadic());
+  CallingConv CC = FT->getCallConv();
+  CallingConv DefaultCC =
+      Context.getDefaultCallingConvention(IsVariadic, /*IsCXXMethod=*/false);
+  if (CC != DefaultCC)
+    return;
+
+  // Check if there was an explicit attribute, but only look through parens.
+  // The intent is to look for an attribute on the current declarator, but not
+  // one that came from a typedef.
+  QualType R = T.IgnoreParens();
+  while (const AttributedType *AT = dyn_cast<AttributedType>(R)) {
+    if (AT->isCallingConv())
+      return;
+    R = AT->getModifiedType().IgnoreParens();
+  }
+
+  // FIXME: This loses sugar.  This should probably be fixed with an implicit
+  // AttributedType node that adjusts the convention.
+  CC = Context.getDefaultCallingConvention(IsVariadic, /*IsCXXMethod=*/true);
+  FT = Context.adjustFunctionType(FT, FT->getExtInfo().withCallingConv(CC));
+  FunctionTypeUnwrapper Unwrapped(*this, T);
+  T = Unwrapped.wrap(*this, FT);
 }
 
 /// Handle OpenCL image access qualifiers: read_only, write_only, read_write
@@ -4858,6 +4910,7 @@ bool Sema::RequireCompleteExprType(Expr *E, TypeDiagnoser &Diagnoser){
 
   // Fast path the case where the type is already complete.
   if (!T->isIncompleteType())
+    // FIXME: The definition might not be visible.
     return false;
 
   // Incomplete array types may be completed by the initializer attached to

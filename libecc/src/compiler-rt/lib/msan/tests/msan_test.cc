@@ -731,6 +731,31 @@ TEST(MemorySanitizer, poll) {
   close(pipefd[1]);
 }
 
+TEST(MemorySanitizer, ppoll) {
+  int* pipefd = new int[2];
+  int res = pipe(pipefd);
+  ASSERT_EQ(0, res);
+
+  char data = 42;
+  res = write(pipefd[1], &data, 1);
+  ASSERT_EQ(1, res);
+
+  pollfd fds[2];
+  fds[0].fd = pipefd[0];
+  fds[0].events = POLLIN;
+  fds[1].fd = pipefd[1];
+  fds[1].events = POLLIN;
+  sigset_t ss;
+  sigemptyset(&ss);
+  res = ppoll(fds, 2, NULL, &ss);
+  ASSERT_EQ(1, res);
+  EXPECT_NOT_POISONED(fds[0].revents);
+  EXPECT_NOT_POISONED(fds[1].revents);
+
+  close(pipefd[0]);
+  close(pipefd[1]);
+}
+
 TEST(MemorySanitizer, poll_positive) {
   int* pipefd = new int[2];
   int res = pipe(pipefd);
@@ -1792,22 +1817,33 @@ TEST(MemorySanitizer, VAArgOverflow) {
 static void vaargsfn_tlsoverwrite2(int guard, ...) {
   va_list vl;
   va_start(vl, guard);
-  EXPECT_NOT_POISONED(va_arg(vl, int));
+  for (int i = 0; i < 20; ++i)
+    EXPECT_NOT_POISONED(va_arg(vl, int));
   va_end(vl);
 }
 
 static void vaargsfn_tlsoverwrite(int guard, ...) {
   // This call will overwrite TLS contents unless it's backed up somewhere.
-  vaargsfn_tlsoverwrite2(2, 42);
+  vaargsfn_tlsoverwrite2(2,
+      42, 42, 42, 42, 42,
+      42, 42, 42, 42, 42,
+      42, 42, 42, 42, 42,
+      42, 42, 42, 42, 42); // 20x
   va_list vl;
   va_start(vl, guard);
-  EXPECT_POISONED(va_arg(vl, int));
+  for (int i = 0; i < 20; ++i)
+    EXPECT_POISONED(va_arg(vl, int));
   va_end(vl);
 }
 
 TEST(MemorySanitizer, VAArgTLSOverwrite) {
   int* x = GetPoisoned<int>();
-  vaargsfn_tlsoverwrite(1, *x);
+  vaargsfn_tlsoverwrite(1,
+      *x, *x, *x, *x, *x,
+      *x, *x, *x, *x, *x,
+      *x, *x, *x, *x, *x,
+      *x, *x, *x, *x, *x); // 20x
+
 }
 
 struct StructByVal {

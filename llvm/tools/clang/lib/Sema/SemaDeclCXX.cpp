@@ -32,7 +32,6 @@
 #include "clang/Sema/CXXFieldCollector.h"
 #include "clang/Sema/DeclSpec.h"
 #include "clang/Sema/Initialization.h"
-#include "clang/Sema/SemaLambda.h"
 #include "clang/Sema/Lookup.h"
 #include "clang/Sema/ParsedTemplate.h"
 #include "clang/Sema/Scope.h"
@@ -1250,8 +1249,7 @@ static bool findCircularInheritance(const CXXRecordDecl *Class,
     if (Queue.empty())
       return false;
 
-    Current = Queue.back();
-    Queue.pop_back();
+    Current = Queue.pop_back_val();
   }
 
   return false;
@@ -4437,6 +4435,21 @@ updateExceptionSpec(Sema &S, FunctionDecl *FD, const FunctionProtoType *FPT,
                                         FPT->getArgTypes(), EPI));
 }
 
+static FunctionProtoType::ExtProtoInfo getImplicitMethodEPI(Sema &S,
+                                                            CXXMethodDecl *MD) {
+  FunctionProtoType::ExtProtoInfo EPI;
+
+  // Build an exception specification pointing back at this member.
+  EPI.ExceptionSpecType = EST_Unevaluated;
+  EPI.ExceptionSpecDecl = MD;
+
+  // Set the calling convention to the default for C++ instance methods.
+  EPI.ExtInfo = EPI.ExtInfo.withCallingConv(
+      S.Context.getDefaultCallingConvention(/*IsVariadic=*/false,
+                                            /*IsCXXMethod=*/true));
+  return EPI;
+}
+
 void Sema::EvaluateImplicitExceptionSpec(SourceLocation Loc, CXXMethodDecl *MD) {
   const FunctionProtoType *FPT = MD->getType()->castAs<FunctionProtoType>();
   if (FPT->getExceptionSpecType() != EST_Unevaluated)
@@ -4633,7 +4646,9 @@ void Sema::CheckExplicitlyDefaultedSpecialMember(CXXMethodDecl *MD) {
 void Sema::CheckExplicitlyDefaultedMemberExceptionSpec(
     CXXMethodDecl *MD, const FunctionProtoType *SpecifiedType) {
   // Compute the implicit exception specification.
-  FunctionProtoType::ExtProtoInfo EPI;
+  CallingConv CC = Context.getDefaultCallingConvention(/*IsVariadic=*/false,
+                                                       /*IsCXXMethod=*/true);
+  FunctionProtoType::ExtProtoInfo EPI(CC);
   computeImplicitExceptionSpec(*this, MD->getLocation(), MD).getEPI(EPI);
   const FunctionProtoType *ImplicitType = cast<FunctionProtoType>(
     Context.getFunctionType(Context.VoidTy, None, EPI));
@@ -7893,9 +7908,7 @@ CXXConstructorDecl *Sema::DeclareImplicitDefaultConstructor(
   DefaultCon->setImplicit();
 
   // Build an exception specification pointing back at this constructor.
-  FunctionProtoType::ExtProtoInfo EPI;
-  EPI.ExceptionSpecType = EST_Unevaluated;
-  EPI.ExceptionSpecDecl = DefaultCon;
+  FunctionProtoType::ExtProtoInfo EPI = getImplicitMethodEPI(*this, DefaultCon);
   DefaultCon->setType(Context.getFunctionType(Context.VoidTy, None, EPI));
 
   // We don't need to use SpecialMemberIsTrivial here; triviality for default
@@ -8357,9 +8370,7 @@ CXXDestructorDecl *Sema::DeclareImplicitDestructor(CXXRecordDecl *ClassDecl) {
   Destructor->setImplicit();
 
   // Build an exception specification pointing back at this destructor.
-  FunctionProtoType::ExtProtoInfo EPI;
-  EPI.ExceptionSpecType = EST_Unevaluated;
-  EPI.ExceptionSpecDecl = Destructor;
+  FunctionProtoType::ExtProtoInfo EPI = getImplicitMethodEPI(*this, Destructor);
   Destructor->setType(Context.getFunctionType(Context.VoidTy, None, EPI));
 
   AddOverriddenMethods(ClassDecl, Destructor);
@@ -8863,9 +8874,8 @@ CXXMethodDecl *Sema::DeclareImplicitCopyAssignment(CXXRecordDecl *ClassDecl) {
   CopyAssignment->setImplicit();
 
   // Build an exception specification pointing back at this member.
-  FunctionProtoType::ExtProtoInfo EPI;
-  EPI.ExceptionSpecType = EST_Unevaluated;
-  EPI.ExceptionSpecDecl = CopyAssignment;
+  FunctionProtoType::ExtProtoInfo EPI =
+      getImplicitMethodEPI(*this, CopyAssignment);
   CopyAssignment->setType(Context.getFunctionType(RetType, ArgType, EPI));
 
   // Add the parameter to the operator.
@@ -9377,9 +9387,8 @@ CXXMethodDecl *Sema::DeclareImplicitMoveAssignment(CXXRecordDecl *ClassDecl) {
   MoveAssignment->setImplicit();
 
   // Build an exception specification pointing back at this member.
-  FunctionProtoType::ExtProtoInfo EPI;
-  EPI.ExceptionSpecType = EST_Unevaluated;
-  EPI.ExceptionSpecDecl = MoveAssignment;
+  FunctionProtoType::ExtProtoInfo EPI =
+      getImplicitMethodEPI(*this, MoveAssignment);
   MoveAssignment->setType(Context.getFunctionType(RetType, ArgType, EPI));
 
   // Add the parameter to the operator.
@@ -9734,9 +9743,8 @@ CXXConstructorDecl *Sema::DeclareImplicitCopyConstructor(
   CopyConstructor->setDefaulted();
 
   // Build an exception specification pointing back at this member.
-  FunctionProtoType::ExtProtoInfo EPI;
-  EPI.ExceptionSpecType = EST_Unevaluated;
-  EPI.ExceptionSpecDecl = CopyConstructor;
+  FunctionProtoType::ExtProtoInfo EPI =
+      getImplicitMethodEPI(*this, CopyConstructor);
   CopyConstructor->setType(
       Context.getFunctionType(Context.VoidTy, ArgType, EPI));
 
@@ -9924,9 +9932,8 @@ CXXConstructorDecl *Sema::DeclareImplicitMoveConstructor(
   MoveConstructor->setDefaulted();
 
   // Build an exception specification pointing back at this member.
-  FunctionProtoType::ExtProtoInfo EPI;
-  EPI.ExceptionSpecType = EST_Unevaluated;
-  EPI.ExceptionSpecDecl = MoveConstructor;
+  FunctionProtoType::ExtProtoInfo EPI =
+      getImplicitMethodEPI(*this, MoveConstructor);
   MoveConstructor->setType(
       Context.getFunctionType(Context.VoidTy, ArgType, EPI));
 
@@ -10016,27 +10023,29 @@ void Sema::DefineImplicitLambdaToFunctionPointerConversion(
        SourceLocation CurrentLocation,
        CXXConversionDecl *Conv) 
 {
-  CXXRecordDecl *LambdaClass = Conv->getParent();
+  CXXRecordDecl *Lambda = Conv->getParent();
   
   // Make sure that the lambda call operator is marked used.
-  markLambdaCallOperatorUsed(*this, LambdaClass);
+  markLambdaCallOperatorUsed(*this, Lambda);
   
   Conv->setUsed();
   
   SynthesizedFunctionScope Scope(*this, Conv);
   DiagnosticErrorTrap Trap(Diags);
   
-  CXXMethodDecl *Invoke = LambdaClass->getLambdaStaticInvoker();
-
+  // Return the address of the __invoke function.
+  DeclarationName InvokeName = &Context.Idents.get("__invoke");
+  CXXMethodDecl *Invoke 
+    = cast<CXXMethodDecl>(Lambda->lookup(InvokeName).front());
   Expr *FunctionRef = BuildDeclRefExpr(Invoke, Invoke->getType(),
                                        VK_LValue, Conv->getLocation()).take();
-  assert(FunctionRef && "Can't refer to lambda static invoker function?");
+  assert(FunctionRef && "Can't refer to __invoke function?");
   Stmt *Return = ActOnReturnStmt(Conv->getLocation(), FunctionRef).take();
   Conv->setBody(new (Context) CompoundStmt(Context, Return,
                                            Conv->getLocation(),
                                            Conv->getLocation()));
     
-  // Fill in the invoke function with a dummy implementation. IR generation
+  // Fill in the __invoke function with a dummy implementation. IR generation
   // will fill in the actual details.
   Invoke->setUsed();
   Invoke->setReferenced();
@@ -11646,27 +11655,11 @@ bool Sema::CheckOverridingFunctionAttributes(const CXXMethodDecl *New,
   if (NewCC == OldCC)
     return false;
 
-  // If either of the calling conventions are set to "default", we need to pick
-  // something more sensible based on the target. This supports code where the
-  // one method explicitly sets thiscall, and another has no explicit calling
-  // convention.
-  CallingConv Default = 
-    Context.getTargetInfo().getDefaultCallingConv(TargetInfo::CCMT_Member);
-  if (NewCC == CC_Default)
-    NewCC = Default;
-  if (OldCC == CC_Default)
-    OldCC = Default;
-
-  // If the calling conventions still don't match, then report the error
-  if (NewCC != OldCC) {
-    Diag(New->getLocation(),
-         diag::err_conflicting_overriding_cc_attributes)
-      << New->getDeclName() << New->getType() << Old->getType();
-    Diag(Old->getLocation(), diag::note_overridden_virtual_function);
-    return true;
-  }
-
-  return false;
+  Diag(New->getLocation(),
+       diag::err_conflicting_overriding_cc_attributes)
+    << New->getDeclName() << New->getType() << Old->getType();
+  Diag(Old->getLocation(), diag::note_overridden_virtual_function);
+  return true;
 }
 
 bool Sema::CheckOverridingFunctionReturnType(const CXXMethodDecl *New,
@@ -11936,19 +11929,14 @@ bool Sema::DefineUsedVTables() {
     // vtable even though we're using it.
     const CXXMethodDecl *KeyFunction = Context.getCurrentKeyFunction(Class);
     if (KeyFunction && !KeyFunction->hasBody()) {
-      switch (KeyFunction->getTemplateSpecializationKind()) {
-      case TSK_Undeclared:
-      case TSK_ExplicitSpecialization:
-      case TSK_ExplicitInstantiationDeclaration:
-        // The key function is in another translation unit.
-        DefineVTable = false;
-        break;
-
-      case TSK_ExplicitInstantiationDefinition:
-      case TSK_ImplicitInstantiation:
-        // We will be instantiating the key function.
-        break;
-      }
+      // The key function is in another translation unit.
+      DefineVTable = false;
+      TemplateSpecializationKind TSK =
+          KeyFunction->getTemplateSpecializationKind();
+      assert(TSK != TSK_ExplicitInstantiationDefinition &&
+             TSK != TSK_ImplicitInstantiation &&
+             "Instantiations don't have key functions");
+      (void)TSK;
     } else if (!KeyFunction) {
       // If we have a class with no key function that is the subject
       // of an explicit instantiation declaration, suppress the

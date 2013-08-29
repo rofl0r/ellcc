@@ -419,6 +419,12 @@ static bool fieldIsMDNode(const MDNode *DbgNode, unsigned Elt) {
   return true;
 }
 
+/// Check if a field at position Elt of a MDNode is a MDString.
+static bool fieldIsMDString(const MDNode *DbgNode, unsigned Elt) {
+  Value *Fld = getField(DbgNode, Elt);
+  return !Fld || isa<MDString>(Fld);
+}
+
 /// Verify - Verify that a type descriptor is well formed.
 bool DIType::Verify() const {
   if (!isType())
@@ -483,13 +489,17 @@ bool DICompositeType::Verify() const {
   if (!fieldIsMDNode(DbgNode, 12))
     return false;
 
+  // Make sure the type identifier at field 14 is MDString, it can be null.
+  if (!fieldIsMDString(DbgNode, 14))
+    return false;
+
   // If this is an array type verify that we have a DIType in the derived type
   // field as that's the type of our element.
   if (getTag() == dwarf::DW_TAG_array_type)
     if (!DIType(getTypeDerivedFrom()))
       return false;
 
-  return DbgNode->getNumOperands() >= 10 && DbgNode->getNumOperands() <= 14;
+  return DbgNode->getNumOperands() == 15;
 }
 
 /// Verify - Verify that a subprogram descriptor is well formed.
@@ -635,13 +645,39 @@ MDNode *DIDerivedType::getObjCProperty() const {
   return getNodeField(DbgNode, 10);
 }
 
+MDString *DICompositeType::getIdentifier() const {
+  return cast_or_null<MDString>(getField(DbgNode, 14));
+}
+
+#ifndef NDEBUG
+static void VerifySubsetOf(const MDNode *LHS, const MDNode *RHS) {
+  for (unsigned i = 0; i != LHS->getNumOperands(); ++i) {
+    // Skip the 'empty' list (that's a single i32 0, rather than truly empty).
+    if (i == 0 && isa<ConstantInt>(LHS->getOperand(i)))
+      continue;
+    const MDNode *E = cast<MDNode>(LHS->getOperand(i));
+    bool found = false;
+    for (unsigned j = 0; !found && j != RHS->getNumOperands(); ++j)
+      found = E == RHS->getOperand(j);
+    assert(found && "Losing a member during member list replacement");
+  }
+}
+#endif
+
 /// \brief Set the array of member DITypes.
 void DICompositeType::setTypeArray(DIArray Elements, DIArray TParams) {
-  assert((!TParams || DbgNode->getNumOperands() == 14) &&
+  assert((!TParams || DbgNode->getNumOperands() == 15) &&
          "If you're setting the template parameters this should include a slot "
          "for that!");
   TrackingVH<MDNode> N(*this);
-  N->replaceOperandWith(10, Elements);
+  if (Elements) {
+#ifndef NDEBUG
+    // Check that the new list of members contains all the old members as well.
+    if (const MDNode *El = cast_or_null<MDNode>(N->getOperand(10)))
+      VerifySubsetOf(El, Elements);
+#endif
+    N->replaceOperandWith(10, Elements);
+  }
   if (TParams)
     N->replaceOperandWith(13, TParams);
   DbgNode = N;
@@ -923,6 +959,18 @@ void DebugInfoFinder::processModule(const Module &M) {
       DIArray RetainedTypes = CU.getRetainedTypes();
       for (unsigned i = 0, e = RetainedTypes.getNumElements(); i != e; ++i)
         processType(DIType(RetainedTypes.getElement(i)));
+      DIArray Imports = CU.getImportedEntities();
+      for (unsigned i = 0, e = Imports.getNumElements(); i != e; ++i) {
+        DIImportedEntity Import = DIImportedEntity(
+                                    Imports.getElement(i));
+        DIDescriptor Entity = Import.getEntity();
+        if (Entity.isType())
+          processType(DIType(Entity));
+        else if (Entity.isSubprogram())
+          processSubprogram(DISubprogram(Entity));
+        else if (Entity.isNameSpace())
+          processScope(DINameSpace(Entity).getContext());
+      }
       // FIXME: We really shouldn't be bailing out after visiting just one CU
       return;
     }
@@ -1005,6 +1053,19 @@ void DebugInfoFinder::processSubprogram(DISubprogram SP) {
     return;
   processScope(SP.getContext());
   processType(SP.getType());
+  DIArray TParams = SP.getTemplateParams();
+  for (unsigned I = 0, E = TParams.getNumElements(); I != E; ++I) {
+    DIDescriptor Element = TParams.getElement(I);
+    if (Element.isTemplateTypeParameter()) {
+      DITemplateTypeParameter TType(Element);
+      processScope(TType.getContext());
+      processType(TType.getType());
+    } else if (Element.isTemplateValueParameter()) {
+      DITemplateValueParameter TVal(Element);
+      processScope(TVal.getContext());
+      processType(TVal.getType());
+    }
+  }
 }
 
 /// processDeclare - Process DbgDeclareInst.

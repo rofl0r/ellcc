@@ -942,7 +942,7 @@ def TestsUnconsumed : InheritableAttr {
 
 def Consumes : InheritableAttr {
   let Spellings = [GNU<"consumes">];
-  let Subjects = [CXXMethod];
+  let Subjects = [CXXMethod, CXXConstructor];
 }
 
 def TestsConsumed : InheritableAttr {
@@ -973,7 +973,7 @@ def TypeTagForDatatype : InheritableAttr {
 
 // Microsoft-related attributes
 
-def MsProperty : Attr {
+def MsProperty : IgnoredAttr {
   let Spellings = [Declspec<"property">];
 }
 

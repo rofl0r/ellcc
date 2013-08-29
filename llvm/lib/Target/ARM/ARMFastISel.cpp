@@ -653,6 +653,7 @@ unsigned ARMFastISel::ARMMaterializeInt(const Constant *C, MVT VT) {
                     .addConstantPoolIndex(Idx));
   else
     // The extra immediate is for addrmode2.
+    DestReg = constrainOperandRegClass(TII.get(ARM::LDRcp), DestReg, 0);
     AddOptionalDefs(BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL,
                             TII.get(ARM::LDRcp), DestReg)
                     .addConstantPoolIndex(Idx)
@@ -728,6 +729,7 @@ unsigned ARMFastISel::ARMMaterializeGV(const GlobalValue *GV, MVT VT) {
       AddOptionalDefs(MIB);
     } else {
       // The extra immediate is for addrmode2.
+      DestReg = constrainOperandRegClass(TII.get(ARM::LDRcp), DestReg, 0);
       MIB = BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL, TII.get(ARM::LDRcp),
                     DestReg)
         .addConstantPoolIndex(Idx)
@@ -1182,6 +1184,7 @@ bool ARMFastISel::ARMEmitStore(MVT VT, unsigned SrcReg, Address &Addr,
         (const TargetRegisterClass*)&ARM::tGPRRegClass :
         (const TargetRegisterClass*)&ARM::GPRRegClass);
       unsigned Opc = isThumb2 ? ARM::t2ANDri : ARM::ANDri;
+      SrcReg = constrainOperandRegClass(TII.get(Opc), SrcReg, 1);
       AddOptionalDefs(BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL,
                               TII.get(Opc), Res)
                       .addReg(SrcReg).addImm(1));
@@ -1253,6 +1256,7 @@ bool ARMFastISel::ARMEmitStore(MVT VT, unsigned SrcReg, Address &Addr,
   ARMSimplifyAddress(Addr, VT, useAM3);
 
   // Create the base instruction, then add the operands.
+  SrcReg = constrainOperandRegClass(TII.get(StrOpc), SrcReg, 0);
   MachineInstrBuilder MIB = BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL,
                                     TII.get(StrOpc))
                             .addReg(SrcReg);
@@ -1376,6 +1380,7 @@ bool ARMFastISel::SelectBranch(const Instruction *I) {
         (isLoadTypeLegal(TI->getOperand(0)->getType(), SourceVT))) {
       unsigned TstOpc = isThumb2 ? ARM::t2TSTri : ARM::TSTri;
       unsigned OpReg = getRegForValue(TI->getOperand(0));
+      OpReg = constrainOperandRegClass(TII.get(TstOpc), OpReg, 0);
       AddOptionalDefs(BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL,
                               TII.get(TstOpc))
                       .addReg(OpReg).addImm(1));
@@ -1413,6 +1418,7 @@ bool ARMFastISel::SelectBranch(const Instruction *I) {
   // and it left a value for us in a virtual register.  Ergo, we test
   // the one-bit value left in the virtual register.
   unsigned TstOpc = isThumb2 ? ARM::t2TSTri : ARM::TSTri;
+  CmpReg = constrainOperandRegClass(TII.get(TstOpc), CmpReg, 0);
   AddOptionalDefs(BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL, TII.get(TstOpc))
                   .addReg(CmpReg).addImm(1));
 
@@ -1856,6 +1862,8 @@ bool ARMFastISel::SelectBinaryIntOp(const Instruction *I, unsigned ISDOpcode) {
   if (SrcReg2 == 0) return false;
 
   unsigned ResultReg = createResultReg(&ARM::GPRnopcRegClass);
+  SrcReg1 = constrainOperandRegClass(TII.get(Opc), SrcReg1, 1);
+  SrcReg2 = constrainOperandRegClass(TII.get(Opc), SrcReg2, 2);
   AddOptionalDefs(BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL,
                           TII.get(Opc), ResultReg)
                   .addReg(SrcReg1).addReg(SrcReg2));
@@ -2460,15 +2468,22 @@ bool ARMFastISel::SelectCall(const Instruction *I,
   MachineInstrBuilder MIB = BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt,
                                     DL, TII.get(CallOpc));
 
+  unsigned char OpFlags = 0;
+
+  // Add MO_PLT for global address or external symbol in the PIC relocation
+  // model.
+  if (Subtarget->isTargetELF() && TM.getRelocationModel() == Reloc::PIC_)
+    OpFlags = ARMII::MO_PLT;
+
   // ARM calls don't take a predicate, but tBL / tBLX do.
   if(isThumb2)
     AddDefaultPred(MIB);
   if (UseReg)
     MIB.addReg(CalleeReg);
   else if (!IntrMemName)
-    MIB.addGlobalAddress(GV, 0, 0);
+    MIB.addGlobalAddress(GV, 0, OpFlags);
   else
-    MIB.addExternalSymbol(IntrMemName, 0);
+    MIB.addExternalSymbol(IntrMemName, OpFlags);
 
   // Add implicit physical register uses to the call.
   for (unsigned i = 0, e = RegArgs.size(); i != e; ++i)
@@ -3016,12 +3031,14 @@ unsigned ARMFastISel::ARMLowerPICELF(const GlobalValue *GV,
   unsigned DestReg1 = createResultReg(TLI.getRegClassFor(VT));
   // Load value.
   if (isThumb2) {
+    DestReg1 = constrainOperandRegClass(TII.get(ARM::t2LDRpci), DestReg1, 0);
     AddOptionalDefs(BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL,
                             TII.get(ARM::t2LDRpci), DestReg1)
                     .addConstantPoolIndex(Idx));
     Opc = UseGOTOFF ? ARM::t2ADDrr : ARM::t2LDRs;
   } else {
     // The extra immediate is for addrmode2.
+    DestReg1 = constrainOperandRegClass(TII.get(ARM::LDRcp), DestReg1, 0);
     AddOptionalDefs(BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt,
                             DL, TII.get(ARM::LDRcp), DestReg1)
                     .addConstantPoolIndex(Idx).addImm(0));
@@ -3035,6 +3052,9 @@ unsigned ARMFastISel::ARMLowerPICELF(const GlobalValue *GV,
   }
 
   unsigned DestReg2 = createResultReg(TLI.getRegClassFor(VT));
+  DestReg2 = constrainOperandRegClass(TII.get(Opc), DestReg2, 0);
+  DestReg1 = constrainOperandRegClass(TII.get(Opc), DestReg1, 1);
+  GlobalBaseReg = constrainOperandRegClass(TII.get(Opc), GlobalBaseReg, 2);
   MachineInstrBuilder MIB = BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt,
                                     DL, TII.get(Opc), DestReg2)
                             .addReg(DestReg1)

@@ -167,8 +167,7 @@ namespace {
         if (queue.empty())
           return;
 
-        DC = queue.back();
-        queue.pop_back();
+        DC = queue.pop_back_val();
       }
     }
 
@@ -729,7 +728,7 @@ static bool LookupDirect(Sema &S, LookupResult &R, const DeclContext *DC) {
     // function to have, if it were to match the name given.
     // FIXME: Calling convention!
     FunctionProtoType::ExtProtoInfo EPI = ConvProto->getExtProtoInfo();
-    EPI.ExtInfo = EPI.ExtInfo.withCallingConv(CC_Default);
+    EPI.ExtInfo = EPI.ExtInfo.withCallingConv(CC_C);
     EPI.ExceptionSpecType = EST_None;
     EPI.NumExceptions = 0;
     QualType ExpectedType
@@ -1446,8 +1445,7 @@ static bool LookupQualifiedNameInUsingDirectives(Sema &S, LookupResult &R,
 
   bool Found = false;
   while (!Queue.empty()) {
-    NamespaceDecl *ND = Queue.back();
-    Queue.pop_back();
+    NamespaceDecl *ND = Queue.pop_back_val();
 
     // We go through some convolutions here to avoid copying results
     // between LookupResults.
@@ -1798,9 +1796,7 @@ bool Sema::LookupParsedName(LookupResult &R, Scope *S, CXXScopeSpec *SS,
 /// from name lookup.
 ///
 /// \param Result The result of the ambiguous lookup to be diagnosed.
-///
-/// \returns true
-bool Sema::DiagnoseAmbiguousLookup(LookupResult &Result) {
+void Sema::DiagnoseAmbiguousLookup(LookupResult &Result) {
   assert(Result.isAmbiguous() && "Lookup result must be ambiguous");
 
   DeclarationName Name = Result.getLookupName();
@@ -1821,8 +1817,7 @@ bool Sema::DiagnoseAmbiguousLookup(LookupResult &Result) {
       ++Found;
 
     Diag((*Found)->getLocation(), diag::note_ambiguous_member_found);
-
-    return true;
+    break;
   }
 
   case LookupResult::AmbiguousBaseSubobjectTypes: {
@@ -1838,8 +1833,7 @@ bool Sema::DiagnoseAmbiguousLookup(LookupResult &Result) {
       if (DeclsPrinted.insert(D).second)
         Diag(D->getLocation(), diag::note_ambiguous_member_found);
     }
-
-    return true;
+    break;
   }
 
   case LookupResult::AmbiguousTagHiding: {
@@ -1865,8 +1859,7 @@ bool Sema::DiagnoseAmbiguousLookup(LookupResult &Result) {
         F.erase();
     }
     F.done();
-
-    return true;
+    break;
   }
 
   case LookupResult::AmbiguousReference: {
@@ -1875,12 +1868,9 @@ bool Sema::DiagnoseAmbiguousLookup(LookupResult &Result) {
     LookupResult::iterator DI = Result.begin(), DE = Result.end();
     for (; DI != DE; ++DI)
       Diag((*DI)->getLocation(), diag::note_ambiguous_candidate) << *DI;
-
-    return true;
+    break;
   }
   }
-
-  llvm_unreachable("unknown ambiguity kind");
 }
 
 namespace {
@@ -2039,8 +2029,7 @@ addAssociatedClassesAndNamespaces(AssociatedLookup &Result,
   Bases.push_back(Class);
   while (!Bases.empty()) {
     // Pop this class off the stack.
-    Class = Bases.back();
-    Bases.pop_back();
+    Class = Bases.pop_back_val();
 
     // Visit the base classes.
     for (CXXRecordDecl::base_class_iterator Base = Class->bases_begin(),
@@ -2224,9 +2213,9 @@ addAssociatedClassesAndNamespaces(AssociatedLookup &Result, QualType Ty) {
       continue;
     }
 
-    if (Queue.empty()) break;
-    T = Queue.back();
-    Queue.pop_back();
+    if (Queue.empty())
+      break;
+    T = Queue.pop_back_val();
   }
 }
 

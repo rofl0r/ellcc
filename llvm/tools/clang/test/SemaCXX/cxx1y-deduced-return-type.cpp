@@ -255,7 +255,7 @@ namespace DefaultedMethods {
     auto operator=(const A&) = default; // expected-error {{must return 'DefaultedMethods::A &'}}
     A &operator=(A&&); // expected-note {{previous}}
   };
-  auto A::operator=(A&&) = default; // expected-error {{differs from the declaration in the return type}}
+  auto A::operator=(A&&) = default; // expected-error {{return type of out-of-line definition of 'DefaultedMethods::A::operator=' differs from that in the declaration}}
 }
 
 namespace Constexpr {
@@ -398,4 +398,13 @@ namespace CurrentInstantiation {
   template int U<int>::g(); // expected-note {{in instantiation of}}
   template<typename T> auto U<T>::f() { return T(); }
   template int U<short>::g(); // ok
+}
+
+namespace WithDefaultArgs {
+  template<typename U> struct A {
+    template<typename T = U> friend auto f(A) { return []{}; }
+  };
+  template<typename T> void f();
+  using T = decltype(f(A<int>()));
+  using T = decltype(f<int>(A<int>()));
 }

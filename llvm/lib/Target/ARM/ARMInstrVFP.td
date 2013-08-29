@@ -333,41 +333,47 @@ def VNMULS : ASbI<0b11100, 0b10, 1, 0,
   let D = VFPNeonA8Domain;
 }
 
-multiclass vsel_inst<string op, bits<2> opc> {
-  let DecoderNamespace = "VFPV8", PostEncoderMethod = "" in {
+multiclass vsel_inst<string op, bits<2> opc, int CC> {
+  let DecoderNamespace = "VFPV8", PostEncoderMethod = "",
+      Uses = [CPSR], AddedComplexity = 4 in {
     def S : ASbInp<0b11100, opc, 0,
                    (outs SPR:$Sd), (ins SPR:$Sn, SPR:$Sm),
                    NoItinerary, !strconcat("vsel", op, ".f32\t$Sd, $Sn, $Sm"),
-                   []>, Requires<[HasV8FP]>;
+                   [(set SPR:$Sd, (ARMcmov SPR:$Sm, SPR:$Sn, CC))]>,
+                   Requires<[HasV8FP]>;
 
     def D : ADbInp<0b11100, opc, 0,
                    (outs DPR:$Dd), (ins DPR:$Dn, DPR:$Dm),
                    NoItinerary, !strconcat("vsel", op, ".f64\t$Dd, $Dn, $Dm"),
-                   []>, Requires<[HasV8FP]>;
+                   [(set DPR:$Dd, (ARMcmov (f64 DPR:$Dm), (f64 DPR:$Dn), CC))]>,
+                   Requires<[HasV8FP]>;
   }
 }
 
-defm VSELGT : vsel_inst<"gt", 0b11>;
-defm VSELGE : vsel_inst<"ge", 0b10>;
-defm VSELEQ : vsel_inst<"eq", 0b00>;
-defm VSELVS : vsel_inst<"vs", 0b01>;
+// The CC constants here match ARMCC::CondCodes.
+defm VSELGT : vsel_inst<"gt", 0b11, 12>;
+defm VSELGE : vsel_inst<"ge", 0b10, 10>;
+defm VSELEQ : vsel_inst<"eq", 0b00, 0>;
+defm VSELVS : vsel_inst<"vs", 0b01, 6>;
 
-multiclass vmaxmin_inst<string op, bit opc> {
+multiclass vmaxmin_inst<string op, bit opc, SDNode SD> {
   let DecoderNamespace = "VFPV8", PostEncoderMethod = "" in {
     def S : ASbInp<0b11101, 0b00, opc,
                    (outs SPR:$Sd), (ins SPR:$Sn, SPR:$Sm),
                    NoItinerary, !strconcat(op, ".f32\t$Sd, $Sn, $Sm"),
-                   []>, Requires<[HasV8FP]>;
+                   [(set SPR:$Sd, (SD SPR:$Sn, SPR:$Sm))]>,
+                   Requires<[HasV8FP]>;
 
     def D : ADbInp<0b11101, 0b00, opc,
                    (outs DPR:$Dd), (ins DPR:$Dn, DPR:$Dm),
                    NoItinerary, !strconcat(op, ".f64\t$Dd, $Dn, $Dm"),
-                   []>, Requires<[HasV8FP]>;
+                   [(set DPR:$Dd, (f64 (SD (f64 DPR:$Dn), (f64 DPR:$Dm))))]>,
+                   Requires<[HasV8FP]>;
   }
 }
 
-defm VMAXNM : vmaxmin_inst<"vmaxnm", 0>;
-defm VMINNM : vmaxmin_inst<"vminnm", 1>;
+defm VMAXNM : vmaxmin_inst<"vmaxnm", 0, ARMvmaxnm>;
+defm VMINNM : vmaxmin_inst<"vminnm", 1, ARMvminnm>;
 
 // Match reassociated forms only if not sign dependent rounding.
 def : Pat<(fmul (fneg DPR:$a), (f64 DPR:$b)),
@@ -663,6 +669,11 @@ multiclass vrint_inst_zrx<string opc, bit op, bit op2> {
     let Inst{7} = op2;
     let Inst{16} = op;
   }
+
+  def : InstAlias<!strconcat("vrint", opc, "$p.f32.f32\t$Sd, $Sm"),
+                  (!cast<Instruction>(NAME#"S") SPR:$Sd, SPR:$Sm, pred:$p)>;
+  def : InstAlias<!strconcat("vrint", opc, "$p.f64.f64\t$Dd, $Dm"),
+                  (!cast<Instruction>(NAME#"D") DPR:$Dd, DPR:$Dm, pred:$p)>;
 }
 
 defm VRINTZ : vrint_inst_zrx<"z", 0, 1>;

@@ -1,6 +1,6 @@
-#line 2 "ada-lex.c"
+#line 2 "../../../src/gdb/gdb/ada-lex.c"
 
-#line 4 "ada-lex.c"
+#line 4 "../../../src/gdb/gdb/ada-lex.c"
 
 #define  YY_INT_ALIGNED short int
 
@@ -809,7 +809,7 @@ int yy_flex_debug = 0;
 #define YY_MORE_ADJ 0
 #define YY_RESTORE_YY_MORE_OFFSET
 char *yytext;
-#line 1 "ada-lex.l"
+#line 1 "../../../src/gdb/gdb/ada-lex.l"
 /* FLEX lexer for Ada expressions, for GDB.
    Copyright (C) 1994-2013 Free Software Foundation, Inc.
 
@@ -833,7 +833,7 @@ char *yytext;
 /* the global pointer lexptr.  It returns a syntactic category for */
 /* each successive token and places a semantic value into yylval */
 /* (ada-lval), defined by the parser.   */
-#line 43 "ada-lex.l"
+#line 43 "../../../src/gdb/gdb/ada-lex.l"
 
 #define NUMERAL_WIDTH 256
 #define LONGEST_SIGN ((ULONGEST) 1 << (sizeof(LONGEST) * HOST_CHAR_BIT - 1))
@@ -870,7 +870,7 @@ static void rewind_to_char (int);
 static int find_dot_all (const char *);
 
 
-#line 874 "ada-lex.c"
+#line 874 "../../../src/gdb/gdb/ada-lex.c"
 
 #define INITIAL 0
 #define BEFORE_QUAL_QUOTE 1
@@ -960,7 +960,7 @@ static int input (void );
 /* This used to be an fputs(), but since the string might contain NUL's,
  * we now use fwrite().
  */
-#define ECHO do { if (fwrite( yytext, yyleng, 1, yyout )) {} } while (0)
+#define ECHO fwrite( yytext, yyleng, 1, yyout )
 #endif
 
 /* Gets input and stuffs it into "buf".  number of characters read, or YY_NULL,
@@ -971,7 +971,7 @@ static int input (void );
 	if ( YY_CURRENT_BUFFER_LVALUE->yy_is_interactive ) \
 		{ \
 		int c = '*'; \
-		unsigned n; \
+		int n; \
 		for ( n = 0; n < max_size && \
 			     (c = getc( yyin )) != EOF && c != '\n'; ++n ) \
 			buf[n] = (char) c; \
@@ -1053,10 +1053,10 @@ YY_DECL
 	register char *yy_cp, *yy_bp;
 	register int yy_act;
     
-#line 84 "ada-lex.l"
+#line 84 "../../../src/gdb/gdb/ada-lex.l"
 
 
-#line 1060 "ada-lex.c"
+#line 1060 "../../../src/gdb/gdb/ada-lex.c"
 
 	if ( !(yy_init) )
 		{
@@ -1142,17 +1142,17 @@ do_action:	/* This label is used only to access EOF actions. */
 case 1:
 /* rule 1 can match eol */
 YY_RULE_SETUP
-#line 86 "ada-lex.l"
+#line 86 "../../../src/gdb/gdb/ada-lex.l"
 { }
 	YY_BREAK
 case 2:
 YY_RULE_SETUP
-#line 88 "ada-lex.l"
+#line 88 "../../../src/gdb/gdb/ada-lex.l"
 { yyterminate(); }
 	YY_BREAK
 case 3:
 YY_RULE_SETUP
-#line 90 "ada-lex.l"
+#line 90 "../../../src/gdb/gdb/ada-lex.l"
 {
 		   canonicalizeNumeral (numbuf, yytext);
 		   return processInt (NULL, numbuf, strrchr(numbuf, 'e')+1);
@@ -1160,7 +1160,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 4:
 YY_RULE_SETUP
-#line 95 "ada-lex.l"
+#line 95 "../../../src/gdb/gdb/ada-lex.l"
 {
 		   canonicalizeNumeral (numbuf, yytext);
 		   return processInt (NULL, numbuf, NULL);
@@ -1168,7 +1168,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 5:
 YY_RULE_SETUP
-#line 100 "ada-lex.l"
+#line 100 "../../../src/gdb/gdb/ada-lex.l"
 {
 		   canonicalizeNumeral (numbuf, yytext);
     		   return processInt (numbuf,
@@ -1178,7 +1178,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 6:
 YY_RULE_SETUP
-#line 107 "ada-lex.l"
+#line 107 "../../../src/gdb/gdb/ada-lex.l"
 {
 		   canonicalizeNumeral (numbuf, yytext);
     		   return processInt (numbuf, strchr (numbuf, '#') + 1, NULL);
@@ -1186,7 +1186,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 7:
 YY_RULE_SETUP
-#line 112 "ada-lex.l"
+#line 112 "../../../src/gdb/gdb/ada-lex.l"
 {
 		  canonicalizeNumeral (numbuf, yytext+2);
 		  return processInt ("16#", numbuf, NULL);
@@ -1194,7 +1194,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 8:
 YY_RULE_SETUP
-#line 118 "ada-lex.l"
+#line 118 "../../../src/gdb/gdb/ada-lex.l"
 {
 		   canonicalizeNumeral (numbuf, yytext);
 		   return processReal (numbuf);
@@ -1202,7 +1202,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 9:
 YY_RULE_SETUP
-#line 123 "ada-lex.l"
+#line 123 "../../../src/gdb/gdb/ada-lex.l"
 {
 		   canonicalizeNumeral (numbuf, yytext);
 		   return processReal (numbuf);
@@ -1210,21 +1210,21 @@ YY_RULE_SETUP
 	YY_BREAK
 case 10:
 YY_RULE_SETUP
-#line 128 "ada-lex.l"
+#line 128 "../../../src/gdb/gdb/ada-lex.l"
 {
                    error (_("Based real literals not implemented yet."));
 		}
 	YY_BREAK
 case 11:
 YY_RULE_SETUP
-#line 132 "ada-lex.l"
+#line 132 "../../../src/gdb/gdb/ada-lex.l"
 {
                    error (_("Based real literals not implemented yet."));
 		}
 	YY_BREAK
 case 12:
 YY_RULE_SETUP
-#line 136 "ada-lex.l"
+#line 136 "../../../src/gdb/gdb/ada-lex.l"
 {
 		   yylval.typed_val.type = type_char ();
 		   yylval.typed_val.val = yytext[1];
@@ -1233,7 +1233,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 13:
 YY_RULE_SETUP
-#line 142 "ada-lex.l"
+#line 142 "../../../src/gdb/gdb/ada-lex.l"
 {
                    int v;
                    yylval.typed_val.type = type_char ();
@@ -1244,7 +1244,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 14:
 YY_RULE_SETUP
-#line 150 "ada-lex.l"
+#line 150 "../../../src/gdb/gdb/ada-lex.l"
 {
 	           yylval.sval = processString (yytext+1, yyleng-2);
 		   return STRING;
@@ -1252,14 +1252,14 @@ YY_RULE_SETUP
 	YY_BREAK
 case 15:
 YY_RULE_SETUP
-#line 155 "ada-lex.l"
+#line 155 "../../../src/gdb/gdb/ada-lex.l"
 {
                    error (_("ill-formed or non-terminated string literal"));
 		}
 	YY_BREAK
 case 16:
 YY_RULE_SETUP
-#line 160 "ada-lex.l"
+#line 160 "../../../src/gdb/gdb/ada-lex.l"
 {
                   rewind_to_char ('i');
 		  return 0;
@@ -1267,7 +1267,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 17:
 YY_RULE_SETUP
-#line 165 "ada-lex.l"
+#line 165 "../../../src/gdb/gdb/ada-lex.l"
 {
                   rewind_to_char ('t');
 		  return 0;
@@ -1276,7 +1276,7 @@ YY_RULE_SETUP
 case 18:
 /* rule 18 can match eol */
 YY_RULE_SETUP
-#line 170 "ada-lex.l"
+#line 170 "../../../src/gdb/gdb/ada-lex.l"
 {
                   /* This keyword signals the end of the expression and
                      will be processed separately.  */
@@ -1287,67 +1287,67 @@ YY_RULE_SETUP
 /* ADA KEYWORDS */
 case 19:
 YY_RULE_SETUP
-#line 179 "ada-lex.l"
+#line 179 "../../../src/gdb/gdb/ada-lex.l"
 { return ABS; }
 	YY_BREAK
 case 20:
 YY_RULE_SETUP
-#line 180 "ada-lex.l"
+#line 180 "../../../src/gdb/gdb/ada-lex.l"
 { return _AND_; }
 	YY_BREAK
 case 21:
 YY_RULE_SETUP
-#line 181 "ada-lex.l"
+#line 181 "../../../src/gdb/gdb/ada-lex.l"
 { return ELSE; }
 	YY_BREAK
 case 22:
 YY_RULE_SETUP
-#line 182 "ada-lex.l"
+#line 182 "../../../src/gdb/gdb/ada-lex.l"
 { return IN; }
 	YY_BREAK
 case 23:
 YY_RULE_SETUP
-#line 183 "ada-lex.l"
+#line 183 "../../../src/gdb/gdb/ada-lex.l"
 { return MOD; }
 	YY_BREAK
 case 24:
 YY_RULE_SETUP
-#line 184 "ada-lex.l"
+#line 184 "../../../src/gdb/gdb/ada-lex.l"
 { return NEW; }
 	YY_BREAK
 case 25:
 YY_RULE_SETUP
-#line 185 "ada-lex.l"
+#line 185 "../../../src/gdb/gdb/ada-lex.l"
 { return NOT; }
 	YY_BREAK
 case 26:
 YY_RULE_SETUP
-#line 186 "ada-lex.l"
+#line 186 "../../../src/gdb/gdb/ada-lex.l"
 { return NULL_PTR; }
 	YY_BREAK
 case 27:
 YY_RULE_SETUP
-#line 187 "ada-lex.l"
+#line 187 "../../../src/gdb/gdb/ada-lex.l"
 { return OR; }
 	YY_BREAK
 case 28:
 YY_RULE_SETUP
-#line 188 "ada-lex.l"
+#line 188 "../../../src/gdb/gdb/ada-lex.l"
 { return OTHERS; }
 	YY_BREAK
 case 29:
 YY_RULE_SETUP
-#line 189 "ada-lex.l"
+#line 189 "../../../src/gdb/gdb/ada-lex.l"
 { return REM; }
 	YY_BREAK
 case 30:
 YY_RULE_SETUP
-#line 190 "ada-lex.l"
+#line 190 "../../../src/gdb/gdb/ada-lex.l"
 { return THEN; }
 	YY_BREAK
 case 31:
 YY_RULE_SETUP
-#line 191 "ada-lex.l"
+#line 191 "../../../src/gdb/gdb/ada-lex.l"
 { return XOR; }
 	YY_BREAK
 /* BOOLEAN "KEYWORDS" */
@@ -1357,70 +1357,70 @@ YY_RULE_SETUP
     making them keywords (when bare). */
 case 32:
 YY_RULE_SETUP
-#line 200 "ada-lex.l"
+#line 200 "../../../src/gdb/gdb/ada-lex.l"
 { return TRUEKEYWORD; }
 	YY_BREAK
 case 33:
 YY_RULE_SETUP
-#line 201 "ada-lex.l"
+#line 201 "../../../src/gdb/gdb/ada-lex.l"
 { return FALSEKEYWORD; }
 	YY_BREAK
 /* ATTRIBUTES */
 case 34:
 /* rule 34 can match eol */
 YY_RULE_SETUP
-#line 205 "ada-lex.l"
+#line 205 "../../../src/gdb/gdb/ada-lex.l"
 { return processAttribute (yytext+1); }
 	YY_BREAK
 /* PUNCTUATION */
 case 35:
 YY_RULE_SETUP
-#line 209 "ada-lex.l"
+#line 209 "../../../src/gdb/gdb/ada-lex.l"
 { return ARROW; }
 	YY_BREAK
 case 36:
 YY_RULE_SETUP
-#line 210 "ada-lex.l"
+#line 210 "../../../src/gdb/gdb/ada-lex.l"
 { return DOTDOT; }
 	YY_BREAK
 case 37:
 YY_RULE_SETUP
-#line 211 "ada-lex.l"
+#line 211 "../../../src/gdb/gdb/ada-lex.l"
 { return STARSTAR; }
 	YY_BREAK
 case 38:
 YY_RULE_SETUP
-#line 212 "ada-lex.l"
+#line 212 "../../../src/gdb/gdb/ada-lex.l"
 { return ASSIGN; }
 	YY_BREAK
 case 39:
 YY_RULE_SETUP
-#line 213 "ada-lex.l"
+#line 213 "../../../src/gdb/gdb/ada-lex.l"
 { return NOTEQUAL; }
 	YY_BREAK
 case 40:
 YY_RULE_SETUP
-#line 214 "ada-lex.l"
+#line 214 "../../../src/gdb/gdb/ada-lex.l"
 { return LEQ; }
 	YY_BREAK
 case 41:
 YY_RULE_SETUP
-#line 215 "ada-lex.l"
+#line 215 "../../../src/gdb/gdb/ada-lex.l"
 { return GEQ; }
 	YY_BREAK
 case 42:
 YY_RULE_SETUP
-#line 217 "ada-lex.l"
+#line 217 "../../../src/gdb/gdb/ada-lex.l"
 { BEGIN INITIAL; return '\''; }
 	YY_BREAK
 case 43:
 YY_RULE_SETUP
-#line 219 "ada-lex.l"
+#line 219 "../../../src/gdb/gdb/ada-lex.l"
 { return yytext[0]; }
 	YY_BREAK
 case 44:
 YY_RULE_SETUP
-#line 221 "ada-lex.l"
+#line 221 "../../../src/gdb/gdb/ada-lex.l"
 { if (paren_depth == 0 && comma_terminates)
 		    {
 		      rewind_to_char (',');
@@ -1432,12 +1432,12 @@ YY_RULE_SETUP
 	YY_BREAK
 case 45:
 YY_RULE_SETUP
-#line 230 "ada-lex.l"
+#line 230 "../../../src/gdb/gdb/ada-lex.l"
 { paren_depth += 1; return '('; }
 	YY_BREAK
 case 46:
 YY_RULE_SETUP
-#line 231 "ada-lex.l"
+#line 231 "../../../src/gdb/gdb/ada-lex.l"
 { if (paren_depth == 0)
 		    {
 		      rewind_to_char (')');
@@ -1453,13 +1453,13 @@ YY_RULE_SETUP
 case 47:
 /* rule 47 can match eol */
 YY_RULE_SETUP
-#line 243 "ada-lex.l"
+#line 243 "../../../src/gdb/gdb/ada-lex.l"
 { return DOT_ALL; }
 	YY_BREAK
 case 48:
 /* rule 48 can match eol */
 YY_RULE_SETUP
-#line 245 "ada-lex.l"
+#line 245 "../../../src/gdb/gdb/ada-lex.l"
 {
 	 	  yylval.sval = processId (yytext+1, yyleng-1);
 	          return DOT_ID;
@@ -1468,7 +1468,7 @@ YY_RULE_SETUP
 case 49:
 /* rule 49 can match eol */
 YY_RULE_SETUP
-#line 250 "ada-lex.l"
+#line 250 "../../../src/gdb/gdb/ada-lex.l"
 {
                   int all_posn = find_dot_all (yytext);
 
@@ -1487,7 +1487,7 @@ YY_RULE_SETUP
 case 50:
 /* rule 50 can match eol */
 YY_RULE_SETUP
-#line 267 "ada-lex.l"
+#line 267 "../../../src/gdb/gdb/ada-lex.l"
 {
                   yyless (yyleng - 2);
 		  yylval.sval = processId (yytext, yyleng);
@@ -1496,18 +1496,18 @@ YY_RULE_SETUP
 	YY_BREAK
 case 51:
 YY_RULE_SETUP
-#line 273 "ada-lex.l"
+#line 273 "../../../src/gdb/gdb/ada-lex.l"
 { return COLONCOLON; }
 	YY_BREAK
 case 52:
 YY_RULE_SETUP
-#line 275 "ada-lex.l"
+#line 275 "../../../src/gdb/gdb/ada-lex.l"
 { return yytext[0]; }
 	YY_BREAK
 /* REGISTERS AND GDB CONVENIENCE VARIABLES */
 case 53:
 YY_RULE_SETUP
-#line 279 "ada-lex.l"
+#line 279 "../../../src/gdb/gdb/ada-lex.l"
 {
 		  yylval.sval.ptr = yytext;
 		  yylval.sval.length = yyleng;
@@ -1517,15 +1517,15 @@ YY_RULE_SETUP
 /* CATCH-ALL ERROR CASE */
 case 54:
 YY_RULE_SETUP
-#line 287 "ada-lex.l"
+#line 287 "../../../src/gdb/gdb/ada-lex.l"
 { error (_("Invalid character '%s' in expression."), yytext); }
 	YY_BREAK
 case 55:
 YY_RULE_SETUP
-#line 288 "ada-lex.l"
+#line 288 "../../../src/gdb/gdb/ada-lex.l"
 YY_FATAL_ERROR( "flex scanner jammed" );
 	YY_BREAK
-#line 1529 "ada-lex.c"
+#line 1529 "../../../src/gdb/gdb/ada-lex.c"
 case YY_STATE_EOF(INITIAL):
 case YY_STATE_EOF(BEFORE_QUAL_QUOTE):
 	yyterminate();
@@ -2524,7 +2524,7 @@ void yyfree (void * ptr )
 
 #define YYTABLES_NAME "yytables"
 
-#line 288 "ada-lex.l"
+#line 288 "../../../src/gdb/gdb/ada-lex.l"
 
 
 

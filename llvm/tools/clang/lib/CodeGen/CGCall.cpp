@@ -103,24 +103,12 @@ static const CGFunctionInfo &arrangeFreeFunctionType(CodeGenTypes &CGT,
   return arrangeLLVMFunctionInfo(CGT, prefix, FTP, FTP->getExtInfo());
 }
 
-/// Given the formal ext-info of a C++ instance method, adjust it
-/// according to the C++ ABI in effect.
-static void adjustCXXMethodInfo(CodeGenTypes &CGT,
-                                FunctionType::ExtInfo &extInfo,
-                                bool isVariadic) {
-  if (extInfo.getCC() == CC_Default) {
-    CallingConv CC = CGT.getContext().getDefaultCXXMethodCallConv(isVariadic);
-    extInfo = extInfo.withCallingConv(CC);
-  }
-}
-
 /// Arrange the argument and result information for a free function (i.e.
 /// not a C++ or ObjC instance method) of the given type.
 static const CGFunctionInfo &arrangeCXXMethodType(CodeGenTypes &CGT,
                                       SmallVectorImpl<CanQualType> &prefix,
                                             CanQual<FunctionProtoType> FTP) {
   FunctionType::ExtInfo extInfo = FTP->getExtInfo();
-  adjustCXXMethodInfo(CGT, extInfo, FTP->isVariadic());
   return arrangeLLVMFunctionInfo(CGT, prefix, FTP, extInfo);
 }
 
@@ -223,7 +211,6 @@ CodeGenTypes::arrangeCXXConstructorDeclaration(const CXXConstructorDecl *D,
     argTypes.push_back(FTP->getArgType(i));
 
   FunctionType::ExtInfo extInfo = FTP->getExtInfo();
-  adjustCXXMethodInfo(*this, extInfo, FTP->isVariadic());
   return arrangeLLVMFunctionInfo(resultType, argTypes, extInfo, required);
 }
 
@@ -247,7 +234,6 @@ CodeGenTypes::arrangeCXXDestructor(const CXXDestructorDecl *D,
   assert(FTP->isVariadic() == 0 && "dtor with formal parameters");
 
   FunctionType::ExtInfo extInfo = FTP->getExtInfo();
-  adjustCXXMethodInfo(*this, extInfo, false);
   return arrangeLLVMFunctionInfo(resultType, argTypes, extInfo,
                                  RequiredArgs::All);
 }
@@ -406,7 +392,6 @@ CodeGenTypes::arrangeCXXMethodCall(const CallArgList &args,
     argTypes.push_back(Context.getCanonicalParamType(i->Ty));
 
   FunctionType::ExtInfo info = FPT->getExtInfo();
-  adjustCXXMethodInfo(*this, info, FPT->isVariadic());
   return arrangeLLVMFunctionInfo(GetReturnType(FPT->getResultType()),
                                  argTypes, info, required);
 }
@@ -1058,13 +1043,12 @@ void CodeGenModule::ConstructAttributeList(const CGFunctionInfo &FI,
     // Attributes that should go on the function, but not the call site.
     if (!CodeGenOpts.DisableFPElim) {
       FuncAttrs.addAttribute("no-frame-pointer-elim", "false");
-      FuncAttrs.addAttribute("no-frame-pointer-elim-non-leaf", "false");
     } else if (CodeGenOpts.OmitLeafFramePointer) {
       FuncAttrs.addAttribute("no-frame-pointer-elim", "false");
-      FuncAttrs.addAttribute("no-frame-pointer-elim-non-leaf", "true");
+      FuncAttrs.addAttribute("no-frame-pointer-elim-non-leaf");
     } else {
       FuncAttrs.addAttribute("no-frame-pointer-elim", "true");
-      FuncAttrs.addAttribute("no-frame-pointer-elim-non-leaf", "true");
+      FuncAttrs.addAttribute("no-frame-pointer-elim-non-leaf");
     }
 
     FuncAttrs.addAttribute("less-precise-fpmad",
@@ -1079,18 +1063,6 @@ void CodeGenModule::ConstructAttributeList(const CGFunctionInfo &FI,
                            llvm::toStringRef(CodeGenOpts.SoftFloat));
     FuncAttrs.addAttribute("stack-protector-buffer-size",
                            llvm::utostr(CodeGenOpts.SSPBufferSize));
-
-    bool NoFramePointerElimNonLeaf;
-    if (!CodeGenOpts.DisableFPElim) {
-      NoFramePointerElimNonLeaf = false;
-    } else if (CodeGenOpts.OmitLeafFramePointer) {
-      NoFramePointerElimNonLeaf = true;
-    } else {
-      NoFramePointerElimNonLeaf = true;
-    }
-
-    FuncAttrs.addAttribute("no-frame-pointer-elim-non-leaf",
-                           llvm::toStringRef(NoFramePointerElimNonLeaf));
 
     if (!CodeGenOpts.StackRealignment)
       FuncAttrs.addAttribute("no-realign-stack");

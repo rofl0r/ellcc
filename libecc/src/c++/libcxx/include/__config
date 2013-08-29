@@ -191,10 +191,6 @@
 #define _LIBCPP_EXCEPTION_ABI _LIBCPP_TYPE_VIS
 #endif
 
-#ifndef _LIBCPP_CANTTHROW
-#define _LIBCPP_CANTTHROW __attribute__ ((__nothrow__))
-#endif
-
 #ifndef _LIBCPP_ALWAYS_INLINE
 #define _LIBCPP_ALWAYS_INLINE  __attribute__ ((__visibility__("hidden"), __always_inline__))
 #endif
@@ -419,6 +415,7 @@ using namespace _LIBCPP_NAMESPACE __attribute__((__strong__));
 #define _LIBCPP_HAS_NO_CONSTEXPR
 #define _LIBCPP_HAS_NO_UNICODE_CHARS
 #define _LIBCPP_HAS_NO_DELETED_FUNCTIONS
+#define _LIBCPP_HAS_NO_DEFAULTED_FUNCTIONS
 #define __alignof__ __alignof
 #define _LIBCPP_NORETURN __declspec(noreturn)
 #define _ALIGNAS(x) __declspec(align(x))
@@ -529,8 +526,23 @@ template <unsigned> struct __static_assert_check {};
 #define _LIBCPP_DECLARE_STRONG_ENUM_EPILOG(x)
 #endif  // _LIBCPP_HAS_NO_STRONG_ENUMS
 
+#ifdef _LIBCPP_DEBUG
+#   if _LIBCPP_DEBUG == 0
+#       define _LIBCPP_DEBUG_LEVEL 1
+#   elif _LIBCPP_DEBUG == 1
+#       define _LIBCPP_DEBUG_LEVEL 2
+#   else
+#       error Supported values for _LIBCPP_DEBUG are 0 and 1
+#   endif
+#   define _LIBCPP_EXTERN_TEMPLATE(...)
+#endif
+
 #ifndef _LIBCPP_EXTERN_TEMPLATE
 #define _LIBCPP_EXTERN_TEMPLATE(...) extern template __VA_ARGS__;
+#endif
+
+#ifndef _LIBCPP_EXTERN_TEMPLATE2
+#define _LIBCPP_EXTERN_TEMPLATE2(...) extern template __VA_ARGS__;
 #endif
 
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(_WIN32) || defined(__sun__) || defined(__NetBSD__)
@@ -548,16 +560,6 @@ template <unsigned> struct __static_assert_check {};
 #define _LIBCPP_WCTYPE_IS_MASK
 #endif
 
-#ifdef _LIBCPP_DEBUG2
-#   if _LIBCPP_DEBUG2 == 0
-#       define _LIBCPP_DEBUG_LEVEL 1
-#   elif _LIBCPP_DEBUG2 == 1
-#       define _LIBCPP_DEBUG_LEVEL 2
-#   else
-#       error Supported values for _LIBCPP_DEBUG2 are 0 and 1
-#   endif
-#endif
-
 #ifndef _LIBCPP_STD_VER
 #  if  __cplusplus <= 201103L
 #    define _LIBCPP_STD_VER 11
@@ -568,8 +570,10 @@ template <unsigned> struct __static_assert_check {};
 
 #if _LIBCPP_STD_VER <= 11
 #define _LIBCPP_CONSTEXPR_AFTER_CXX11
+#define _LIBCPP_EXPLICIT_AFTER_CXX11
 #else
 #define _LIBCPP_CONSTEXPR_AFTER_CXX11 constexpr
+#define _LIBCPP_EXPLICIT_AFTER_CXX11 explicit
 #endif
 
 #endif  // _LIBCPP_CONFIG

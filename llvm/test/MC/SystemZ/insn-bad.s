@@ -2276,6 +2276,40 @@
 	oy	%r0, 524288
 
 #CHECK: error: invalid operand
+#CHECK: pfd	-1, 0
+#CHECK: error: invalid operand
+#CHECK: pfd	16, 0
+#CHECK: error: invalid operand
+#CHECK: pfd	1, -524289
+#CHECK: error: invalid operand
+#CHECK: pfd	1, 524288
+
+	pfd	-1, 0
+	pfd	16, 0
+	pfd	1, -524289
+	pfd	1, 524288
+
+#CHECK: error: invalid operand
+#CHECK: pfdrl	-1, 0
+#CHECK: error: invalid operand
+#CHECK: pfdrl	16, 0
+#CHECK: error: offset out of range
+#CHECK: pfdrl	1, -0x1000000002
+#CHECK: error: offset out of range
+#CHECK: pfdrl	1, -1
+#CHECK: error: offset out of range
+#CHECK: pfdrl	1, 1
+#CHECK: error: offset out of range
+#CHECK: pfdrl	1, 0x100000000
+
+	pfdrl	-1, 0
+	pfdrl	16, 0
+	pfdrl	1, -0x1000000002
+	pfdrl	1, -1
+	pfdrl	1, 1
+	pfdrl	1, 0x100000000
+
+#CHECK: error: invalid operand
 #CHECK: risbg	%r0,%r0,0,0,-1
 #CHECK: error: invalid operand
 #CHECK: risbg	%r0,%r0,0,0,64
@@ -2828,6 +2862,38 @@
 
 	sy	%r0, -524289
 	sy	%r0, 524288
+
+#CHECK: error: invalid operand
+#CHECK: tmhh	%r0, -1
+#CHECK: error: invalid operand
+#CHECK: tmhh	%r0, 0x10000
+
+	tmhh	%r0, -1
+	tmhh	%r0, 0x10000
+
+#CHECK: error: invalid operand
+#CHECK: tmhl	%r0, -1
+#CHECK: error: invalid operand
+#CHECK: tmhl	%r0, 0x10000
+
+	tmhl	%r0, -1
+	tmhl	%r0, 0x10000
+
+#CHECK: error: invalid operand
+#CHECK: tmlh	%r0, -1
+#CHECK: error: invalid operand
+#CHECK: tmlh	%r0, 0x10000
+
+	tmlh	%r0, -1
+	tmlh	%r0, 0x10000
+
+#CHECK: error: invalid operand
+#CHECK: tmll	%r0, -1
+#CHECK: error: invalid operand
+#CHECK: tmll	%r0, 0x10000
+
+	tmll	%r0, -1
+	tmll	%r0, 0x10000
 
 #CHECK: error: invalid operand
 #CHECK: x	%r0, -1

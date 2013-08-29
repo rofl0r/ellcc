@@ -8670,10 +8670,6 @@ void DiagnoseBadDeduction(Sema &S, Decl *Templated,
         }
       }
     }
-    // FIXME: For generic lambda parameters, check if the function is a lambda
-    // call operator, and if so, emit a prettier and more informative 
-    // diagnostic that mentions 'auto' and lambda in addition to 
-    // (or instead of?) the canonical template type parameters.
     S.Diag(Templated->getLocation(),
            diag::note_ovl_candidate_non_deduced_mismatch)
         << FirstTA << SecondTA;
@@ -10718,6 +10714,11 @@ Sema::CreateOverloadedBinOp(SourceLocation OpLoc,
         Diag(OpLoc,  diag::err_ovl_no_viable_oper)
              << BinaryOperator::getOpcodeStr(Opc)
              << Args[0]->getSourceRange() << Args[1]->getSourceRange();
+        if (Args[0]->getType()->isIncompleteType()) {
+          Diag(OpLoc, diag::note_assign_lhs_incomplete)
+            << Args[0]->getType()
+            << Args[0]->getSourceRange() << Args[1]->getSourceRange();
+        }
       } else {
         // This is an erroneous use of an operator which can be overloaded by
         // a non-member function. Check for non-member operators which were

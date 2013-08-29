@@ -540,6 +540,10 @@ class InstSS<bits<8> op, dag outs, dag ins, string asmstr, list<dag> pattern>
 //     One output operand and five input operands.  The first two operands
 //     are registers and the other three are immediates.
 //
+//   Prefetch:
+//     One 4-bit immediate operand and one address operand.  The immediate
+//     operand is 1 for a load prefetch and 2 for a store prefetch.
+//
 // The format determines which input operands are tied to output operands,
 // and also determines the shape of any address operand.
 //
@@ -627,27 +631,33 @@ class StoreMultipleRSY<string mnemonic, bits<16> opcode, RegisterOperand cls>
   let mayStore = 1;
 }
 
+// StoreSI* instructions are used to store an integer to memory, but the
+// addresses are more restricted than for normal stores.  If we are in the
+// situation of having to force either the address into a register or the
+// constant into a register, it's usually better to do the latter.
+// We therefore match the address in the same way as a normal store and
+// only use the StoreSI* instruction if the matched address is suitable.
 class StoreSI<string mnemonic, bits<8> opcode, SDPatternOperator operator,
-              Immediate imm, AddressingMode mode = bdaddr12only>
-  : InstSI<opcode, (outs), (ins mode:$BD1, imm:$I2),
+              Immediate imm>
+  : InstSI<opcode, (outs), (ins mviaddr12pair:$BD1, imm:$I2),
            mnemonic#"\t$BD1, $I2",
-           [(operator imm:$I2, mode:$BD1)]> {
+           [(operator imm:$I2, mviaddr12pair:$BD1)]> {
   let mayStore = 1;
 }
 
 class StoreSIY<string mnemonic, bits<16> opcode, SDPatternOperator operator,
-               Immediate imm, AddressingMode mode = bdaddr20only>
-  : InstSIY<opcode, (outs), (ins mode:$BD1, imm:$I2),
+               Immediate imm>
+  : InstSIY<opcode, (outs), (ins mviaddr20pair:$BD1, imm:$I2),
             mnemonic#"\t$BD1, $I2",
-            [(operator imm:$I2, mode:$BD1)]> {
+            [(operator imm:$I2, mviaddr20pair:$BD1)]> {
   let mayStore = 1;
 }
 
 class StoreSIL<string mnemonic, bits<16> opcode, SDPatternOperator operator,
                Immediate imm>
-  : InstSIL<opcode, (outs), (ins bdaddr12only:$BD1, imm:$I2),
+  : InstSIL<opcode, (outs), (ins mviaddr12pair:$BD1, imm:$I2),
             mnemonic#"\t$BD1, $I2",
-            [(operator imm:$I2, bdaddr12only:$BD1)]> {
+            [(operator imm:$I2, mviaddr12pair:$BD1)]> {
   let mayStore = 1;
 }
 
@@ -655,9 +665,9 @@ multiclass StoreSIPair<string mnemonic, bits<8> siOpcode, bits<16> siyOpcode,
                        SDPatternOperator operator, Immediate imm> {
   let DispKey = mnemonic in {
     let DispSize = "12" in
-      def "" : StoreSI<mnemonic, siOpcode, operator, imm, bdaddr12pair>;
+      def "" : StoreSI<mnemonic, siOpcode, operator, imm>;
     let DispSize = "20" in
-      def Y  : StoreSIY<mnemonic#"y", siyOpcode, operator, imm, bdaddr20pair>;
+      def Y  : StoreSIY<mnemonic#"y", siyOpcode, operator, imm>;
   }
 }
 
@@ -1298,6 +1308,22 @@ class RotateSelectRIEf<string mnemonic, bits<16> opcode, RegisterOperand cls1,
   let DisableEncoding = "$R1src";
 }
 
+class PrefetchRXY<string mnemonic, bits<16> opcode, SDPatternOperator operator>
+  : InstRXY<opcode, (outs), (ins uimm8zx4:$R1, bdxaddr20only:$XBD2),
+            mnemonic##"\t$R1, $XBD2",
+            [(operator uimm8zx4:$R1, bdxaddr20only:$XBD2)]>;
+
+class PrefetchRILPC<string mnemonic, bits<12> opcode,
+                    SDPatternOperator operator>
+  : InstRIL<opcode, (outs), (ins uimm8zx4:$R1, pcrel32:$I2),
+            mnemonic##"\t$R1, $I2",
+            [(operator uimm8zx4:$R1, pcrel32:$I2)]> {
+  // We want PC-relative addresses to be tried ahead of BD and BDX addresses.
+  // However, BDXs have two extra operands and are therefore 6 units more
+  // complex.
+  let AddedComplexity = 7;
+}
+
 // A floating-point load-and test operation.  Create both a normal unary
 // operation and one that acts as a comparison against zero.
 multiclass LoadAndTestRRE<string mnemonic, bits<16> opcode,
@@ -1400,23 +1426,26 @@ class AtomicLoadWBinaryReg<SDPatternOperator operator>
 class AtomicLoadWBinaryImm<SDPatternOperator operator, Immediate imm>
   : AtomicLoadWBinary<operator, (i32 imm:$src2), imm>;
 
-// Define an instruction that operates on two fixed-length blocks of memory.
-// The real instruction uses a bdladdr12onlylen8 for the first operand and a
-// bdaddr12only for the second, with the length of the second operand being
-// implicitly the same as the first.  This arrangement matches the underlying
-// assembly syntax.  However, for instruction selection it's easier to have
-// two normal bdaddr12onlys and a separate length operand, so define a pseudo
-// instruction for that too.
+// Define an instruction that operates on two fixed-length blocks of memory,
+// and associated pseudo instructions for operating on blocks of any size.
+// The Sequence form uses a straight-line sequence of instructions and
+// the Loop form uses a loop of length-256 instructions followed by
+// another instruction to handle the excess.
 multiclass MemorySS<string mnemonic, bits<8> opcode,
-                    SDPatternOperator operator> {
+                    SDPatternOperator sequence, SDPatternOperator loop> {
   def "" : InstSS<opcode, (outs), (ins bdladdr12onlylen8:$BDL1,
                                        bdaddr12only:$BD2),
                   mnemonic##"\t$BDL1, $BD2", []>;
-  let usesCustomInserter = 1 in
-    def Wrapper : Pseudo<(outs), (ins bdaddr12only:$dest, bdaddr12only:$src,
-                                      imm32len8:$length),
-                         [(operator bdaddr12only:$dest, bdaddr12only:$src,
-                                    imm32len8:$length)]>;
+  let usesCustomInserter = 1 in {
+    def Sequence : Pseudo<(outs), (ins bdaddr12only:$dest, bdaddr12only:$src,
+                                       imm64:$length),
+                           [(sequence bdaddr12only:$dest, bdaddr12only:$src,
+                                      imm64:$length)]>;
+    def Loop : Pseudo<(outs), (ins bdaddr12only:$dest, bdaddr12only:$src,
+                                   imm64:$length, GR64:$count256),
+                      [(loop bdaddr12only:$dest, bdaddr12only:$src,
+                             imm64:$length, GR64:$count256)]>;
+  }
 }
 
 // Define an instruction that operates on two strings, both terminated

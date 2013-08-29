@@ -315,9 +315,6 @@ void CodeGenFunction::GenerateThunk(llvm::Function *Fn,
     FunctionArgs.push_back(Param);
   }
 
-  // Initialize debug info if needed.
-  maybeInitializeDebugInfo();
-
   StartFunction(GlobalDecl(), ResultType, Fn, FnInfo, FunctionArgs,
                 SourceLocation());
 
@@ -685,6 +682,9 @@ CodeGenVTables::GenerateConstructionVTable(const CXXRecordDecl *RD,
                                       bool BaseIsVirtual, 
                                    llvm::GlobalVariable::LinkageTypes Linkage,
                                       VTableAddressPointsMapTy& AddressPoints) {
+  if (CGDebugInfo *DI = CGM.getModuleDebugInfo())
+    DI->completeClassData(Base.getBase());
+
   OwningPtr<VTableLayout> VTLayout(
     VTContext.createConstructionVTableLayout(Base.getBase(),
                                              Base.getBaseOffset(),
@@ -822,14 +822,14 @@ void CodeGenModule::EmitVTable(CXXRecordDecl *theClass, bool isRequired) {
 
 void 
 CodeGenVTables::GenerateClassData(const CXXRecordDecl *RD) {
+  if (CGDebugInfo *DI = CGM.getModuleDebugInfo())
+    DI->completeClassData(RD);
+
   if (VFTContext.isValid()) {
     // FIXME: This is a temporary solution to force generation of vftables in
     // Microsoft ABI. Remove when we thread VFTableContext through CodeGen.
     VFTContext->getVFPtrOffsets(RD);
   }
-
-  if (CGDebugInfo *DI = CGM.getModuleDebugInfo())
-    DI->completeClassData(RD);
 
   // First off, check whether we've already emitted the v-table and
   // associated stuff.

@@ -152,7 +152,7 @@ namespace clang {
 namespace format {
 
 void setDefaultPenalties(FormatStyle &Style) {
-  Style.PenaltyBreakComment = 45;
+  Style.PenaltyBreakComment = 60;
   Style.PenaltyBreakFirstLessLess = 120;
   Style.PenaltyBreakString = 1000;
   Style.PenaltyExcessCharacter = 1000000;
@@ -438,14 +438,15 @@ private:
     }
     for (std::deque<StateNode *>::iterator I = Path.begin(), E = Path.end();
          I != E; ++I) {
+      unsigned Penalty = Indenter->addTokenToState(State, (*I)->NewLine, false);
+      (void)Penalty;
       DEBUG({
         if ((*I)->NewLine) {
-          llvm::dbgs() << "Penalty for splitting before "
+          llvm::dbgs() << "Penalty for placing "
                        << (*I)->Previous->State.NextToken->Tok.getName() << ": "
-                       << (*I)->Previous->State.NextToken->SplitPenalty << "\n";
+                       << Penalty << "\n";
         }
       });
-      Indenter->addTokenToState(State, (*I)->NewLine, false);
     }
   }
 
@@ -459,11 +460,6 @@ private:
       return;
     if (!NewLine && Indenter->mustBreak(PreviousNode->State))
       return;
-    if (NewLine) {
-      if (!PreviousNode->State.Stack.back().ContainsLineBreak)
-        Penalty += 15;
-      Penalty += PreviousNode->State.NextToken->SplitPenalty;
-    }
 
     StateNode *Node = new (Allocator.Allocate())
         StateNode(PreviousNode->State, NewLine, PreviousNode);

@@ -19,6 +19,7 @@
 #include "msan.h"
 #include "sanitizer_common/sanitizer_platform_limits_posix.h"
 #include "sanitizer_common/sanitizer_allocator.h"
+#include "sanitizer_common/sanitizer_atomic.h"
 #include "sanitizer_common/sanitizer_common.h"
 #include "sanitizer_common/sanitizer_stackdepot.h"
 #include "sanitizer_common/sanitizer_libc.h"
@@ -29,6 +30,11 @@
 // Ideally, we should get rid of stdarg.h as well.
 
 using namespace __msan;
+
+using __sanitizer::memory_order;
+using __sanitizer::atomic_load;
+using __sanitizer::atomic_store;
+using __sanitizer::atomic_uintptr_t;
 
 // True if this is a nested interceptor.
 static THREADLOCAL int in_interceptor_scope;
@@ -897,23 +903,32 @@ INTERCEPTOR(int, getrusage, int who, void *usage) {
   return res;
 }
 
+// sigactions_mu guarantees atomicity of sigaction() and signal() calls.
+// Access to sigactions[] is gone with relaxed atomics to avoid data race with
+// the signal handler.
 const int kMaxSignals = 1024;
-static uptr sigactions[kMaxSignals];
+static atomic_uintptr_t sigactions[kMaxSignals];
 static StaticSpinMutex sigactions_mu;
 
 static void SignalHandler(int signo) {
+  ScopedThreadLocalStateBackup stlsb;
+  UnpoisonParam(1);
+
   typedef void (*signal_cb)(int x);
-  signal_cb cb = (signal_cb)sigactions[signo];
+  signal_cb cb =
+      (signal_cb)atomic_load(&sigactions[signo], memory_order_relaxed);
   cb(signo);
 }
 
 static void SignalAction(int signo, void *si, void *uc) {
+  ScopedThreadLocalStateBackup stlsb;
   UnpoisonParam(3);
-  __msan_unpoison(si, __sanitizer::struct_sigaction_sz);
+  __msan_unpoison(si, sizeof(__sanitizer_sigaction));
   __msan_unpoison(uc, __sanitizer::ucontext_t_sz);
 
   typedef void (*sigaction_cb)(int, void *, void *);
-  sigaction_cb cb = (sigaction_cb)sigactions[signo];
+  sigaction_cb cb =
+      (sigaction_cb)atomic_load(&sigactions[signo], memory_order_relaxed);
   cb(signo, si, uc);
 }
 
@@ -926,25 +941,25 @@ INTERCEPTOR(int, sigaction, int signo, const __sanitizer_sigaction *act,
   if (flags()->wrap_signals) {
     SpinMutexLock lock(&sigactions_mu);
     CHECK_LT(signo, kMaxSignals);
-    uptr old_cb = sigactions[signo];
+    uptr old_cb = atomic_load(&sigactions[signo], memory_order_relaxed);
     __sanitizer_sigaction new_act;
     __sanitizer_sigaction *pnew_act = act ? &new_act : 0;
     if (act) {
-      internal_memcpy(pnew_act, act, __sanitizer::struct_sigaction_sz);
-      uptr cb = __sanitizer::__sanitizer_get_sigaction_sa_sigaction(pnew_act);
-      uptr new_cb =
-          __sanitizer::__sanitizer_get_sigaction_sa_siginfo(pnew_act) ?
-          (uptr)SignalAction : (uptr)SignalHandler;
+      internal_memcpy(pnew_act, act, sizeof(__sanitizer_sigaction));
+      uptr cb = (uptr)pnew_act->sa_sigaction;
+      uptr new_cb = (pnew_act->sa_flags & __sanitizer::sa_siginfo)
+                        ? (uptr)SignalAction
+                        : (uptr)SignalHandler;
       if (cb != __sanitizer::sig_ign && cb != __sanitizer::sig_dfl) {
-        sigactions[signo] = cb;
-        __sanitizer::__sanitizer_set_sigaction_sa_sigaction(pnew_act, new_cb);
+        atomic_store(&sigactions[signo], cb, memory_order_relaxed);
+        pnew_act->sa_sigaction = (void (*)(int, void *, void *))new_cb;
       }
     }
     res = REAL(sigaction)(signo, pnew_act, oldact);
     if (res == 0 && oldact) {
-      uptr cb = __sanitizer::__sanitizer_get_sigaction_sa_sigaction(oldact);
+      uptr cb = (uptr)oldact->sa_sigaction;
       if (cb != __sanitizer::sig_ign && cb != __sanitizer::sig_dfl) {
-        __sanitizer::__sanitizer_set_sigaction_sa_sigaction(oldact, old_cb);
+        oldact->sa_sigaction = (void (*)(int, void *, void *))old_cb;
       }
     }
   } else {
@@ -952,7 +967,7 @@ INTERCEPTOR(int, sigaction, int signo, const __sanitizer_sigaction *act,
   }
 
   if (res == 0 && oldact) {
-    __msan_unpoison(oldact, __sanitizer::struct_sigaction_sz);
+    __msan_unpoison(oldact, sizeof(__sanitizer_sigaction));
   }
   return res;
 }
@@ -963,7 +978,7 @@ INTERCEPTOR(int, signal, int signo, uptr cb) {
     CHECK_LT(signo, kMaxSignals);
     SpinMutexLock lock(&sigactions_mu);
     if (cb != __sanitizer::sig_ign && cb != __sanitizer::sig_dfl) {
-      sigactions[signo] = cb;
+      atomic_store(&sigactions[signo], cb, memory_order_relaxed);
       cb = (uptr) SignalHandler;
     }
     return REAL(signal)(signo, cb);
