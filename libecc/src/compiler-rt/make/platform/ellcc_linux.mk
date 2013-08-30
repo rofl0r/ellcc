@@ -16,12 +16,14 @@ CFLAGS := -Wall -Werror -O3 -fomit-frame-pointer
 ###
 
 FUNCTIONS.arm := $(call set_difference, $(CommonFunctions), clear_cache) \
+		 aeabi_uidivmod \
 		 aeabi_ldivmod \
 		 aeabi_uldivmod \
 		 aeabi_memset \
 		 aeabi_memmove \
 		 aeabi_memcpy
 FUNCTIONS.armeb := $(call set_difference, $(CommonFunctions), clear_cache) \
+		 aeabi_uidivmod \
 		 aeabi_ldivmod \
 		 aeabi_uldivmod \
 		 aeabi_memset \
