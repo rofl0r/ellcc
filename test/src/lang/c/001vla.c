@@ -10,11 +10,12 @@ static void f(int size)
     char array[size];
     array[0] = 1;
     g(0);
-    TEST(array[0] == 1, "VLA assignment worked %d", array[0]);
+    TEST_EXCLUDE(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=29")
+        TEST(array[0] == 1, "VLA assignment worked %d", array[0]);
+    TEST_FAIL(MICROBLAZE, array[0] == 1, "VLA assignment worked %d", array[0]);
 }
 
 TEST_GROUP(VLA)
-    TEST_RESOLVED(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=29")
-        f(1);
+    f(1);
 END_GROUP
 

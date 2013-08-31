@@ -133,12 +133,12 @@ eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
 
   DEBUG(dbgs() << "Offset     : " << Offset << "\n" << "<--------->\n");
 
-#if RICH
+#if 1 // RICH
   unsigned FR = getFrameRegister(MF);
   if (FrameIndex < 0 && spOffset >= 0)
     FR = MBlaze::R1;    // Use SP to save parameters on the stack.
-  MI.getOperand(oi).ChangeToImmediate(Offset);
-  MI.getOperand(i).ChangeToRegister(FR, false);
+  MI.getOperand(OFIOperandNum).ChangeToImmediate(Offset);
+  MI.getOperand(FIOperandNum).ChangeToRegister(FR, false);
 #else
   MI.getOperand(OFIOperandNum).ChangeToImmediate(Offset);
   MI.getOperand(FIOperandNum).ChangeToRegister(getFrameRegister(MF), false);
