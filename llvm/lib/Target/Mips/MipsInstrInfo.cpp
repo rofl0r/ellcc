@@ -126,17 +126,6 @@ InsertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
   assert((Cond.size() <= 3) &&
          "# of Mips branch conditions must be <= 3!");
 
-#if RICH        // Kept to make sure it soesn't re-occur.
-  if (TID.getNumOperands() == 3)
-    BuildMI(&MBB, DL, TID).addReg(Cond[1].getReg())
-                          .addReg(Cond[2].getReg())
-                          .addMBB(TBB);
-  else
-    BuildMI(&MBB, DL, TID).addReg(Cond[1].getReg())
-                          .addMBB(TBB);
-    }
-    return 1;
-#endif
   // Two-way Conditional branch.
   if (FBB) {
     BuildCondBr(MBB, TBB, DL, Cond);

@@ -33,7 +33,6 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
-// RICH: #include "llvm/Target/TargetOptions.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cctype>
 

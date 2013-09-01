@@ -37,10 +37,8 @@ namespace {
 
     bool runOnLoop(Loop*, LPPassManager&);
 
-    virtual void getAnalysisUsage(AnalysisUsage& AU) const {
+    virtual void getAnalysisUsage(AnalysisUsage &AU) const {
       AU.setPreservesCFG();
-      AU.addRequired<DominatorTree>();
-      AU.addPreserved<DominatorTree>();
       AU.addRequired<LoopInfo>();
       AU.addRequiredID(LoopSimplifyID);
       AU.addPreservedID(LoopSimplifyID);
@@ -127,7 +125,6 @@ bool LoopInstSimplify::runOnLoop(Loop *L, LPPassManager &LPM) {
         if (IsSubloopHeader && !isa<PHINode>(I))
           break;
       }
-      Changed |= LocalChanged;
 
       // Add all successors to the worklist, except for loop exit blocks and the
       // bodies of subloops. We visit the headers of loops so that we can process
@@ -172,9 +169,6 @@ bool LoopInstSimplify::runOnLoop(Loop *L, LPPassManager &LPM) {
 
     Changed |= LocalChanged;
   } while (LocalChanged);
-
-  // Nothing that SimplifyInstruction() does should invalidate LCSSA form.
-  assert(L->isLCSSAForm(*DT));
 
   return Changed;
 }
