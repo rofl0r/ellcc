@@ -1024,8 +1024,7 @@ void TokenAnnotator::calculateFormattingInformation(AnnotatedLine &Line) {
     Current->CanBreakBefore =
         Current->MustBreakBefore || canBreakBefore(Line, *Current);
     if (Current->MustBreakBefore ||
-        (Current->is(tok::string_literal) &&
-         Current->TokenText.find("\\\n") != StringRef::npos))
+        (Current->is(tok::string_literal) && Current->IsMultiline))
       Current->TotalLength = Current->Previous->TotalLength + Style.ColumnLimit;
     else
       Current->TotalLength = Current->Previous->TotalLength +
@@ -1207,7 +1206,8 @@ bool TokenAnnotator::spaceRequiredBetween(const AnnotatedLine &Line,
     return Left.Type == TT_ObjCArrayLiteral && Right.isNot(tok::r_square);
   if (Right.is(tok::r_square))
     return Right.Type == TT_ObjCArrayLiteral;
-  if (Right.is(tok::l_square) && Right.Type != TT_ObjCMethodExpr)
+  if (Right.is(tok::l_square) && Right.Type != TT_ObjCMethodExpr &&
+      Left.isNot(tok::numeric_constant))
     return false;
   if (Left.is(tok::colon))
     return Left.Type != TT_ObjCMethodExpr;

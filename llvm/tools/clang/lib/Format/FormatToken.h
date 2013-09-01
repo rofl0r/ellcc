@@ -80,14 +80,14 @@ class TokenRole;
 /// whitespace characters preceeding it.
 struct FormatToken {
   FormatToken()
-      : NewlinesBefore(0), HasUnescapedNewline(false), LastNewlineOffset(0),
-        CodePointCount(0), IsFirst(false), MustBreakBefore(false),
-        IsUnterminatedLiteral(false), BlockKind(BK_Unknown), Type(TT_Unknown),
-        SpacesRequiredBefore(0), CanBreakBefore(false),
-        ClosesTemplateDeclaration(false), ParameterCount(0),
-        PackingKind(PPK_Inconclusive), TotalLength(0), UnbreakableTailLength(0),
-        BindingStrength(0), SplitPenalty(0), LongestObjCSelectorName(0),
-        FakeRParens(0), LastInChainOfCalls(false),
+      : NewlinesBefore(0), HasUnescapedNewline(false), IsMultiline(false),
+        LastNewlineOffset(0), CodePointCount(0), IsFirst(false),
+        MustBreakBefore(false), IsUnterminatedLiteral(false),
+        BlockKind(BK_Unknown), Type(TT_Unknown), SpacesRequiredBefore(0),
+        CanBreakBefore(false), ClosesTemplateDeclaration(false),
+        ParameterCount(0), PackingKind(PPK_Inconclusive), TotalLength(0),
+        UnbreakableTailLength(0), BindingStrength(0), SplitPenalty(0),
+        LongestObjCSelectorName(0), FakeRParens(0), LastInChainOfCalls(false),
         PartOfMultiVariableDeclStmt(false), MatchingParen(NULL), Previous(NULL),
         Next(NULL) {}
 
@@ -103,6 +103,9 @@ struct FormatToken {
   /// \brief Whether there is at least one unescaped newline before the \c
   /// Token.
   bool HasUnescapedNewline;
+
+  /// \brief Whether the token text contains newlines (escaped or not).
+  bool IsMultiline;
 
   /// \brief The range of the whitespace immediately preceeding the \c Token.
   SourceRange WhitespaceRange;
@@ -169,8 +172,17 @@ struct FormatToken {
   /// \brief If this is an opening parenthesis, how are the parameters packed?
   ParameterPackingKind PackingKind;
 
-  /// \brief The total length of the line up to and including this token.
+  /// \brief The total length of the unwrapped line up to and including this
+  /// token.
   unsigned TotalLength;
+
+  /// \brief The original column of this token, including expanded tabs.
+  /// The configured IndentWidth is used as tab width. Only tabs in whitespace
+  /// are expanded.
+  /// FIXME: This is currently only used on the first token of an unwrapped
+  /// line, and the implementation is not correct for other tokens (see the
+  /// FIXMEs in FormatTokenLexer::getNextToken()).
+  unsigned OriginalColumn;
 
   /// \brief The length of following tokens until the next natural split point,
   /// or the next token that can be broken.

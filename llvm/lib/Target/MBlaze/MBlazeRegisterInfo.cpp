@@ -94,22 +94,6 @@ eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
   MachineFrameInfo *MFI = MF.getFrameInfo();
   unsigned OFIOperandNum = FIOperandNum == 2 ? 1 : 2;
 
-#if RICH
-  unsigned i = 0;
-  while (!MI.getOperand(i).isFI()) {
-    ++i;
-    assert(i < MI.getNumOperands() &&
-           "Instr doesn't have FrameIndex operand!");
-  }
-
-  assert(i < 3 && "FrameIndex operand in a strange position!");
-  unsigned oi;
-  switch (i) {
-      case 2:
-      case 0: oi = 1; break;
-      case 1: oi = 2; break;
-  }
-#endif
   DEBUG(dbgs() << "\nFunction : " << MF.getName() << "\n";
         dbgs() << "<--------->\n" << MI);
 

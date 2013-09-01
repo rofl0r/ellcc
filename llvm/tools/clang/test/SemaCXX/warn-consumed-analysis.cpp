@@ -1,17 +1,18 @@
 // RUN: %clang_cc1 -fsyntax-only -verify -Wconsumed -std=c++11 %s
 
 #define CALLABLE_WHEN_UNCONSUMED __attribute__ ((callable_when_unconsumed))
-#define CONSUMES __attribute__ ((consumes))
-#define TESTS_UNCONSUMED __attribute__ ((tests_unconsumed))
+#define CONSUMABLE               __attribute__ ((consumable))
+#define CONSUMES                 __attribute__ ((consumes))
+#define TESTS_UNCONSUMED         __attribute__ ((tests_unconsumed))
 
 typedef decltype(nullptr) nullptr_t;
 
 template <typename T>
-class ConsumableClass {
+class CONSUMABLE ConsumableClass {
   T var;
   
   public:
-  ConsumableClass(void);
+  ConsumableClass();
   ConsumableClass(nullptr_t p) CONSUMES;
   ConsumableClass(T val);
   ConsumableClass(ConsumableClass<T> &other);
@@ -19,7 +20,7 @@ class ConsumableClass {
   
   ConsumableClass<T>& operator=(ConsumableClass<T>  &other);
   ConsumableClass<T>& operator=(ConsumableClass<T> &&other);
-  ConsumableClass<T>& operator=(nullptr_t);
+  ConsumableClass<T>& operator=(nullptr_t) CONSUMES;
   
   template <typename U>
   ConsumableClass<T>& operator=(ConsumableClass<U>  &other);
@@ -28,17 +29,17 @@ class ConsumableClass {
   ConsumableClass<T>& operator=(ConsumableClass<U> &&other);
   
   void operator()(int a) CONSUMES;
-  void operator*(void) const CALLABLE_WHEN_UNCONSUMED;
-  void unconsumedCall(void) const CALLABLE_WHEN_UNCONSUMED;
+  void operator*() const CALLABLE_WHEN_UNCONSUMED;
+  void unconsumedCall() const CALLABLE_WHEN_UNCONSUMED;
   
-  bool isValid(void) const TESTS_UNCONSUMED;
+  bool isValid() const TESTS_UNCONSUMED;
   operator bool() const TESTS_UNCONSUMED;
   bool operator!=(nullptr_t) const TESTS_UNCONSUMED;
   
-  void constCall(void) const;
-  void nonconstCall(void);
+  void constCall() const;
+  void nonconstCall();
   
-  void consume(void) CONSUMES;
+  void consume() CONSUMES;
 };
 
 void baf0(const ConsumableClass<int>  var);
@@ -47,7 +48,7 @@ void baf2(const ConsumableClass<int> *var);
 
 void baf3(ConsumableClass<int> &&var);
 
-void testInitialization(void) {
+void testInitialization() {
   ConsumableClass<int> var0;
   ConsumableClass<int> var1 = ConsumableClass<int>();
   
@@ -58,10 +59,10 @@ void testInitialization(void) {
   
   if (var0.isValid()) {
     *var0;
-    *var1;  // expected-warning {{invocation of method 'operator*' on object 'var1' while it is in the 'consumed' state}}
+    *var1;
     
   } else {
-    *var0;  // expected-warning {{invocation of method 'operator*' on object 'var0' while it is in the 'consumed' state}}
+    *var0; // expected-warning {{invocation of method 'operator*' on object 'var0' while it is in the 'consumed' state}}
   }
 }
 
@@ -69,7 +70,7 @@ void testTempValue() {
   *ConsumableClass<int>(); // expected-warning {{invocation of method 'operator*' on a temporary object while it is in the 'consumed' state}}
 }
 
-void testSimpleRValueRefs(void) {
+void testSimpleRValueRefs() {
   ConsumableClass<int> var0;
   ConsumableClass<int> var1(42);
   
@@ -82,39 +83,161 @@ void testSimpleRValueRefs(void) {
   *var1; // expected-warning {{invocation of method 'operator*' on object 'var1' while it is in the 'consumed' state}}
 }
 
-void testIfStmt(void) {
+void testIfStmt() {
   ConsumableClass<int> var;
   
   if (var.isValid()) {
-    // Empty
-    
+    *var;
   } else {
     *var; // expected-warning {{invocation of method 'operator*' on object 'var' while it is in the 'consumed' state}}
   }
   
   if (!var.isValid()) {
     *var; // expected-warning {{invocation of method 'operator*' on object 'var' while it is in the 'consumed' state}}
-    
   } else {
     *var;
   }
   
   if (var) {
     // Empty
-    
   } else {
     *var; // expected-warning {{invocation of method 'operator*' on object 'var' while it is in the 'consumed' state}}
   }
   
   if (var != nullptr) {
     // Empty
-    
   } else {
     *var; // expected-warning {{invocation of method 'operator*' on object 'var' while it is in the 'consumed' state}}
   }
 }
 
-void testCallingConventions(void) {
+void testComplexConditionals() {
+  ConsumableClass<int> var0, var1, var2;
+  
+  if (var0 && var1) {
+    *var0;
+    *var1;
+    
+  } else {
+    *var0; // expected-warning {{invocation of method 'operator*' on object 'var0' while it is in the 'consumed' state}}
+    *var1; // expected-warning {{invocation of method 'operator*' on object 'var1' while it is in the 'consumed' state}}
+  }
+  
+  if (var0 || var1) {
+    *var0;
+    *var1;
+    
+  } else {
+    *var0; // expected-warning {{invocation of method 'operator*' on object 'var0' while it is in the 'consumed' state}}
+    *var1; // expected-warning {{invocation of method 'operator*' on object 'var1' while it is in the 'consumed' state}}
+  }
+  
+  if (var0 && !var1) {
+    *var0;
+    *var1;
+    
+  } else {
+    *var0; // expected-warning {{invocation of method 'operator*' on object 'var0' while it is in the 'consumed' state}}
+    *var1; // expected-warning {{invocation of method 'operator*' on object 'var1' while it is in the 'consumed' state}}
+  }
+  
+  if (var0 || !var1) {
+    *var0; // expected-warning {{invocation of method 'operator*' on object 'var0' while it is in the 'consumed' state}}
+    *var1; // expected-warning {{invocation of method 'operator*' on object 'var1' while it is in the 'consumed' state}}
+    
+  } else {
+    *var0;
+    *var1;
+  }
+  
+  if (!var0 && !var1) {
+    *var0; // expected-warning {{invocation of method 'operator*' on object 'var0' while it is in the 'consumed' state}}
+    *var1; // expected-warning {{invocation of method 'operator*' on object 'var1' while it is in the 'consumed' state}}
+    
+  } else {
+    *var0;
+    *var1;
+  }
+  
+  if (!var0 || !var1) {
+    *var0; // expected-warning {{invocation of method 'operator*' on object 'var0' while it is in the 'consumed' state}}
+    *var1; // expected-warning {{invocation of method 'operator*' on object 'var1' while it is in the 'consumed' state}}
+    
+  } else {
+    *var0;
+    *var1;
+  }
+  
+  if (!(var0 && var1)) {
+    *var0; // expected-warning {{invocation of method 'operator*' on object 'var0' while it is in the 'consumed' state}}
+    *var1; // expected-warning {{invocation of method 'operator*' on object 'var1' while it is in the 'consumed' state}}
+    
+  } else {
+    *var0;
+    *var1;
+  }
+  
+  if (!(var0 || var1)) {
+    *var0; // expected-warning {{invocation of method 'operator*' on object 'var0' while it is in the 'consumed' state}}
+    *var1; // expected-warning {{invocation of method 'operator*' on object 'var1' while it is in the 'consumed' state}}
+    
+  } else {
+    *var0;
+    *var1;
+  }
+  
+  if (var0 && var1 && var2) {
+    *var0;
+    *var1;
+    *var2;
+    
+  } else {
+    *var0; // expected-warning {{invocation of method 'operator*' on object 'var0' while it is in the 'consumed' state}}
+    *var1; // expected-warning {{invocation of method 'operator*' on object 'var1' while it is in the 'consumed' state}}
+    *var2; // expected-warning {{invocation of method 'operator*' on object 'var2' while it is in the 'consumed' state}}
+  }
+  
+#if 0
+  // FIXME: Get this test to pass.
+  if (var0 || var1 || var2) {
+    *var0;
+    *var1;
+    *var2;
+    
+  } else {
+    *var0; // expected-warning {{invocation of method 'operator*' on object 'var0' while it is in the 'consumed' state}}
+    *var1; // expected-warning {{invocation of method 'operator*' on object 'var1' while it is in the 'consumed' state}}
+    *var2; // expected-warning {{invocation of method 'operator*' on object 'var2' while it is in the 'consumed' state}}
+  }
+#endif
+}
+
+void testStateChangeInBranch() {
+  ConsumableClass<int> var;
+  
+  // Make var enter the 'unknown' state.
+  baf1(var);
+  
+  if (!var) {
+    var = ConsumableClass<int>(42);
+  }
+  
+  *var;
+}
+
+void testFunctionParam(ConsumableClass<int> param) {
+  
+  if (param.isValid()) {
+    *param;
+  } else {
+    *param; // expected-warning {{invocation of method 'operator*' on object 'param' while it is in the 'consumed' state}}
+  }
+  
+  param = nullptr;
+  *param; // expected-warning {{invocation of method 'operator*' on object 'param' while it is in the 'consumed' state}}
+}
+
+void testCallingConventions() {
   ConsumableClass<int> var(42);
   
   baf0(var);  
@@ -130,7 +253,7 @@ void testCallingConventions(void) {
   *var; // expected-warning {{invocation of method 'operator*' on object 'var' while it is in the 'consumed' state}}
 }
 
-void testMoveAsignmentish(void) {
+void testMoveAsignmentish() {
   ConsumableClass<int>  var0;
   ConsumableClass<long> var1(42);
   
@@ -141,28 +264,31 @@ void testMoveAsignmentish(void) {
   
   *var0;
   *var1; // expected-warning {{invocation of method 'operator*' on object 'var1' while it is in the 'consumed' state}}
+  
+  var1 = ConsumableClass<long>(42);
+  var1 = nullptr;
+  *var1; // expected-warning {{invocation of method 'operator*' on object 'var1' while it is in the 'consumed' state}}
 }
 
-void testConditionalMerge(void) {
+void testConditionalMerge() {
   ConsumableClass<int> var;
   
   if (var.isValid()) {
     // Empty
   }
   
-  *var;
+  *var; // expected-warning {{invocation of method 'operator*' on object 'var' while it is in the 'consumed' state}}
   
   if (var.isValid()) {
     // Empty
-    
   } else {
     // Empty
   }
   
-  *var;
+  *var; // expected-warning {{invocation of method 'operator*' on object 'var' while it is in the 'consumed' state}}
 }
 
-void testConsumes0(void) {
+void testConsumes0() {
   ConsumableClass<int> var(42);
   
   *var;
@@ -172,13 +298,13 @@ void testConsumes0(void) {
   *var; // expected-warning {{invocation of method 'operator*' on object 'var' while it is in the 'consumed' state}}
 }
 
-void testConsumes1(void) {
+void testConsumes1() {
   ConsumableClass<int> var(nullptr);
   
   *var; // expected-warning {{invocation of method 'operator*' on object 'var' while it is in the 'consumed' state}}
 }
 
-void testConsumes2(void) {
+void testConsumes2() {
   ConsumableClass<int> var(42);
   
   var.unconsumedCall();
@@ -187,7 +313,19 @@ void testConsumes2(void) {
   var.unconsumedCall(); // expected-warning {{invocation of method 'unconsumedCall' on object 'var' while it is in the 'consumed' state}}
 }
 
-void testSimpleForLoop(void) {
+void testNonsenseState() {
+  ConsumableClass<int> var(42);
+  
+  if (var) {
+    *var;
+  } else {
+    *var;
+  }
+  
+  *var;
+}
+
+void testSimpleForLoop() {
   ConsumableClass<int> var;
   
   for (int i = 0; i < 10; ++i) {
@@ -197,7 +335,7 @@ void testSimpleForLoop(void) {
   *var;
 }
 
-void testSimpleWhileLoop(void) {
+void testSimpleWhileLoop() {
   int i = 0;
   
   ConsumableClass<int> var;

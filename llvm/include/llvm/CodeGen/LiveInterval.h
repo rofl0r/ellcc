@@ -287,14 +287,6 @@ namespace llvm {
       return r != end() && r->start <= index;
     }
 
-    /// killedAt - Return true if a live range ends at index. Note that the kill
-    /// point is not contained in the half-open live range. It is usually the
-    /// getDefIndex() slot following its last use.
-    bool killedAt(SlotIndex index) const {
-      const_iterator r = find(index.getRegSlot(true));
-      return r != end() && r->end == index;
-    }
-
     /// getLiveRangeContaining - Return the live range that contains the
     /// specified index, or null if there is none.
     const LiveRange *getLiveRangeContaining(SlotIndex Idx) const {

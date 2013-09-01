@@ -1111,15 +1111,11 @@ void DwarfDebug::endModule() {
     emitAccelTypes();
   }
 
-  // Emit info into a debug pubnames section, if requested.
-  if (HasDwarfPubSections)
+  // Emit the pubnames and pubtypes sections if requested.
+  if (HasDwarfPubSections) {
     emitDebugPubnames();
-
-  // Emit info into a debug pubtypes section.
-  // TODO: When we don't need the option anymore we can
-  // remove all of the code that adds to the table.
-  if (useDarwinGDBCompat() || HasDwarfPubSections)
     emitDebugPubTypes();
+  }
 
   // Finally emit string information into a string table.
   emitDebugStr();
@@ -2545,15 +2541,15 @@ void DwarfDebug::emitDebugLoc() {
 // Emit visible names into a debug aranges section.
 void DwarfDebug::emitDebugARanges() {
   // Start the dwarf aranges section.
-  Asm->OutStreamer.SwitchSection(
-                          Asm->getObjFileLowering().getDwarfARangesSection());
+  Asm->OutStreamer
+      .SwitchSection(Asm->getObjFileLowering().getDwarfARangesSection());
 }
 
 // Emit visible names into a debug ranges section.
 void DwarfDebug::emitDebugRanges() {
   // Start the dwarf ranges section.
-  Asm->OutStreamer.SwitchSection(
-    Asm->getObjFileLowering().getDwarfRangesSection());
+  Asm->OutStreamer
+      .SwitchSection(Asm->getObjFileLowering().getDwarfRangesSection());
   unsigned char Size = Asm->getDataLayout().getPointerSize();
   for (SmallVectorImpl<const MCSymbol *>::iterator
          I = DebugRangeSymbols.begin(), E = DebugRangeSymbols.end();

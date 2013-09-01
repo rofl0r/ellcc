@@ -408,7 +408,13 @@ void ScheduleDAGInstrs::addVRegUseDeps(SUnit *SU, unsigned OperIdx) {
   unsigned Reg = MI->getOperand(OperIdx).getReg();
 
   // Record this local VReg use.
-  VRegUses.insert(VReg2SUnit(Reg, SU));
+  VReg2UseMap::iterator UI = VRegUses.find(Reg);
+  for (; UI != VRegUses.end(); ++UI) {
+    if (UI->SU == SU)
+      break;
+  }
+  if (UI == VRegUses.end())
+    VRegUses.insert(VReg2SUnit(Reg, SU));
 
   // Lookup this operand's reaching definition.
   assert(LIS && "vreg dependencies requires LiveIntervals");
@@ -690,7 +696,8 @@ void ScheduleDAGInstrs::initSUnits() {
 /// DAG builder is an efficient place to do it because it already visits
 /// operands.
 void ScheduleDAGInstrs::buildSchedGraph(AliasAnalysis *AA,
-                                        RegPressureTracker *RPTracker) {
+                                        RegPressureTracker *RPTracker,
+                                        PressureDiffs *PDiffs) {
   const TargetSubtargetInfo &ST = TM.getSubtarget<TargetSubtargetInfo>();
   bool UseAA = EnableAASchedMI.getNumOccurrences() > 0 ? EnableAASchedMI
                                                        : ST.useAA();
@@ -698,6 +705,9 @@ void ScheduleDAGInstrs::buildSchedGraph(AliasAnalysis *AA,
 
   // Create an SUnit for each real instruction.
   initSUnits();
+
+  if (PDiffs)
+    PDiffs->init(SUnits.size());
 
   // We build scheduling units by walking a block's instruction list from bottom
   // to top.
@@ -746,16 +756,17 @@ void ScheduleDAGInstrs::buildSchedGraph(AliasAnalysis *AA,
       DbgMI = MI;
       continue;
     }
+    SUnit *SU = MISUnitMap[MI];
+    assert(SU && "No SUnit mapped to this MI");
+
     if (RPTracker) {
-      RPTracker->recede();
+      PressureDiff *PDiff = PDiffs ? &(*PDiffs)[SU->NodeNum] : 0;
+      RPTracker->recede(/*LiveUses=*/0, PDiff);
       assert(RPTracker->getPos() == prior(MII) && "RPTracker can't find MI");
     }
 
     assert((CanHandleTerminators || (!MI->isTerminator() && !MI->isLabel())) &&
            "Cannot schedule terminators or labels!");
-
-    SUnit *SU = MISUnitMap[MI];
-    assert(SU && "No SUnit mapped to this MI");
 
     // Add register-based dependencies (data, anti, and output).
     bool HasVRegDef = false;
@@ -985,65 +996,6 @@ void ScheduleDAGInstrs::buildSchedGraph(AliasAnalysis *AA,
   Uses.clear();
   VRegDefs.clear();
   PendingLoads.clear();
-}
-
-/// Compute the max cyclic critical path through the DAG. For loops that span
-/// basic blocks, MachineTraceMetrics should be used for this instead.
-unsigned ScheduleDAGInstrs::computeCyclicCriticalPath() {
-  // This only applies to single block loop.
-  if (!BB->isSuccessor(BB))
-    return 0;
-
-  unsigned MaxCyclicLatency = 0;
-  // Visit each live out vreg def to find def/use pairs that cross iterations.
-  for (SUnit::const_pred_iterator
-         PI = ExitSU.Preds.begin(), PE = ExitSU.Preds.end(); PI != PE; ++PI) {
-    MachineInstr *MI = PI->getSUnit()->getInstr();
-    for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i) {
-      const MachineOperand &MO = MI->getOperand(i);
-      if (!MO.isReg() || !MO.isDef())
-        break;
-      unsigned Reg = MO.getReg();
-      if (!Reg || TRI->isPhysicalRegister(Reg))
-        continue;
-
-      const LiveInterval &LI = LIS->getInterval(Reg);
-      unsigned LiveOutHeight = PI->getSUnit()->getHeight();
-      unsigned LiveOutDepth = PI->getSUnit()->getDepth() + PI->getLatency();
-      // Visit all local users of the vreg def.
-      for (VReg2UseMap::iterator
-             UI = VRegUses.find(Reg); UI != VRegUses.end(); ++UI) {
-        if (UI->SU == &ExitSU)
-          continue;
-
-        // Only consider uses of the phi.
-        LiveRangeQuery LRQ(LI, LIS->getInstructionIndex(UI->SU->getInstr()));
-        if (!LRQ.valueIn()->isPHIDef())
-          continue;
-
-        // Cheat a bit and assume that a path spanning two iterations is a
-        // cycle, which could overestimate in strange cases. This allows cyclic
-        // latency to be estimated as the minimum height or depth slack.
-        unsigned CyclicLatency = 0;
-        if (LiveOutDepth > UI->SU->getDepth())
-          CyclicLatency = LiveOutDepth - UI->SU->getDepth();
-        unsigned LiveInHeight = UI->SU->getHeight() + PI->getLatency();
-        if (LiveInHeight > LiveOutHeight) {
-          if (LiveInHeight - LiveOutHeight < CyclicLatency)
-            CyclicLatency = LiveInHeight - LiveOutHeight;
-        }
-        else
-          CyclicLatency = 0;
-        DEBUG(dbgs() << "Cyclic Path: SU(" << PI->getSUnit()->NodeNum
-              << ") -> SU(" << UI->SU->NodeNum << ") = "
-              << CyclicLatency << "\n");
-        if (CyclicLatency > MaxCyclicLatency)
-          MaxCyclicLatency = CyclicLatency;
-      }
-    }
-  }
-  DEBUG(dbgs() << "Cyclic Critical Path: " << MaxCyclicLatency << "\n");
-  return MaxCyclicLatency;
 }
 
 void ScheduleDAGInstrs::dumpNode(const SUnit *SU) const {
