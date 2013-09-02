@@ -9,10 +9,8 @@
 #include "kernel/kernel.h"
 #include "drivers/drivers.h"
 #include "openbios.h"
-#include "libopenbios/console.h"
 #include "libopenbios/ofmem.h"
-
-void cls(void);
+#include "libopenbios/video.h"
 
 #ifdef CONFIG_DEBUG_CONSOLE
 
@@ -30,26 +28,26 @@ void cls(void);
 unsigned char *vmem;
 volatile uint32_t *dac;
 
-static void video_putchar(int c)
-{
-    char buf;
-
-    buf = c & 0xff;
-
-    console_draw_fstr(&buf, 1);
-}
-
-static void video_cls(void)
-{
-    memset((void *)vmem, 0, VMEM_SIZE);
-}
-
 void tcx_init(uint64_t base)
 {
     vmem = (unsigned char *)ofmem_map_io(base + VMEM_BASE, VMEM_SIZE);
     dac = (uint32_t *)ofmem_map_io(base + DAC_BASE, DAC_SIZE);
+}
 
-    console_init();
+/* ( r g b index -- ) */
+void tcx_hw_set_color(void)
+{
+    int index = POP();
+    int b = POP();
+    int g = POP();
+    int r = POP();
+
+    if( VIDEO_DICT_VALUE(video.depth) == 8 ) {
+        dac[0] = index << 24;
+        dac[1] = r << 24; // Red
+        dac[1] = g << 24; // Green
+        dac[1] = b << 24; // Blue
+    }
 }
 
 #endif
@@ -62,9 +60,6 @@ int putchar(int c)
 {
 #ifdef CONFIG_DEBUG_CONSOLE_SERIAL
 	serial_putchar(c);
-#endif
-#ifdef CONFIG_DEBUG_CONSOLE_VIDEO
-	video_putchar(c);
 #endif
 	return c;
 }
@@ -94,16 +89,5 @@ int getchar(void)
 #endif
 	return 0;
 }
-
-void cls(void)
-{
-#ifdef CONFIG_DEBUG_CONSOLE_SERIAL
-	serial_cls();
-#endif
-#ifdef CONFIG_DEBUG_CONSOLE_VIDEO
-	video_cls();
-#endif
-}
-
 
 #endif				// CONFIG_DEBUG_CONSOLE

@@ -22,7 +22,7 @@
 #include "boot.h"
 #include "romvec.h"
 #include "openprom.h"
-#include "packages/video.h"
+#include "libopenbios/video.h"
 #define NO_QEMU_PROTOS
 #include "arch/common/fw_cfg.h"
 #include "arch/sparc32/ofmem_sparc32.h"
@@ -875,7 +875,7 @@ arch_init( void )
 #endif
 #ifdef CONFIG_DRIVER_SBUS
 #ifdef CONFIG_DEBUG_CONSOLE_VIDEO
-	init_video((unsigned long)vmem, 1024, 768, 8, 1024);
+	setup_video(hwdef->tcx_base + 0x00800000ULL, (unsigned long)vmem);
 #endif
 	ob_sbus_init(hwdef->iommu_base + 0x1000ULL, qemu_machine_type);
 #endif
@@ -971,8 +971,6 @@ int openbios(void)
 	tcx_init(hwdef->tcx_base);
 	kbd_init(hwdef->ms_kb_base);
 #endif
-	/* Clear the screen.  */
-	cls();
 #endif
 
         collect_sys_info(&sys_info);

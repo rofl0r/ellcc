@@ -25,8 +25,9 @@
 #include "asm/io.h"
 #include "libc/vsprintf.h"
 #include "drivers/vga.h"
-#include "packages/video.h"
+#include "libopenbios/video.h"
 #include "libopenbios/ofmem.h"
+#include "packages/video.h"
 
 /* VGA init. We use the Bochs VESA VBE extensions  */
 #define VBE_DISPI_INDEX_ID              0x0
@@ -103,50 +104,41 @@ void vga_vbe_set_mode(int width, int height, int depth)
         vga_build_rgb_palette();
 }
 
-#ifdef CONFIG_VGA_WIDTH
-#define VGA_DEFAULT_WIDTH	CONFIG_VGA_WIDTH
-#else
-#define VGA_DEFAULT_WIDTH	800
-#endif
+/* Low-level Forth accessor to update VGA color registers */
 
-#ifdef CONFIG_VGA_HEIGHT
-#define VGA_DEFAULT_HEIGHT	CONFIG_VGA_HEIGHT
-#else
-#define VGA_DEFAULT_HEIGHT	600
-#endif
+/* ( r g b index -- ) */
+static
+void vga_hw_set_color(void)
+{
+    int index = POP();
+    int b = POP();
+    int g = POP();
+    int r = POP();
 
-#ifdef CONFIG_VGA_DEPTH
-#define VGA_DEFAULT_DEPTH	CONFIG_VGA_DEPTH
-#else
-#define VGA_DEFAULT_DEPTH	8
-#endif
-
-#define VGA_DEFAULT_LINEBYTES	(VGA_DEFAULT_WIDTH*((VGA_DEFAULT_DEPTH+7)/8))
+    vga_set_color(index, (r & 0xff),
+        (g & 0xff),
+        (b & 0xff));
+}
 
 void vga_vbe_init(const char *path, unsigned long fb, uint32_t fb_size,
                   unsigned long rom, uint32_t rom_size)
 {
+	phys_addr_t phys;
 	phandle_t ph, chosen, aliases, options;
 	char buf[6];
-	int width = VGA_DEFAULT_WIDTH;
-	int height = VGA_DEFAULT_HEIGHT;
-	int depth = VGA_DEFAULT_DEPTH;
-	int linebytes = VGA_DEFAULT_LINEBYTES;
+	int size;
 
-#if defined(CONFIG_QEMU) && (defined(CONFIG_PPC) || defined(CONFIG_SPARC32) || defined(CONFIG_SPARC64))
-	int w, h, d;
-        w = fw_cfg_read_i16(FW_CFG_ARCH_WIDTH);
-        h = fw_cfg_read_i16(FW_CFG_ARCH_HEIGHT);
-        d = fw_cfg_read_i16(FW_CFG_ARCH_DEPTH);
-	if (w && h && d) {
-		width = w;
-		height = h;
-		depth = d;
-		linebytes = (width * ((depth + 7) / 8));
-	}
+	phys = fb;
+
+#if defined(CONFIG_SPARC64)
+	/* Fix virtual address on SPARC64 somewhere else */
+	fb = 0xfe000000ULL;
 #endif
 
-	vga_vbe_set_mode(width, height, depth);
+	setup_video(phys, fb);
+	vga_vbe_set_mode(VIDEO_DICT_VALUE(video.w),
+			 VIDEO_DICT_VALUE(video.h),
+			 VIDEO_DICT_VALUE(video.depth));
 
 #if 0
     ph = find_dev(path);
@@ -154,11 +146,15 @@ void vga_vbe_init(const char *path, unsigned long fb, uint32_t fb_size,
     ph = get_cur_dev();
 #endif
 
-	set_int_property(ph, "width", width);
-	set_int_property(ph, "height", height);
-	set_int_property(ph, "depth", depth);
-	set_int_property(ph, "linebytes", linebytes);
+	bind_func("hw-set-color", vga_hw_set_color);
+
+	set_int_property(ph, "width", VIDEO_DICT_VALUE(video.w));
+	set_int_property(ph, "height", VIDEO_DICT_VALUE(video.h));
+	set_int_property(ph, "depth", VIDEO_DICT_VALUE(video.depth));
+	set_int_property(ph, "linebytes", VIDEO_DICT_VALUE(video.rb));
 	set_int_property(ph, "address", (u32)(fb & ~0x0000000F));
+
+	molvideo_init();
 
 	chosen = find_dev("/chosen");
 	push_str(path);
@@ -169,14 +165,13 @@ void vga_vbe_init(const char *path, unsigned long fb, uint32_t fb_size,
 	set_property(aliases, "screen", path, strlen(path) + 1);
 
 	options = find_dev("/options");
-	snprintf(buf, sizeof(buf), "%d", width / FONT_WIDTH);
+	snprintf(buf, sizeof(buf), FMT_ucell, VIDEO_DICT_VALUE(video.w) / FONT_WIDTH);
 	set_property(options, "screen-#columns", buf, strlen(buf) + 1);
-	snprintf(buf, sizeof(buf), "%d", height / FONT_HEIGHT);
+	snprintf(buf, sizeof(buf), FMT_ucell, VIDEO_DICT_VALUE(video.h) / FONT_HEIGHT);
 	set_property(options, "screen-#rows", buf, strlen(buf) + 1);
 
 	if (rom_size >= 8) {
                 const char *p;
-		int size;
 
                 p = (const char *)rom;
 		if (p[0] == 'N' && p[1] == 'D' && p[2] == 'R' && p[3] == 'V') {
@@ -186,5 +181,11 @@ void vga_vbe_init(const char *path, unsigned long fb, uint32_t fb_size,
 		}
 	}
 
-	init_video(fb, width, height, depth, linebytes);
+#if defined(CONFIG_OFMEM) && defined(CONFIG_DRIVER_PCI)
+        size = ((VIDEO_DICT_VALUE(video.h) * VIDEO_DICT_VALUE(video.rb))  + 0xfff) & ~0xfff;
+
+	ofmem_claim_phys( video.mphys, size, 0 );
+	ofmem_claim_virt( VIDEO_DICT_VALUE(video.mvirt), size, 0 );
+	ofmem_map( video.mphys, VIDEO_DICT_VALUE(video.mvirt), size, ofmem_arch_io_translation_mode(video.mphys) );
+#endif
 }

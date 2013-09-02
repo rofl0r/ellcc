@@ -43,7 +43,17 @@ hex
 
 0 value foreground-color
 0 value background-color
+create color-palette 100 cells allot
 
+2 value font-spacing
+0 value depth-bits
+0 value line-bytes
+0 value display-ih
+
+\ internal values
+0 value openbios-video-addr
+0 value openbios-video-height
+0 value openbios-video-width
 
 \ The following wordset is called the "defer word interface" of the 
 \ terminal-emulator support package. It gets overloaded by fb1-install
@@ -63,19 +73,23 @@ defer draw-logo ( line# addr width height -- )
 
 defer fb-emit ( x -- )
 
+: depth-bytes ( -- bytes )
+  depth-bits 1+ 8 /
+;
+
 \ 
 \ 5.3.6.2 Frame-buffer support routines
 \ 
 
 : default-font ( -- addr width height advance min-char #glyphs )
-  \ (romfont-8x16) 8 10 10 0 100
+  (romfont) (romfont-width) (romfont-height) (romfont-height) 0 100
   ;
 
 : set-font ( addr width height advance min-char #glyphs -- )
   to char-num
   to char-min
   to fontbytes
-  to char-height
+  font-spacing + to char-height
   to char-width
   to font
   ;
@@ -102,6 +116,8 @@ defer fb-emit ( x -- )
   s" open" header 
   1 , \ colon definition
   ,
+  ['] (lit) ,
+  -1 ,
   ['] (semis) ,
   reveal
   s" : write dup >r bounds do i c@ fb-emit loop r> ; " evaluate
@@ -154,87 +170,57 @@ defer fb-emit ( x -- )
   
 \ 5.3.6.3.3 Generic eight-bit frame-buffer support
 
-\ The following two functions are unrolled for speed.
-
-
-\ blit 8 continuous pixels described by the 8bit
-\ value in bitmask8. The most significant bit is
-\ painted first. 
-
-\ this function should honour fg and bg colors
-
-: fb8-write-mask8 ( bitmask8 faddr -- )
-  over 1  and 0<> over 7 + c!
-  over 2  and 0<> over 6 + c!
-  over 4  and 0<> over 5 + c!
-  over 8  and 0<> over 4 + c!
-  over 10 and 0<> over 3 + c!
-  over 20 and 0<> over 2 + c!
-  over 40 and 0<> over 1 + c!
-  over 80 and 0<> over 0 + c!
-  2drop
-  ; 
-
-: fb8-blitmask ( fbaddr mask-addr width height --  )
-  over >r          \ save width ( -- R: width )
-  * 3 >>           \ fbaddr mask-addr width*height/8
-  bounds           \ fbaddr mask-end mask
-  r> 0 2swap       \ fbaddr width 0 mask-end mask
-  ?do              \ ( fbaddr width l-cnt )
-    2 pick over +  \ fbaddr-current
-    i c@           \ bitmask8 
-    swap fb8-write-mask8
-    ( fbaddr width l-cnt )
-    8 + 2dup = if
-      drop swap screen-width + 
-      swap 0
-    then
-    ( fbaddr width l-cnt )
-  loop
-  2drop drop
-  ;
+\ bind to low-level C function later
+defer fb8-blitmask
+defer fb8-fillrect
+defer fb8-invertrect
 
 : fb8-line2addr ( line -- addr )
   window-top +
-  screen-width * 
+  screen-width * depth-bytes *
   frame-buffer-adr + 
-  window-left +
-;
-  
-: fb8-copy-line ( from to -- )
-  fb8-line2addr swap 
-  fb8-line2addr swap 
-  #columns char-width * move
+  window-left depth-bytes * +
 ;
 
-: fb8-clear-line ( line -- )
-  fb8-line2addr 
-  #columns char-width * 
-  background-color fill
-\ 0 fill
+: fb8-curpos2addr ( col line -- addr )
+  char-height * fb8-line2addr
+  swap char-width * depth-bytes * +
+;
+
+: fb8-copy-lines ( count from to -- )
+  fb8-line2addr swap
+  fb8-line2addr swap
+  #columns char-width * depth-bytes *
+  3 pick * move drop
+;
+
+: fb8-clear-lines ( count line -- )
+  background-color 0
+  2 pick window-top +
+  #columns char-width *
+  5 pick
+  fb8-fillrect
+  2drop
 ;
   
 : fb8-draw-character ( char -- )
+  \ erase the current character
+  background-color
+  column# char-width * window-left +
+  line# char-height * window-top +
+  char-width char-height fb8-fillrect
   \ draw the character:
   >font  
-  line# char-height * window-top + screen-width *
-  column# char-width * window-left + + frame-buffer-adr +
-  swap char-width char-height
-  fb8-blitmask
-  \ now advance the position
-  column# 1+
-  dup #columns = if
-    drop 0 to column#
-    line# 1+ 
-    dup #lines = if
-      drop 
-      \ FIXME move up screen (and keep position)
-    else
-      to #lines 
-    then
-  else
-    to column#
+  line# char-height * window-top + screen-width * depth-bytes *
+  column# char-width * depth-bytes *
+  window-left depth-bytes * + + frame-buffer-adr +
+  swap char-width char-height font-spacing -
+  \ normal or inverse?
+  foreground-color background-color
+  inverse? if
+    swap
   then
+  fb8-blitmask
   ;
 
 : fb8-reset-screen ( -- )
@@ -242,74 +228,101 @@ defer fb-emit ( x -- )
   false to inverse-screen?
   0 to foreground-color 
   d# 15 to background-color
+
+  \ override with OpenBIOS defaults
+  fe to background-color
+  0 to foreground-color
   ;
 
 : fb8-toggle-cursor ( -- )
-  line# char-height * window-top + screen-width *
-  column# char-width * window-left + + frame-buffer-adr +
-  char-height 0 ?do
-    char-width 0 ?do
-      dup i + dup c@ invert ff and swap c!
-    loop
-    screen-width +
-  loop
-  drop
+  column# char-width * window-left +
+  line# char-height * window-top +
+  char-width char-height font-spacing -
+  foreground-color background-color
+  fb8-invertrect
   ;
 
 : fb8-erase-screen ( -- )
-  frame-buffer-adr 
-  screen-height screen-width * 
   inverse-screen? if
     foreground-color
   else
     background-color
   then
-  fill
+  0 0 screen-width screen-height
+  fb8-fillrect
   ;
 
 : fb8-invert-screen ( -- )
-  frame-buffer-adr
-  screen-height screen-width * 
-  bounds ?do
-    i c@ case
-      foreground-color of background-color endof
-      background-color of foreground-color endof
-      dup
-    endcase
-    i c!
-  loop
+  0 0 screen-width screen-height
+  background-color foreground-color
+  fb8-invertrect
   ;
 
 : fb8-blink-screen ( -- )
-  fb8-invert-screen fb8-invert-screen
+  fb8-invert-screen 2000 ms
+  fb8-invert-screen
   ;
   
 : fb8-insert-characters ( n -- )
-  ;
+  \ numcopy = ( #columns - column# - n )
+  #columns over - column# -
+  char-width * depth-bytes * ( n numbytescopy )
+
+  over column# + line# fb8-curpos2addr
+  column# line# fb8-curpos2addr ( n numbytescopy destaddr srcaddr )
+  char-height 0 do
+    3dup swap rot move
+    line-bytes + swap line-bytes + swap
+  loop 3drop
   
+  background-color
+  column# char-width * window-left + line# char-height * window-top +
+  3 pick char-width * char-height
+  fb8-fillrect
+  drop
+  ;
+
 : fb8-delete-characters ( n -- )
+  \ numcopy = ( #columns - column# - n )
+  #columns over - column# -
+  char-width * depth-bytes * ( n numbytescopy )
+
+  over column# + line# fb8-curpos2addr
+  column# line# fb8-curpos2addr swap ( n numbytescopy destaddr srcaddr )
+  char-height 0 do
+    3dup swap rot move
+    line-bytes + swap line-bytes + swap
+  loop 3drop
+
+  background-color
+  over #columns swap - char-width * window-left + line# char-height * window-top +
+  3 pick char-width * char-height
+  fb8-fillrect
+  drop
   ;
 
 : fb8-insert-lines ( n -- )
+  \ numcopy = ( #lines - n )
+  #lines over - char-height *
+  over line# char-height *
+  swap char-height * over +
+  fb8-copy-lines
+
+  char-height * line# char-height *
+  fb8-clear-lines
   ;
   
 : fb8-delete-lines ( n -- )
   \ numcopy = ( #lines - ( line# + n )) * char-height
-  #lines over #line + - char-height *
-
-  ( numcopy ) 0 ?do
-    dup line# + char-height * i +
-    line# char-height * i +
-    swap fb8-copy-line
-  loop
-
-  #lines over - char-height *
-  over char-height *
-  0 ?do
-    dup i + fb8-clear-line
-  loop
+  #lines over line# + - char-height *
+  over line# + char-height *
+  line# char-height *
+  fb8-copy-lines
   
-  2drop
+  #lines over - char-height *
+  dup #lines char-height * swap - swap
+  fb8-clear-lines
+  drop
 ;
 
 
@@ -341,6 +354,8 @@ defer fb-emit ( x -- )
   0 to inverse? 
   0 to inverse-screen?
 
+  my-self to display-ih
+
   \ set defer functions to 8bit versions
 
   ['] fb8-draw-character to draw-character
@@ -363,4 +378,37 @@ defer fb-emit ( x -- )
   then
   to foreground-color to background-color
 
+  \ setup palette
+  10101 ['] color-palette cell+ ff 0 do
+    dup 2 pick i * swap ! cell+
+  loop 2drop
+
+  \ special background color
+  ffffcc ['] color-palette cell+ fe cells + !
+
+  \ load palette onto the hardware
+  ['] color-palette cell+ ff 0 do
+    dup @ ff0000 and d# 16 rshift
+    1 pick @ ff00 and d# 8 rshift
+    2 pick @ ff and
+    i
+    s" hw-set-color" $find if
+      execute
+    else
+      2drop
+    then
+    cell+
+  loop drop
+
+  \ ... but let's override with some better defaults
+  fe to background-color
+  0 to foreground-color
+
+  fb8-erase-screen
+
+  \ If we have a startup splash then display it
+  [IFDEF] CONFIG_MOL
+      startup-splash 2000 ms
+      fb8-erase-screen
+  [THEN]
 ;

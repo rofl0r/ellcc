@@ -44,6 +44,7 @@
 
 DECLARE_UNNAMED_NODE( ob_pci_bus_node, INSTALL_OPEN, 2*sizeof(int) );
 DECLARE_UNNAMED_NODE( ob_pci_simple_node, INSTALL_OPEN, 2*sizeof(int) );
+DECLARE_UNNAMED_NODE( ob_pci_empty_node, 0, 2*sizeof(int) );
 
 const pci_arch_t *arch;
 
@@ -340,6 +341,10 @@ NODE_METHODS(ob_pci_simple_node) = {
 	{ NULL,			ob_pci_initialize	},
 	{ "open",		ob_pci_open		},
 	{ "close",		ob_pci_close		},
+};
+
+NODE_METHODS(ob_pci_empty_node) = {
+	{ NULL,			ob_pci_initialize	}
 };
 
 static void pci_set_bus_range(const pci_config_t *config)
@@ -759,12 +764,17 @@ int macio_keylargo_config_cb (const pci_config_t *config)
 
 int vga_config_cb (const pci_config_t *config)
 {
-	if (config->assigned[0] != 0x00000000)
+	if (config->assigned[0] != 0x00000000) {
             vga_vbe_init(config->path,
                          pci_bus_addr_to_host_addr(config->assigned[0] & ~0x0000000F),
                          config->sizes[0],
                          pci_bus_addr_to_host_addr(config->assigned[1] & ~0x0000000F),
                          config->sizes[1]);
+
+	    /* Currently we don't read FCode from the hardware but execute it directly */
+	    feval("['] vga-driver-fcode 2 cells + 1 byte-load");
+        }
+
 	return 0;
 }
 
@@ -1229,6 +1239,9 @@ static void ob_configure_pci_device(const char* parent_path,
             REGISTER_NAMED_NODE_PHANDLE(ob_pci_bus_node, config.path, phandle);
         }
         break;
+    case PCI_CLASS_DISPLAY:
+	REGISTER_NAMED_NODE_PHANDLE(ob_pci_empty_node, config.path, phandle);
+	break;
     default:
         REGISTER_NAMED_NODE_PHANDLE(ob_pci_simple_node, config.path, phandle);
         break;

@@ -43,6 +43,30 @@ arch_nvram_size( void )
                 return NW_IO_NVRAM_SIZE >> NW_IO_NVRAM_SHIFT;
 }
 
+static unsigned long macio_nvram_offset(void)
+{
+	unsigned long r;
+
+	/* Hypervisor tells us where NVRAM lies */
+	r = fw_cfg_read_i32(FW_CFG_PPC_NVRAM_ADDR);
+	if (r)
+		return r;
+
+	/* Fall back to hardcoded addresses */
+	if (is_oldworld())
+		return OW_IO_NVRAM_OFFSET;
+
+	return NW_IO_NVRAM_OFFSET;
+}
+
+static unsigned long macio_nvram_size(void)
+{
+	if (is_oldworld())
+		return OW_IO_NVRAM_SIZE;
+	else
+		return NW_IO_NVRAM_SIZE;
+}
+
 void macio_nvram_init(const char *path, phys_addr_t addr)
 {
 	phandle_t chosen, aliases;
@@ -51,13 +75,9 @@ void macio_nvram_init(const char *path, phys_addr_t addr)
 	char buf[64];
         unsigned long nvram_size, nvram_offset;
 
-        if (is_oldworld()) {
-                nvram_offset = OW_IO_NVRAM_OFFSET;
-                nvram_size = OW_IO_NVRAM_SIZE;
-        } else {
-                nvram_offset = NW_IO_NVRAM_OFFSET;
-                nvram_size = NW_IO_NVRAM_SIZE;
-        }
+        nvram_offset = macio_nvram_offset();
+        nvram_size = macio_nvram_size();
+
 	nvram = (char*)addr + nvram_offset;
         snprintf(buf, sizeof(buf), "%s/nvram", path);
 	nvram_init(buf);
@@ -241,6 +261,29 @@ NODE_METHODS(ob_macio) = {
         { "encode-unit",	ob_macio_encode_unit	},
 };
 
+static void
+ob_unin_init(void)
+{
+        phandle_t dnode;
+        int props[2];
+
+	push_str("/");
+        fword("find-device");
+        fword("new-device");
+        push_str("uni-n");
+        fword("device-name");
+
+        dnode = find_dev("/uni-n");
+        set_property(dnode, "device_type", "memory-controller", 18);
+        set_property(dnode, "compatible", "uni-north", 10);
+        set_int_property(dnode, "device-rev", 0);
+        props[0] = __cpu_to_be32(0xf8000000);
+        props[1] = __cpu_to_be32(0x1000000);
+        set_property(dnode, "reg", (char *)&props, sizeof(props));
+
+        fword("finish-device");
+}
+
 void
 ob_macio_heathrow_init(const char *path, phys_addr_t addr)
 {
@@ -253,7 +296,7 @@ ob_macio_heathrow_init(const char *path, phys_addr_t addr)
 	cuda_init(path, addr);
 	macio_nvram_init(path, addr);
         escc_init(path, addr);
-	macio_ide_init(path, addr, 1);
+	macio_ide_init(path, addr, 2);
 }
 
 void
@@ -270,4 +313,5 @@ ob_macio_keylargo_init(const char *path, phys_addr_t addr)
         escc_init(path, addr);
         macio_ide_init(path, addr, 3);
         openpic_init(path, addr);
+	ob_unin_init();
 }

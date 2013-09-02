@@ -31,4 +31,7 @@
   <object source="esp.fs" condition="DRIVER_ESP"/>
  </dictionary>
 
+ <fcode source="tcx.fs" name="QEMU,tcx.bin" condition="DRIVER_SBUS" />
+ <fcode source="vga.fs" name="QEMU,VGA.bin" condition="DRIVER_VGA" />
+
 </build>

@@ -97,17 +97,39 @@
     endof
     ascii f of
       2 (esc-number) 
-      2 = if
-        #columns 1- min to column#
-        #lines 1- min to line#
-      then
+      case
+        2 of
+          1- #columns 1- min to column#
+          1- #lines 1- min to line#
+        endof
+        1 of
+          0 to column#
+          1- #lines 1- min to line#
+        endof
+        0 of
+          0 to column#
+          0 to line#
+          drop
+        endof
+      endcase
     endof
     ascii H of
-      2 (esc-number) 
-      2 = if
-        #columns 1- min to column#
-        #lines 1- min to line#
-      then
+      2 (esc-number)
+      case
+        2 of
+          1- #columns 1- min to column#
+          1- #lines 1- min to line#
+        endof
+        1 of
+          0 to column#
+          1- #lines 1- min to line#
+        endof
+        0 of
+          0 to column#
+          0 to line#
+          drop
+        endof
+      endcase
     endof
     ascii J of
       0 to (escseq)
@@ -208,6 +230,9 @@
   then
   
   case
+  0 of \ NULL
+    toggle-cursor exit
+  endof
   7 of \ BEL
     blink-screen
     s" /screen" s" ring-bell" 
@@ -215,10 +240,8 @@
   endof
   8 of \ BS
     column# 0<> if
-      column# 1- dup 
-      to column#
-      20 draw-character
-      to column#
+      column# 1- to column#
+      toggle-cursor exit
     then
   endof
   9 of \ TAB
@@ -227,14 +250,23 @@
     else
       8 + -8 and ff and to column#
     then
+    toggle-cursor exit
   endof
   a of \ LF
-    line# 1+ to line# 0 to column# 
+    line# 1+ to line#
+    0 to column#
+    line# #lines >= if
+      0 to line#
+      1 delete-lines
+      #lines 1- to line#
+      toggle-cursor exit
+    then
   endof
   b of \ VT
     line# 0<> if
       line# 1- to line#
     then
+    toggle-cursor exit
   endof
   c of \ FF
     0 to column# 0 to line#
@@ -242,12 +274,27 @@
   endof
   d of \ CR
     0 to column#
+    toggle-cursor exit
   endof
   1b of \ ESC
     1b (sequence) c!
     1 to (escseq)
   endof
+
+  \ draw character and advance position
+  column# #columns >= if
+    0 to column#
+    line# 1+ to line#
+    line# #lines >= if
+      0 to line#
+      1 delete-lines
+      #lines 1- to line#
+    then
+  then
+
   dup draw-character
+  column# 1+ to column#
+
   endcase
   toggle-cursor
   ;

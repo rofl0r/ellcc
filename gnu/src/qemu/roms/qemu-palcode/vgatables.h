@@ -81,7 +81,7 @@ typedef uint16_t u16;
 #define SCREEN_MEM_START(x,y,p) SCREEN_IO_START(((x)*2),(y),(p))
 
 /* standard BIOS Video Parameter Table */
-struct VideoParam_s {
+struct __attribute__((packed)) VideoParam_s {
     u8 twidth;
     u8 theightm1;
     u8 cheight;
@@ -91,7 +91,7 @@ struct VideoParam_s {
     u8 crtc_regs[25];
     u8 actl_regs[20];
     u8 grdc_regs[9];
-} PACKED;
+};
 
 struct vgamode_s {
     u8 svgamode;
@@ -155,11 +155,11 @@ extern struct VideoParam_s video_param_table[];
 extern u8 static_functionality[];
 
 // vgafonts.c
-extern u8 vgafont8[];
-extern u8 vgafont14[];
-extern u8 vgafont16[];
-extern u8 vgafont14alt[];
-extern u8 vgafont16alt[];
+extern const u8 vgafont8[];
+extern const u8 vgafont14[];
+extern const u8 vgafont16[];
+extern const u8 vgafont14alt[];
+extern const u8 vgafont16alt[];
 
 // vga.c
 struct carattr {
