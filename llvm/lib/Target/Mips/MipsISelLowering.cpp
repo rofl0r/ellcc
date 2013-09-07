@@ -233,10 +233,8 @@ MipsTargetLowering(MipsTargetMachine &TM)
   setLoadExtAction(ISD::SEXTLOAD, MVT::i1,  Promote);
 
   // MIPS doesn't have extending float->double load/store
-  if (!TM.Options.UseSoftFloat) {
-    setLoadExtAction(ISD::EXTLOAD, MVT::f32, Expand);
-    setTruncStoreAction(MVT::f64, MVT::f32, Expand);
-  }
+  setLoadExtAction(ISD::EXTLOAD, MVT::f32, Expand);
+  setTruncStoreAction(MVT::f64, MVT::f32, Expand);
 
   // Used by legalize types to correctly generate the setcc result.
   // Without this, every float setcc comes with a AND/OR with the result,
@@ -253,22 +251,20 @@ MipsTargetLowering(MipsTargetMachine &TM)
   setOperationAction(ISD::ConstantPool,       MVT::i32,   Custom);
   setOperationAction(ISD::SELECT,             MVT::i32,   Custom);
   if (!TM.Options.UseSoftFloat) {
+    setOperationAction(ISD::SELECT,             MVT::f32,   Custom);
+    setOperationAction(ISD::SELECT,             MVT::f64,   Custom);
     setOperationAction(ISD::SELECT_CC,          MVT::f32,   Custom);
-    setOperationAction(ISD::FCOPYSIGN,          MVT::f32,   Custom);
-    if (Subtarget->isSingleFloat())
-      setOperationAction(ISD::SELECT_CC, MVT::f64, Expand);
-    else {
-      setOperationAction(ISD::SELECT_CC,          MVT::f64,   Custom);
-      setOperationAction(ISD::FCOPYSIGN,          MVT::f64,   Custom);
-    }
+    setOperationAction(ISD::SELECT_CC,          MVT::f64,   Custom);
     setOperationAction(ISD::SETCC,              MVT::f32,   Custom);
     setOperationAction(ISD::SETCC,              MVT::f64,   Custom);
   }
   setOperationAction(ISD::BRCOND,             MVT::Other, Custom);
   setOperationAction(ISD::VASTART,            MVT::Other, Custom);
+  setOperationAction(ISD::FCOPYSIGN,          MVT::f32,   Custom);
+  setOperationAction(ISD::FCOPYSIGN,          MVT::f64,   Custom);
   setOperationAction(ISD::FP_TO_SINT,         MVT::i32,   Custom);
 
-  if (!TM.Options.UseSoftFloat && !TM.Options.NoNaNsFPMath) {
+  if (!TM.Options.NoNaNsFPMath) {
     setOperationAction(ISD::FABS,             MVT::f32,   Custom);
     setOperationAction(ISD::FABS,             MVT::f64,   Custom);
   }

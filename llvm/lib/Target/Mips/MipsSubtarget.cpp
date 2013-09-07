@@ -90,8 +90,9 @@ MipsSubtarget::MipsSubtarget(const std::string &TT, const std::string &CPU,
          "Invalid  Arch & ABI pair.");
 
   // Is the target system Linux ?
-  if (TT.find("linux") == std::string::npos)
-    {} // RICH: This breaks sa: IsLinux = false;
+  if (TT.find("linux") == std::string::npos &&
+      TT.find("sa") == std::string::npos)
+    IsLinux = false;
 
   // Set UseSmallSection.
   UseSmallSection = !IsLinux && (RM == Reloc::Static);

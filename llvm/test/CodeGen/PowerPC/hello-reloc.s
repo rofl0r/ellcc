@@ -62,7 +62,7 @@ L_.str:                                 ; @.str
 	.asciz	 "Hello, world!"
 
 ; DARWIN-G4-DUMP:Format: Mach-O 32-bit ppc
-; DARWIN-G4-DUMP:Arch: powerpc
+; DARWIN-G4-DUMP:Arch: ppc
 ; DARWIN-G4-DUMP:AddressSize: 32bit
 ; DARWIN-G4-DUMP:Relocations [
 ; DARWIN-G4-DUMP:  Section __text {
