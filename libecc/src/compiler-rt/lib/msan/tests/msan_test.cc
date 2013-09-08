@@ -2921,8 +2921,17 @@ TEST(MemorySanitizer, CallocOverflow) {
   size_t kArraySize = 4096;
   volatile size_t kMaxSizeT = std::numeric_limits<size_t>::max();
   volatile size_t kArraySize2 = kMaxSizeT / kArraySize + 10;
-  void *p = calloc(kArraySize, kArraySize2);  // Should return 0.
+  void *p = 0;
+  EXPECT_DEATH(p = calloc(kArraySize, kArraySize2),
+               "llocator is terminating the process instead of returning 0");
   EXPECT_EQ(0L, Ident(p));
+}
+
+TEST(MemorySanitizer, Select) {
+  int x;
+  int volatile* p = &x;
+  int z = *p ? 1 : 0;
+  EXPECT_POISONED(z);
 }
 
 TEST(MemorySanitizerStress, DISABLED_MallocStackTrace) {

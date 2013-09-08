@@ -443,7 +443,8 @@ TSAN_INTERCEPTOR(void*, __libc_memalign, uptr align, uptr sz) {
 TSAN_INTERCEPTOR(void*, calloc, uptr size, uptr n) {
   if (cur_thread()->in_symbolizer)
     return __libc_calloc(size, n);
-  if (__sanitizer::CallocShouldReturnNullDueToOverflow(size, n)) return 0;
+  if (__sanitizer::CallocShouldReturnNullDueToOverflow(size, n))
+    return AllocatorReturnNull();
   void *p = 0;
   {
     SCOPED_INTERCEPTOR_RAW(calloc, size, n);
@@ -1051,46 +1052,49 @@ TSAN_INTERCEPTOR(int, pthread_rwlock_unlock, void *m) {
   return res;
 }
 
-// libpthread.so contains several versions of pthread_cond_init symbol.
-// When we just dlsym() it, we get the wrong (old) version.
-/*
-TSAN_INTERCEPTOR(int, pthread_cond_init, void *c, void *a) {
-  SCOPED_TSAN_INTERCEPTOR(pthread_cond_init, c, a);
-  int res = REAL(pthread_cond_init)(c, a);
-  return res;
-}
-*/
-
-TSAN_INTERCEPTOR(int, pthread_cond_destroy, void *c) {
-  SCOPED_TSAN_INTERCEPTOR(pthread_cond_destroy, c);
-  int res = REAL(pthread_cond_destroy)(c);
+TSAN_INTERCEPTOR(int, pthread_cond_init_2_3_2, void *c, void *a) {
+  SCOPED_TSAN_INTERCEPTOR(pthread_cond_init_2_3_2, c, a);
+  MemoryWrite(thr, pc, (uptr)c, kSizeLog1);
+  int res = REAL(pthread_cond_init_2_3_2)(c, a);
   return res;
 }
 
-TSAN_INTERCEPTOR(int, pthread_cond_signal, void *c) {
-  SCOPED_TSAN_INTERCEPTOR(pthread_cond_signal, c);
-  int res = REAL(pthread_cond_signal)(c);
+TSAN_INTERCEPTOR(int, pthread_cond_destroy_2_3_2, void *c) {
+  SCOPED_TSAN_INTERCEPTOR(pthread_cond_destroy_2_3_2, c);
+  MemoryWrite(thr, pc, (uptr)c, kSizeLog1);
+  int res = REAL(pthread_cond_destroy_2_3_2)(c);
   return res;
 }
 
-TSAN_INTERCEPTOR(int, pthread_cond_broadcast, void *c) {
-  SCOPED_TSAN_INTERCEPTOR(pthread_cond_broadcast, c);
-  int res = REAL(pthread_cond_broadcast)(c);
+TSAN_INTERCEPTOR(int, pthread_cond_signal_2_3_2, void *c) {
+  SCOPED_TSAN_INTERCEPTOR(pthread_cond_signal_2_3_2, c);
+  MemoryRead(thr, pc, (uptr)c, kSizeLog1);
+  int res = REAL(pthread_cond_signal_2_3_2)(c);
   return res;
 }
 
-TSAN_INTERCEPTOR(int, pthread_cond_wait, void *c, void *m) {
-  SCOPED_TSAN_INTERCEPTOR(pthread_cond_wait, c, m);
+TSAN_INTERCEPTOR(int, pthread_cond_broadcast_2_3_2, void *c) {
+  SCOPED_TSAN_INTERCEPTOR(pthread_cond_broadcast_2_3_2, c);
+  MemoryRead(thr, pc, (uptr)c, kSizeLog1);
+  int res = REAL(pthread_cond_broadcast_2_3_2)(c);
+  return res;
+}
+
+TSAN_INTERCEPTOR(int, pthread_cond_wait_2_3_2, void *c, void *m) {
+  SCOPED_TSAN_INTERCEPTOR(pthread_cond_wait_2_3_2, c, m);
   MutexUnlock(thr, pc, (uptr)m);
-  int res = REAL(pthread_cond_wait)(c, m);
+  MemoryRead(thr, pc, (uptr)c, kSizeLog1);
+  int res = REAL(pthread_cond_wait_2_3_2)(c, m);
   MutexLock(thr, pc, (uptr)m);
   return res;
 }
 
-TSAN_INTERCEPTOR(int, pthread_cond_timedwait, void *c, void *m, void *abstime) {
-  SCOPED_TSAN_INTERCEPTOR(pthread_cond_timedwait, c, m, abstime);
+TSAN_INTERCEPTOR(int, pthread_cond_timedwait_2_3_2, void *c, void *m,
+    void *abstime) {
+  SCOPED_TSAN_INTERCEPTOR(pthread_cond_timedwait_2_3_2, c, m, abstime);
   MutexUnlock(thr, pc, (uptr)m);
-  int res = REAL(pthread_cond_timedwait)(c, m, abstime);
+  MemoryRead(thr, pc, (uptr)c, kSizeLog1);
+  int res = REAL(pthread_cond_timedwait_2_3_2)(c, m, abstime);
   MutexLock(thr, pc, (uptr)m);
   return res;
 }
@@ -1984,12 +1988,18 @@ void InitializeInterceptors() {
   TSAN_INTERCEPT(pthread_rwlock_timedwrlock);
   TSAN_INTERCEPT(pthread_rwlock_unlock);
 
-  // TSAN_INTERCEPT(pthread_cond_init);
-  TSAN_INTERCEPT(pthread_cond_destroy);
-  TSAN_INTERCEPT(pthread_cond_signal);
-  TSAN_INTERCEPT(pthread_cond_broadcast);
-  TSAN_INTERCEPT(pthread_cond_wait);
-  TSAN_INTERCEPT(pthread_cond_timedwait);
+  INTERCEPT_FUNCTION_VER(pthread_cond_init, pthread_cond_init_2_3_2,
+      GLIBC_2.3.2);
+  INTERCEPT_FUNCTION_VER(pthread_cond_destroy, pthread_cond_destroy_2_3_2,
+      GLIBC_2.3.2);
+  INTERCEPT_FUNCTION_VER(pthread_cond_signal, pthread_cond_signal_2_3_2,
+      GLIBC_2.3.2);
+  INTERCEPT_FUNCTION_VER(pthread_cond_broadcast, pthread_cond_broadcast_2_3_2,
+      GLIBC_2.3.2);
+  INTERCEPT_FUNCTION_VER(pthread_cond_wait, pthread_cond_wait_2_3_2,
+      GLIBC_2.3.2);
+  INTERCEPT_FUNCTION_VER(pthread_cond_timedwait, pthread_cond_timedwait_2_3_2,
+      GLIBC_2.3.2);
 
   TSAN_INTERCEPT(pthread_barrier_init);
   TSAN_INTERCEPT(pthread_barrier_destroy);

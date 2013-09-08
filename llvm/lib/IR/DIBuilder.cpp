@@ -322,7 +322,7 @@ DIDerivedType DIBuilder::createMemberPointerType(DIType PointeeTy,
     ConstantInt::get(Type::getInt64Ty(VMContext), 0), // Offset
     ConstantInt::get(Type::getInt32Ty(VMContext), 0), // Flags
     PointeeTy,
-    Base
+    Base.generateRef()
   };
   return DIDerivedType(MDNode::get(VMContext, Elts));
 }
@@ -607,7 +607,7 @@ DICompositeType DIBuilder::createClassType(DIDescriptor Context, StringRef Name,
                                            uint64_t OffsetInBits,
                                            unsigned Flags, DIType DerivedFrom,
                                            DIArray Elements,
-                                           MDNode *VTableHolder,
+                                           DIType VTableHolder,
                                            MDNode *TemplateParams,
                                            StringRef UniqueIdentifier) {
   assert((!Context || Context.isScope() || Context.isType()) &&
@@ -626,7 +626,7 @@ DICompositeType DIBuilder::createClassType(DIDescriptor Context, StringRef Name,
     DerivedFrom,
     Elements,
     ConstantInt::get(Type::getInt32Ty(VMContext), 0),
-    VTableHolder,
+    VTableHolder.generateRef(),
     TemplateParams,
     UniqueIdentifier.empty() ? NULL : MDString::get(VMContext, UniqueIdentifier)
   };
@@ -647,7 +647,7 @@ DICompositeType DIBuilder::createStructType(DIDescriptor Context,
                                             unsigned Flags, DIType DerivedFrom,
                                             DIArray Elements,
                                             unsigned RunTimeLang,
-                                            MDNode *VTableHolder,
+                                            DIType VTableHolder,
                                             StringRef UniqueIdentifier) {
  // TAG_structure_type is encoded in DICompositeType format.
   Value *Elts[] = {
@@ -663,7 +663,7 @@ DICompositeType DIBuilder::createStructType(DIDescriptor Context,
     DerivedFrom,
     Elements,
     ConstantInt::get(Type::getInt32Ty(VMContext), RunTimeLang),
-    VTableHolder,
+    VTableHolder.generateRef(),
     NULL,
     UniqueIdentifier.empty() ? NULL : MDString::get(VMContext, UniqueIdentifier)
   };
@@ -1104,7 +1104,7 @@ DISubprogram DIBuilder::createMethod(DIDescriptor Context,
                                      bool isLocalToUnit,
                                      bool isDefinition,
                                      unsigned VK, unsigned VIndex,
-                                     MDNode *VTableHolder,
+                                     DIType VTableHolder,
                                      unsigned Flags,
                                      bool isOptimized,
                                      Function *Fn,
@@ -1125,7 +1125,7 @@ DISubprogram DIBuilder::createMethod(DIDescriptor Context,
     ConstantInt::get(Type::getInt1Ty(VMContext), isDefinition),
     ConstantInt::get(Type::getInt32Ty(VMContext), (unsigned)VK),
     ConstantInt::get(Type::getInt32Ty(VMContext), VIndex),
-    VTableHolder,
+    VTableHolder.generateRef(),
     ConstantInt::get(Type::getInt32Ty(VMContext), Flags),
     ConstantInt::get(Type::getInt1Ty(VMContext), isOptimized),
     Fn,

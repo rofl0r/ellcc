@@ -51,6 +51,7 @@ class ObjCMigrateASTConsumer : public ASTConsumer {
   void migrateMethods(ASTContext &Ctx, ObjCContainerDecl *CDecl);
   void migrateMethodInstanceType(ASTContext &Ctx, ObjCContainerDecl *CDecl,
                                  ObjCMethodDecl *OM);
+  bool migrateProperty(ASTContext &Ctx, ObjCInterfaceDecl *D, ObjCMethodDecl *OM);
   void migrateNsReturnsInnerPointer(ASTContext &Ctx, ObjCMethodDecl *OM);
   void migrateFactoryMethod(ASTContext &Ctx, ObjCContainerDecl *CDecl,
                             ObjCMethodDecl *OM,
@@ -69,8 +70,8 @@ class ObjCMigrateASTConsumer : public ASTConsumer {
   
   void migrateARCSafeAnnotation(ASTContext &Ctx, ObjCContainerDecl *CDecl);
   
-  CF_BRIDGING_KIND migrateAddMethodAnnotation(ASTContext &Ctx,
-                                              const ObjCMethodDecl *MethodDecl);
+  void migrateAddMethodAnnotation(ASTContext &Ctx,
+                                  const ObjCMethodDecl *MethodDecl);
 public:
   std::string MigrateDir;
   bool MigrateLiterals;
@@ -316,8 +317,13 @@ static bool rewriteToObjCProperty(const ObjCMethodDecl *Getter,
   }
   else
     PropertyString += PropertyNameString;
+  SourceLocation StartGetterSelectorLoc = Getter->getSelectorStartLoc();
+  Selector GetterSelector = Getter->getSelector();
+  
+  SourceLocation EndGetterSelectorLoc =
+    StartGetterSelectorLoc.getLocWithOffset(GetterSelector.getNameForSlot(0).size());
   commit.replace(CharSourceRange::getCharRange(Getter->getLocStart(),
-                                               Getter->getDeclaratorEndLoc()),
+                                               EndGetterSelectorLoc),
                  PropertyString);
   if (Setter) {
     SourceLocation EndLoc = Setter->getDeclaratorEndLoc();
@@ -333,64 +339,8 @@ void ObjCMigrateASTConsumer::migrateObjCInterfaceDecl(ASTContext &Ctx,
   for (ObjCContainerDecl::method_iterator M = D->meth_begin(), MEnd = D->meth_end();
        M != MEnd; ++M) {
     ObjCMethodDecl *Method = (*M);
-    if (Method->isPropertyAccessor() || !Method->isInstanceMethod() ||
-        Method->param_size() != 0)
-      continue;
-    // Is this method candidate to be a getter?
-    QualType GRT = Method->getResultType();
-    if (GRT->isVoidType())
-      continue;
-    // FIXME. Don't know what todo with attributes, skip for now.
-    if (Method->hasAttrs())
-      continue;
-    
-    Selector GetterSelector = Method->getSelector();
-    IdentifierInfo *getterName = GetterSelector.getIdentifierInfoForSlot(0);
-    Selector SetterSelector =
-      SelectorTable::constructSetterSelector(PP.getIdentifierTable(),
-                                             PP.getSelectorTable(),
-                                             getterName);
-    ObjCMethodDecl *SetterMethod = D->lookupMethod(SetterSelector, true);
-    bool GetterHasIsPrefix = false;
-    if (!SetterMethod) {
-      // try a different naming convention for getter: isXxxxx
-      StringRef getterNameString = getterName->getName();
-      if (getterNameString.startswith("is") && !GRT->isObjCRetainableType()) {
-        GetterHasIsPrefix = true;
-        const char *CGetterName = getterNameString.data() + 2;
-        if (CGetterName[0] && isUppercase(CGetterName[0])) {
-          getterName = &Ctx.Idents.get(CGetterName);
-          SetterSelector =
-            SelectorTable::constructSetterSelector(PP.getIdentifierTable(),
-                                                   PP.getSelectorTable(),
-                                                   getterName);
-          SetterMethod = D->lookupMethod(SetterSelector, true);
-        }
-      }
-    }
-    if (SetterMethod) {
-      // Is this a valid setter, matching the target getter?
-      QualType SRT = SetterMethod->getResultType();
-      if (!SRT->isVoidType())
-        continue;
-      const ParmVarDecl *argDecl = *SetterMethod->param_begin();
-      QualType ArgType = argDecl->getType();
-      if (!Ctx.hasSameUnqualifiedType(ArgType, GRT) ||
-          SetterMethod->hasAttrs())
-          continue;
-        edit::Commit commit(*Editor);
-        rewriteToObjCProperty(Method, SetterMethod, *NSAPIObj, commit,
-                              GetterHasIsPrefix);
-        Editor->commit(commit);
-    }
-    else if (MigrateReadonlyProperty) {
-      // Try a non-void method with no argument (and no setter or property of same name
-      // as a 'readonly' property.
-      edit::Commit commit(*Editor);
-      rewriteToObjCProperty(Method, 0 /*SetterMethod*/, *NSAPIObj, commit,
-                            false /*GetterHasIsPrefix*/);
-      Editor->commit(commit);
-    }
+    if (!migrateProperty(Ctx, D, Method))
+      migrateNsReturnsInnerPointer(Ctx, Method);
   }
 }
 
@@ -747,6 +697,72 @@ static bool TypeIsInnerPointer(QualType T) {
   return true;
 }
 
+bool ObjCMigrateASTConsumer::migrateProperty(ASTContext &Ctx,
+                             ObjCInterfaceDecl *D,
+                             ObjCMethodDecl *Method) {
+  if (Method->isPropertyAccessor() || !Method->isInstanceMethod() ||
+      Method->param_size() != 0)
+    return false;
+  // Is this method candidate to be a getter?
+  QualType GRT = Method->getResultType();
+  if (GRT->isVoidType())
+    return false;
+  // FIXME. Don't know what todo with attributes, skip for now.
+  if (Method->hasAttrs())
+    return false;
+  
+  Selector GetterSelector = Method->getSelector();
+  IdentifierInfo *getterName = GetterSelector.getIdentifierInfoForSlot(0);
+  Selector SetterSelector =
+  SelectorTable::constructSetterSelector(PP.getIdentifierTable(),
+                                         PP.getSelectorTable(),
+                                         getterName);
+  ObjCMethodDecl *SetterMethod = D->lookupMethod(SetterSelector, true);
+  bool GetterHasIsPrefix = false;
+  if (!SetterMethod) {
+    // try a different naming convention for getter: isXxxxx
+    StringRef getterNameString = getterName->getName();
+    if (getterNameString.startswith("is") && !GRT->isObjCRetainableType()) {
+      GetterHasIsPrefix = true;
+      const char *CGetterName = getterNameString.data() + 2;
+      if (CGetterName[0] && isUppercase(CGetterName[0])) {
+        getterName = &Ctx.Idents.get(CGetterName);
+        SetterSelector =
+        SelectorTable::constructSetterSelector(PP.getIdentifierTable(),
+                                               PP.getSelectorTable(),
+                                               getterName);
+        SetterMethod = D->lookupMethod(SetterSelector, true);
+      }
+    }
+  }
+  if (SetterMethod) {
+    // Is this a valid setter, matching the target getter?
+    QualType SRT = SetterMethod->getResultType();
+    if (!SRT->isVoidType())
+      return false;
+    const ParmVarDecl *argDecl = *SetterMethod->param_begin();
+    QualType ArgType = argDecl->getType();
+    if (!Ctx.hasSameUnqualifiedType(ArgType, GRT) ||
+        SetterMethod->hasAttrs())
+      return false;
+    edit::Commit commit(*Editor);
+    rewriteToObjCProperty(Method, SetterMethod, *NSAPIObj, commit,
+                          GetterHasIsPrefix);
+    Editor->commit(commit);
+    return true;
+  }
+  else if (MigrateReadonlyProperty) {
+    // Try a non-void method with no argument (and no setter or property of same name
+    // as a 'readonly' property.
+    edit::Commit commit(*Editor);
+    rewriteToObjCProperty(Method, 0 /*SetterMethod*/, *NSAPIObj, commit,
+                          false /*GetterHasIsPrefix*/);
+    Editor->commit(commit);
+    return true;
+  }
+  return false;
+}
+
 void ObjCMigrateASTConsumer::migrateNsReturnsInnerPointer(ASTContext &Ctx,
                                                           ObjCMethodDecl *OM) {
   if (OM->hasAttr<ObjCReturnsInnerPointerAttr>())
@@ -770,7 +786,6 @@ void ObjCMigrateASTConsumer::migrateMethods(ASTContext &Ctx,
        M != MEnd; ++M) {
     ObjCMethodDecl *Method = (*M);
     migrateMethodInstanceType(Ctx, CDecl, Method);
-    migrateNsReturnsInnerPointer(Ctx, Method);
   }
 }
 
@@ -909,25 +924,27 @@ void ObjCMigrateASTConsumer::migrateCFAnnotation(ASTContext &Ctx, const Decl *De
   }
   
   // Finction must be annotated first.
-  CF_BRIDGING_KIND AuditKind;
-  if (const FunctionDecl *FuncDecl = dyn_cast<FunctionDecl>(Decl))
-    AuditKind = migrateAddFunctionAnnotation(Ctx, FuncDecl);
-  else
-    AuditKind = migrateAddMethodAnnotation(Ctx, cast<ObjCMethodDecl>(Decl));
-  if (AuditKind == CF_BRIDGING_ENABLE) {
-    CFFunctionIBCandidates.push_back(Decl);
-    if (!FileId)
-      FileId = PP.getSourceManager().getFileID(Decl->getLocation()).getHashValue();
-  }
-  else if (AuditKind == CF_BRIDGING_MAY_INCLUDE) {
-    if (!CFFunctionIBCandidates.empty()) {
+  if (const FunctionDecl *FuncDecl = dyn_cast<FunctionDecl>(Decl)) {
+    CF_BRIDGING_KIND AuditKind = migrateAddFunctionAnnotation(Ctx, FuncDecl);
+    if (AuditKind == CF_BRIDGING_ENABLE) {
       CFFunctionIBCandidates.push_back(Decl);
       if (!FileId)
         FileId = PP.getSourceManager().getFileID(Decl->getLocation()).getHashValue();
     }
+    else if (AuditKind == CF_BRIDGING_MAY_INCLUDE) {
+      if (!CFFunctionIBCandidates.empty()) {
+        CFFunctionIBCandidates.push_back(Decl);
+        if (!FileId)
+          FileId = PP.getSourceManager().getFileID(Decl->getLocation()).getHashValue();
+      }
+    }
+    else
+      AnnotateImplicitBridging(Ctx);
   }
-  else
+  else {
+    migrateAddMethodAnnotation(Ctx, cast<ObjCMethodDecl>(Decl));
     AnnotateImplicitBridging(Ctx);
+  }
 }
 
 void ObjCMigrateASTConsumer::AddCFAnnotations(ASTContext &Ctx,
@@ -938,14 +955,23 @@ void ObjCMigrateASTConsumer::AddCFAnnotations(ASTContext &Ctx,
   if (!ResultAnnotated) {
     RetEffect Ret = CE.getReturnValue();
     const char *AnnotationString = 0;
-    if (Ret.getObjKind() == RetEffect::CF && Ret.isOwned()) {
-      if (Ctx.Idents.get("CF_RETURNS_RETAINED").hasMacroDefinition())
+    if (Ret.getObjKind() == RetEffect::CF) {
+      if (Ret.isOwned() &&
+          Ctx.Idents.get("CF_RETURNS_RETAINED").hasMacroDefinition())
         AnnotationString = " CF_RETURNS_RETAINED";
-    }
-    else if (Ret.getObjKind() == RetEffect::CF && !Ret.isOwned()) {
-      if (Ctx.Idents.get("CF_RETURNS_NOT_RETAINED").hasMacroDefinition())
+      else if (Ret.notOwned() &&
+               Ctx.Idents.get("CF_RETURNS_NOT_RETAINED").hasMacroDefinition())
         AnnotationString = " CF_RETURNS_NOT_RETAINED";
     }
+    else if (Ret.getObjKind() == RetEffect::ObjC) {
+      if (Ret.isOwned() &&
+          Ctx.Idents.get("NS_RETURNS_RETAINED").hasMacroDefinition())
+        AnnotationString = " NS_RETURNS_RETAINED";
+      else if (Ret.notOwned() &&
+               Ctx.Idents.get("NS_RETURNS_NOT_RETAINED").hasMacroDefinition())
+        AnnotationString = " NS_RETURNS_NOT_RETAINED";
+    }
+    
     if (AnnotationString) {
       edit::Commit commit(*Editor);
       commit.insertAfterToken(FuncDecl->getLocEnd(), AnnotationString);
@@ -964,6 +990,12 @@ void ObjCMigrateASTConsumer::AddCFAnnotations(ASTContext &Ctx,
       commit.insertBefore(pd->getLocation(), "CF_CONSUMED ");
       Editor->commit(commit);
     }
+    else if (AE == DecRefMsg && !pd->getAttr<NSConsumedAttr>() &&
+             Ctx.Idents.get("NS_CONSUMED").hasMacroDefinition()) {
+      edit::Commit commit(*Editor);
+      commit.insertBefore(pd->getLocation(), "NS_CONSUMED ");
+      Editor->commit(commit);
+    }
   }
 }
 
@@ -977,7 +1009,10 @@ ObjCMigrateASTConsumer::CF_BRIDGING_KIND
     
   CallEffects CE  = CallEffects::getEffect(FuncDecl);
   bool FuncIsReturnAnnotated = (FuncDecl->getAttr<CFReturnsRetainedAttr>() ||
-                                FuncDecl->getAttr<CFReturnsNotRetainedAttr>());
+                                FuncDecl->getAttr<CFReturnsNotRetainedAttr>() ||
+                                FuncDecl->getAttr<NSReturnsRetainedAttr>() ||
+                                FuncDecl->getAttr<NSReturnsNotRetainedAttr>() ||
+                                FuncDecl->getAttr<NSReturnsAutoreleasedAttr>());
   
   // Trivial case of when funciton is annotated and has no argument.
   if (FuncIsReturnAnnotated && FuncDecl->getNumParams() == 0)
@@ -987,7 +1022,7 @@ ObjCMigrateASTConsumer::CF_BRIDGING_KIND
   if (!FuncIsReturnAnnotated) {
     RetEffect Ret = CE.getReturnValue();
     if (Ret.getObjKind() == RetEffect::CF &&
-        (Ret.isOwned() || !Ret.isOwned()))
+        (Ret.isOwned() || Ret.notOwned()))
       ReturnCFAudited = true;
     else if (!AuditedType(FuncDecl->getResultType()))
       return CF_BRIDGING_NONE;
@@ -1044,14 +1079,35 @@ void ObjCMigrateASTConsumer::AddCFAnnotations(ASTContext &Ctx,
   if (!ResultAnnotated) {
     RetEffect Ret = CE.getReturnValue();
     const char *AnnotationString = 0;
-    if (Ret.getObjKind() == RetEffect::CF && Ret.isOwned()) {
-      if (Ctx.Idents.get("CF_RETURNS_RETAINED").hasMacroDefinition())
+    if (Ret.getObjKind() == RetEffect::CF) {
+      if (Ret.isOwned() &&
+          Ctx.Idents.get("CF_RETURNS_RETAINED").hasMacroDefinition())
         AnnotationString = " CF_RETURNS_RETAINED";
-    }
-    else if (Ret.getObjKind() == RetEffect::CF && !Ret.isOwned()) {
-      if (Ctx.Idents.get("CF_RETURNS_NOT_RETAINED").hasMacroDefinition())
+      else if (Ret.notOwned() &&
+               Ctx.Idents.get("CF_RETURNS_NOT_RETAINED").hasMacroDefinition())
         AnnotationString = " CF_RETURNS_NOT_RETAINED";
     }
+    else if (Ret.getObjKind() == RetEffect::ObjC) {
+      ObjCMethodFamily OMF = MethodDecl->getMethodFamily();
+      switch (OMF) {
+        case clang::OMF_alloc:
+        case clang::OMF_new:
+        case clang::OMF_copy:
+        case clang::OMF_init:
+        case clang::OMF_mutableCopy:
+          break;
+          
+        default:
+          if (Ret.isOwned() &&
+              Ctx.Idents.get("NS_RETURNS_RETAINED").hasMacroDefinition())
+            AnnotationString = " NS_RETURNS_RETAINED";
+          else if (Ret.notOwned() &&
+                   Ctx.Idents.get("NS_RETURNS_NOT_RETAINED").hasMacroDefinition())
+            AnnotationString = " NS_RETURNS_NOT_RETAINED";
+          break;
+      }
+    }
+    
     if (AnnotationString) {
       edit::Commit commit(*Editor);
       commit.insertBefore(MethodDecl->getLocEnd(), AnnotationString);
@@ -1073,58 +1129,61 @@ void ObjCMigrateASTConsumer::AddCFAnnotations(ASTContext &Ctx,
   }
 }
 
-ObjCMigrateASTConsumer::CF_BRIDGING_KIND
-  ObjCMigrateASTConsumer::migrateAddMethodAnnotation(
+void ObjCMigrateASTConsumer::migrateAddMethodAnnotation(
                                             ASTContext &Ctx,
                                             const ObjCMethodDecl *MethodDecl) {
-  if (MethodDecl->hasBody())
-    return CF_BRIDGING_NONE;
+  if (MethodDecl->hasBody() || MethodDecl->isImplicit())
+    return;
   
   CallEffects CE  = CallEffects::getEffect(MethodDecl);
   bool MethodIsReturnAnnotated = (MethodDecl->getAttr<CFReturnsRetainedAttr>() ||
-                                  MethodDecl->getAttr<CFReturnsNotRetainedAttr>());
+                                  MethodDecl->getAttr<CFReturnsNotRetainedAttr>() ||
+                                  MethodDecl->getAttr<NSReturnsRetainedAttr>() ||
+                                  MethodDecl->getAttr<NSReturnsNotRetainedAttr>() ||
+                                  MethodDecl->getAttr<NSReturnsAutoreleasedAttr>());
+  
+  if (CE.getReceiver() ==  DecRefMsg &&
+      !MethodDecl->getAttr<NSConsumesSelfAttr>() &&
+      MethodDecl->getMethodFamily() != OMF_init &&
+      MethodDecl->getMethodFamily() != OMF_release &&
+      Ctx.Idents.get("NS_CONSUMES_SELF").hasMacroDefinition()) {
+    edit::Commit commit(*Editor);
+    commit.insertBefore(MethodDecl->getLocEnd(), " NS_CONSUMES_SELF");
+    Editor->commit(commit);
+  }
   
   // Trivial case of when funciton is annotated and has no argument.
   if (MethodIsReturnAnnotated &&
       (MethodDecl->param_begin() == MethodDecl->param_end()))
-    return CF_BRIDGING_NONE;
+    return;
   
-  bool ReturnCFAudited = false;
   if (!MethodIsReturnAnnotated) {
     RetEffect Ret = CE.getReturnValue();
-    if (Ret.getObjKind() == RetEffect::CF && (Ret.isOwned() || !Ret.isOwned()))
-      ReturnCFAudited = true;
+    if ((Ret.getObjKind() == RetEffect::CF ||
+         Ret.getObjKind() == RetEffect::ObjC) &&
+        (Ret.isOwned() || Ret.notOwned())) {
+      AddCFAnnotations(Ctx, CE, MethodDecl, false);
+      return;
+    }
     else if (!AuditedType(MethodDecl->getResultType()))
-      return CF_BRIDGING_NONE;
+      return;
   }
   
   // At this point result type is either annotated or audited.
   // Now, how about argument types.
   llvm::ArrayRef<ArgEffect> AEArgs = CE.getArgs();
   unsigned i = 0;
-  bool ArgCFAudited = false;
   for (ObjCMethodDecl::param_const_iterator pi = MethodDecl->param_begin(),
        pe = MethodDecl->param_end(); pi != pe; ++pi, ++i) {
     const ParmVarDecl *pd = *pi;
     ArgEffect AE = AEArgs[i];
-    if (AE == DecRef /*CFConsumed annotated*/ || AE == IncRef) {
-      if (AE == DecRef && !pd->getAttr<CFConsumedAttr>())
-        ArgCFAudited = true;
-      else if (AE == IncRef)
-        ArgCFAudited = true;
-    }
-    else {
-      QualType AT = pd->getType();
-      if (!AuditedType(AT)) {
-        AddCFAnnotations(Ctx, CE, MethodDecl, MethodIsReturnAnnotated);
-        return CF_BRIDGING_NONE;
-      }
+    if ((AE == DecRef && !pd->getAttr<CFConsumedAttr>()) || AE == IncRef ||
+        !AuditedType(pd->getType())) {
+      AddCFAnnotations(Ctx, CE, MethodDecl, MethodIsReturnAnnotated);
+      return;
     }
   }
-  if (ReturnCFAudited || ArgCFAudited)
-    return CF_BRIDGING_ENABLE;
-  
-  return CF_BRIDGING_MAY_INCLUDE;
+  return;
 }
 
 namespace {

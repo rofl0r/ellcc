@@ -32,17 +32,52 @@ namespace __sanitizer {
   extern unsigned timeval_sz;
   extern unsigned uid_t_sz;
   extern unsigned mbstate_t_sz;
+  extern unsigned struct_timezone_sz;
+  extern unsigned struct_tms_sz;
+  extern unsigned struct_itimerspec_sz;
+  extern unsigned struct_sigevent_sz;
+  extern unsigned struct_sched_param_sz;
 
 #if !SANITIZER_ANDROID
   extern unsigned ucontext_t_sz;
 #endif // !SANITIZER_ANDROID
 
 #if SANITIZER_LINUX
+  extern unsigned struct___old_kernel_stat_sz;
+  extern unsigned struct_kernel_stat_sz;
+  extern unsigned struct_kernel_stat64_sz;
+  extern unsigned struct_io_event_sz;
+  extern unsigned struct_iocb_sz;
+  extern unsigned struct_utimbuf_sz;
+  extern unsigned struct_new_utsname_sz;
+  extern unsigned struct_old_utsname_sz;
+  extern unsigned struct_oldold_utsname_sz;
+  extern unsigned struct_msqid_ds_sz;
+  extern unsigned struct_shmid_ds_sz;
+  extern unsigned struct_mq_attr_sz;
+  extern unsigned struct_perf_event_attr_sz;
+  extern unsigned struct_timex_sz;
+  extern unsigned struct_ustat_sz;
+
   extern unsigned struct_rlimit_sz;
   extern unsigned struct_statfs_sz;
   extern unsigned struct_epoll_event_sz;
   extern unsigned struct_sysinfo_sz;
   extern unsigned struct_timespec_sz;
+  extern unsigned __user_cap_header_struct_sz;
+  extern unsigned __user_cap_data_struct_sz;
+  const unsigned old_sigset_t_sz = sizeof(unsigned long);
+  const unsigned struct_kexec_segment_sz = 4 * sizeof(unsigned long);
+
+  struct __sanitizer___sysctl_args {
+    int *name;
+    int nlen;
+    void *oldval;
+    uptr *oldlenp;
+    void *newval;
+    uptr newlen;
+    unsigned long ___unused[4];
+  };
 #endif // SANITIZER_LINUX
 
 #if SANITIZER_LINUX && !SANITIZER_ANDROID
@@ -123,6 +158,23 @@ namespace __sanitizer {
     unsigned short d_reclen;
     // more fields that we don't care about
   };
+#endif
+
+#if SANITIZER_LINUX
+#ifdef _LP64
+  typedef unsigned __sanitizer___kernel_uid_t;
+  typedef unsigned __sanitizer___kernel_gid_t;
+#else
+  typedef unsigned short  __sanitizer___kernel_uid_t;
+  typedef unsigned short __sanitizer___kernel_gid_t;
+#endif
+  typedef unsigned short __sanitizer___kernel_old_uid_t;
+  typedef unsigned short __sanitizer___kernel_old_gid_t;
+  typedef long __sanitizer___kernel_off_t;
+  typedef long long __sanitizer___kernel_loff_t;
+  typedef struct {
+    unsigned long fds_bits[1024 / (8 * sizeof(long))];
+  } __sanitizer___kernel_fd_set;
 #endif
 
   // This thing depends on the platform. We are only interested in the upper

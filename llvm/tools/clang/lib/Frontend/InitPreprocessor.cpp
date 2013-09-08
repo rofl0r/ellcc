@@ -497,7 +497,7 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
   assert(TI.getCharWidth() == 8 && "Only support 8-bit char so far");
   Builder.defineMacro("__CHAR_BIT__", "8");
 
-  DefineTypeSize("__SCHAR_MAX__", TI.getCharWidth(), "", true, Builder);
+  DefineTypeSize("__SCHAR_MAX__", TargetInfo::SignedChar, TI, Builder);
   DefineTypeSize("__SHRT_MAX__", TargetInfo::SignedShort, TI, Builder);
   DefineTypeSize("__USHRT_MAX__", TargetInfo::UnsignedShort, TI, Builder);
   DefineTypeSize("__INT_MAX__", TargetInfo::SignedInt, TI, Builder);

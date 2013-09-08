@@ -1936,6 +1936,9 @@ void OMPClauseEnqueue::VisitOMPDefaultClause(const OMPDefaultClause *C) { }
 void OMPClauseEnqueue::VisitOMPPrivateClause(const OMPPrivateClause *C) {
   PROCESS_OMP_CLAUSE_LIST(OMPPrivateClause, C)
 }
+void OMPClauseEnqueue::VisitOMPSharedClause(const OMPSharedClause *C) {
+  PROCESS_OMP_CLAUSE_LIST(OMPSharedClause, C)
+}
 #undef PROCESS_OMP_CLAUSE_LIST
 }
 void EnqueueVisitor::EnqueueChildren(const OMPClause *S) {
@@ -2072,7 +2075,6 @@ void EnqueueVisitor::VisitDeclStmt(const DeclStmt *S) {
 }
 void EnqueueVisitor::VisitDesignatedInitExpr(const DesignatedInitExpr *E) {
   AddStmt(E->getInit());
-  typedef DesignatedInitExpr::Designator Designator;
   for (DesignatedInitExpr::const_reverse_designators_iterator
          D = E->designators_rbegin(), DEnd = E->designators_rend();
          D != DEnd; ++D) {

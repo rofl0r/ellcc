@@ -403,6 +403,30 @@ static bool IsDecimal(char c) {
   return c >= '0' && c <= '9';
 }
 
+static bool IsHex(char c) {
+  return (c >= '0' && c <= '9')
+      || (c >= 'a' && c <= 'f');
+}
+
+static uptr ReadHex(const char *p) {
+  uptr v = 0;
+  for (; IsHex(p[0]); p++) {
+    if (p[0] >= '0' && p[0] <= '9')
+      v = v * 16 + p[0] - '0';
+    else
+      v = v * 16 + p[0] - 'a' + 10;
+  }
+  return v;
+}
+
+static uptr ReadDecimal(const char *p) {
+  uptr v = 0;
+  for (; IsDecimal(p[0]); p++)
+    v = v * 10 + p[0] - '0';
+  return v;
+}
+
+
 bool MemoryMappingLayout::Next(uptr *start, uptr *end, uptr *offset,
                                char filename[], uptr filename_size,
                                uptr *protection) {
@@ -471,6 +495,29 @@ bool MemoryMappingLayout::GetObjectNameAndOffset(uptr addr, uptr *offset,
                                                  uptr *protection) {
   return IterateForObjectNameAndOffset(addr, offset, filename, filename_size,
                                        protection);
+}
+
+void GetMemoryProfile(fill_profile_f cb, uptr *stats, uptr stats_size) {
+  char *smaps = 0;
+  uptr smaps_cap = 0;
+  uptr smaps_len = ReadFileToBuffer("/proc/self/smaps",
+      &smaps, &smaps_cap, 64<<20);
+  uptr start = 0;
+  bool file = false;
+  const char *pos = smaps;
+  while (pos < smaps + smaps_len) {
+    if (IsHex(pos[0])) {
+      start = ReadHex(pos);
+      for (; *pos != '/' && *pos > '\n'; pos++) {}
+      file = *pos == '/';
+    } else if (internal_strncmp(pos, "Rss:", 4) == 0) {
+      for (; *pos < '0' || *pos > '9'; pos++) {}
+      uptr rss = ReadDecimal(pos) * 1024;
+      cb(start, rss, file, stats, stats_size);
+    }
+    while (*pos++ != '\n') {}
+  }
+  UnmapOrDie(smaps, smaps_cap);
 }
 
 enum MutexState {
@@ -679,6 +726,69 @@ void ForEachMappedRegion(link_map *map, void (*cb)(const void *, uptr)) {
 }
 #endif
 
+#if defined(__x86_64__)
+// We cannot use glibc's clone wrapper, because it messes with the child
+// task's TLS. It writes the PID and TID of the child task to its thread
+// descriptor, but in our case the child task shares the thread descriptor with
+// the parent (because we don't know how to allocate a new thread
+// descriptor to keep glibc happy). So the stock version of clone(), when
+// used with CLONE_VM, would end up corrupting the parent's thread descriptor.
+uptr internal_clone(int (*fn)(void *), void *child_stack, int flags, void *arg,
+                    int *parent_tidptr, void *newtls, int *child_tidptr) {
+  long long res;
+  if (!fn || !child_stack)
+    return -EINVAL;
+  CHECK_EQ(0, (uptr)child_stack % 16);
+  child_stack = (char *)child_stack - 2 * sizeof(void *);
+  ((void **)child_stack)[0] = (void *)(uptr)fn;
+  ((void **)child_stack)[1] = arg;
+  __asm__ __volatile__(
+                       /* %rax = syscall(%rax = __NR_clone,
+                        *                %rdi = flags,
+                        *                %rsi = child_stack,
+                        *                %rdx = parent_tidptr,
+                        *                %r8  = new_tls,
+                        *                %r10 = child_tidptr)
+                        */
+                       "movq   %6,%%r8\n"
+                       "movq   %7,%%r10\n"
+                       ".cfi_endproc\n"
+                       "syscall\n"
+
+                       /* if (%rax != 0)
+                        *   return;
+                        */
+                       "testq  %%rax,%%rax\n"
+                       "jnz    1f\n"
+
+                       /* In the child. Terminate unwind chain. */
+                       ".cfi_startproc\n"
+                       ".cfi_undefined %%rip;\n"
+                       "xorq   %%rbp,%%rbp\n"
+
+                       /* Call "fn(arg)". */
+                       "popq   %%rax\n"
+                       "popq   %%rdi\n"
+                       "call   *%%rax\n"
+
+                       /* Call _exit(%rax). */
+                       "movq   %%rax,%%rdi\n"
+                       "movq   %2,%%rax\n"
+                       "syscall\n"
+
+                       /* Return to parent. */
+                     "1:\n"
+                       : "=a" (res)
+                       : "a"(__NR_clone), "i"(__NR_exit),
+                         "S"(child_stack),
+                         "D"(flags),
+                         "d"(parent_tidptr),
+                         "r"(newtls),
+                         "r"(child_tidptr)
+                       : "rsp", "memory", "r8", "r10", "r11", "rcx");
+  return res;
+}
+#endif  // defined(__x86_64__)
 }  // namespace __sanitizer
 
 #endif  // SANITIZER_LINUX

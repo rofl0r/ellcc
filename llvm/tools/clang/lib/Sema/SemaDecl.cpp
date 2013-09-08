@@ -2382,9 +2382,11 @@ bool Sema::MergeFunctionDecl(FunctionDecl *New, Decl *OldD, Scope *S,
   }
   
   if (RequiresAdjustment) {
-    NewType = Context.adjustFunctionType(NewType, NewTypeInfo);
-    New->setType(QualType(NewType, 0));
+    const FunctionType *AdjustedType = New->getType()->getAs<FunctionType>();
+    AdjustedType = Context.adjustFunctionType(AdjustedType, NewTypeInfo);
+    New->setType(QualType(AdjustedType, 0));
     NewQType = Context.getCanonicalType(New->getType());
+    NewType = cast<FunctionType>(NewQType);
   }
 
   // If this redeclaration makes the function inline, we may need to add it to
@@ -2739,8 +2741,7 @@ bool Sema::MergeCompatibleFunctionDecls(FunctionDecl *New, FunctionDecl *Old,
     New->setPure();
 
   // Merge "used" flag.
-  if (Old->isUsed(false))
-    New->setUsed();
+  New->setIsUsed(Old->isUsed(false));
 
   // Merge attributes from the parameters.  These can mismatch with K&R
   // declarations.
@@ -2863,9 +2864,38 @@ void Sema::MergeVarDeclTypes(VarDecl *New, VarDecl *Old,
   }
 
   // Don't actually update the type on the new declaration if the old
-  // declaration was a extern declaration in a different scope.
+  // declaration was an extern declaration in a different scope.
   if (MergeTypeWithOld)
     New->setType(MergedT);
+}
+
+static bool mergeTypeWithPrevious(Sema &S, VarDecl *NewVD, VarDecl *OldVD,
+                                  LookupResult &Previous) {
+  // C11 6.2.7p4:
+  //   For an identifier with internal or external linkage declared
+  //   in a scope in which a prior declaration of that identifier is
+  //   visible, if the prior declaration specifies internal or
+  //   external linkage, the type of the identifier at the later
+  //   declaration becomes the composite type.
+  //
+  // If the variable isn't visible, we do not merge with its type.
+  if (Previous.isShadowed())
+    return false;
+
+  if (S.getLangOpts().CPlusPlus) {
+    // C++11 [dcl.array]p3:
+    //   If there is a preceding declaration of the entity in the same
+    //   scope in which the bound was specified, an omitted array bound
+    //   is taken to be the same as in that earlier declaration.
+    return NewVD->isPreviousDeclInSameBlockScope() ||
+           (!OldVD->getLexicalDeclContext()->isFunctionOrMethod() &&
+            !NewVD->getLexicalDeclContext()->isFunctionOrMethod());
+  } else {
+    // If the old declaration was function-local, don't merge with its
+    // type unless we're in the same function.
+    return !OldVD->getLexicalDeclContext()->isFunctionOrMethod() ||
+           OldVD->getLexicalDeclContext() == NewVD->getLexicalDeclContext();
+  }
 }
 
 /// MergeVarDecl - We just parsed a variable 'New' which has the same name
@@ -2876,8 +2906,7 @@ void Sema::MergeVarDeclTypes(VarDecl *New, VarDecl *Old,
 /// FinalizeDeclaratorGroup. Unfortunately, we can't analyze tentative
 /// definitions here, since the initializer hasn't been attached.
 ///
-void Sema::MergeVarDecl(VarDecl *New, LookupResult &Previous,
-                        bool MergeTypeWithPrevious) {
+void Sema::MergeVarDecl(VarDecl *New, LookupResult &Previous) {
   // If the new decl is already invalid, don't do any other checking.
   if (New->isInvalidDecl())
     return;
@@ -2926,7 +2955,8 @@ void Sema::MergeVarDecl(VarDecl *New, LookupResult &Previous,
   }
 
   // Merge the types.
-  MergeVarDeclTypes(New, Old, MergeTypeWithPrevious);
+  MergeVarDeclTypes(New, Old, mergeTypeWithPrevious(*this, New, Old, Previous));
+
   if (New->isInvalidDecl())
     return;
 
@@ -3021,8 +3051,7 @@ void Sema::MergeVarDecl(VarDecl *New, LookupResult &Previous,
   }
 
   // Merge "used" flag.
-  if (Old->isUsed(false))
-    New->setUsed();
+  New->setIsUsed(Old->isUsed(false));
 
   // Keep a chain of previous declarations.
   New->setPreviousDeclaration(Old);
@@ -5711,48 +5740,15 @@ bool Sema::CheckVariableDeclaration(VarDecl *NewVD, LookupResult &Previous) {
 
   // If we did not find anything by this name, look for a non-visible
   // extern "C" declaration with the same name.
-  //
-  // The actual standards text here is:
-  //
-  // C++11 [basic.link]p6:
-  //   The name of a function declared in block scope and the name
-  //   of a variable declared by a block scope extern declaration
-  //   have linkage. If there is a visible declaration of an entity
-  //   with linkage having the same name and type, ignoring entities
-  //   declared outside the innermost enclosing namespace scope, the
-  //   block scope declaration declares that same entity and
-  //   receives the linkage of the previous declaration.
-  //
-  // C++11 [dcl.array]p3:
-  //   If there is a preceding declaration of the entity in the same
-  //   scope in which the bound was specified, an omitted array bound
-  //   is taken to be the same as in that earlier declaration.
-  //
-  // C11 6.2.7p4:
-  //   For an identifier with internal or external linkage declared
-  //   in a scope in which a prior declaration of that identifier is
-  //   visible, if the prior declaration specifies internal or
-  //   external linkage, the type of the identifier at the later
-  //   declaration becomes the composite type.
-  //
-  // The most important point here is that we're not allowed to
-  // update our understanding of the type according to declarations
-  // not in scope (in C++) or not visible (in C).
-  bool MergeTypeWithPrevious;
   if (Previous.empty() &&
       checkForConflictWithNonVisibleExternC(*this, NewVD, Previous))
-    MergeTypeWithPrevious = false;
-  else
-    MergeTypeWithPrevious =
-        !Previous.isShadowed() &&
-        (!getLangOpts().CPlusPlus || NewVD->isPreviousDeclInSameBlockScope() ||
-         !NewVD->getLexicalDeclContext()->isFunctionOrMethod());
+    Previous.setShadowed();
 
   // Filter out any non-conflicting previous declarations.
   filterNonConflictingPreviousDecls(Context, NewVD, Previous);
 
   if (!Previous.empty()) {
-    MergeVarDecl(NewVD, Previous, MergeTypeWithPrevious);
+    MergeVarDecl(NewVD, Previous);
     return true;
   }
   return false;
@@ -9759,7 +9755,8 @@ void Sema::AddKnownFunctionAttributes(FunctionDecl *FD) {
             FD->getParamDecl(FormatIdx)->getType()->isObjCObjectPointerType())
           fmt = "NSString";
         FD->addAttr(::new (Context) FormatAttr(FD->getLocation(), Context,
-                                               fmt, FormatIdx+1,
+                                               &Context.Idents.get(fmt),
+                                               FormatIdx+1,
                                                HasVAListArg ? 0 : FormatIdx+2));
       }
     }
@@ -9767,7 +9764,8 @@ void Sema::AddKnownFunctionAttributes(FunctionDecl *FD) {
                                              HasVAListArg)) {
      if (!FD->getAttr<FormatAttr>())
        FD->addAttr(::new (Context) FormatAttr(FD->getLocation(), Context,
-                                              "scanf", FormatIdx+1,
+                                              &Context.Idents.get("scanf"),
+                                              FormatIdx+1,
                                               HasVAListArg ? 0 : FormatIdx+2));
     }
 
@@ -9807,7 +9805,7 @@ void Sema::AddKnownFunctionAttributes(FunctionDecl *FD) {
     // target-specific builtins, perhaps?
     if (!FD->getAttr<FormatAttr>())
       FD->addAttr(::new (Context) FormatAttr(FD->getLocation(), Context,
-                                             "printf", 2,
+                                             &Context.Idents.get("printf"), 2,
                                              Name->isStr("vasprintf") ? 0 : 3));
   }
 
