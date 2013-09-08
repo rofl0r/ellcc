@@ -3,10 +3,10 @@
 .global sigsetjmp
 .type sigsetjmp,@function
 sigsetjmp:
-	lui $gp, %hi(_gp_disp)
-	addiu $gp, %lo(_gp_disp)
+	lui $gp, %hi(_gp)       # RICH: was _gp_disp.
+	addi $gp, %lo(_gp)      # RICH: was _gp_disp and addiu.
 	beq $5, $0, 1f
-	addu $gp, $gp, $25
+	# addu $gp, $gp, $25 RICH: use when _gp_disp.
 	subu $sp, $sp, 32
 	sw $4, 20($sp)
 	sw $ra, 24($sp)

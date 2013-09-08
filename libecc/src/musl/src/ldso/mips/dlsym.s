@@ -2,9 +2,9 @@
 .global dlsym
 .type dlsym,@function
 dlsym:
-	lui $gp, %hi(_gp_disp)
-	addiu $gp, %lo(_gp_disp)
-	addu $gp, $gp, $25
+	lui $gp, %hi(_gp)       # RICH: was _gp_disp.
+	addi $gp, %lo(_gp)      # RICH: was _gp_disp and addiu.
+	# addu $gp, $gp, $25    RICH: use when _gp_disp
 	move $6, $ra
 	lw $25, %call16(__dlsym)($gp)
 	addiu $sp, $sp, -16
