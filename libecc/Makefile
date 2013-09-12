@@ -49,11 +49,11 @@ $(Configs):
 	@echo Making libcompiler-rt for $@ in src/compiler-rt
 	make -C src/compiler-rt ellcc_linux-$@
 
-%.unwind.configure:
-	@echo Configuring libunwind for $* in obj/$*/linux/unwind
-	mkdir -p obj/$*/linux/unwind
-	cd obj/$*/linux/unwind ; \
-	../../../../src/unwind/configure CC="$(ELLCC)/bin/ecc $(CFLAGS.$*) -Wno-header-guard" \
+%.libunwind.configure:
+	@echo Configuring libunwind for $* in obj/$*/linux/libunwind
+	mkdir -p obj/$*/linux/libunwind
+	cd obj/$*/linux/libunwind ; \
+	../../../../src/libunwind/configure CC="$(ELLCC)/bin/ecc $(CFLAGS.$*) -Wno-header-guard" \
         --enable-shared=no --enable-cxx-exceptions=yes --host=$*
 
 clean:
