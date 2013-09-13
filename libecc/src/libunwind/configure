@@ -17036,7 +17036,7 @@ rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
 
 if test x$GCC = xyes -a x$intel_compiler != xyes; then
   CFLAGS="${CFLAGS} -fexceptions -Wall -Wsign-compare"
-  LIBCRTS="-lgcc"
+  LIBCRTS="-lcompiler_rt"
 fi
 { $as_echo "$as_me:${as_lineno-$LINENO}: result: $intel_compiler" >&5
 $as_echo "$intel_compiler" >&6; }
