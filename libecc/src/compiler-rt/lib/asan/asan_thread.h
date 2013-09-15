@@ -75,25 +75,40 @@ class AsanThread {
     return addr >= stack_bottom_ && addr < stack_top_;
   }
 
-  void LazyInitFakeStack() {
-    if (fake_stack_) return;
-    fake_stack_ = (FakeStack*)MmapOrDie(sizeof(FakeStack), "FakeStack");
-    fake_stack_->Init(stack_size());
-  }
   void DeleteFakeStack() {
     if (!fake_stack_) return;
-    fake_stack_->Cleanup();
-    UnmapOrDie(fake_stack_, sizeof(FakeStack));
+    fake_stack_->PoisonAll(0);
+    FakeStack *t = fake_stack_;
+    fake_stack_ = 0;
+    SetTLSFakeStack(0);
+    t->Destroy();
   }
-  FakeStack *fake_stack() { return fake_stack_; }
+
+  bool has_fake_stack() {
+    return (reinterpret_cast<uptr>(fake_stack_) > 1);
+  }
+
+  FakeStack *fake_stack() {
+    if (!has_fake_stack())
+      return AsyncSignalSafeLazyInitFakeStack();
+    return fake_stack_;
+  }
+
+  // True is this thread is currently unwinding stack (i.e. collecting a stack
+  // trace). Used to prevent deadlocks on platforms where libc unwinder calls
+  // malloc internally. See PR17116 for more details.
+  bool isUnwinding() const { return unwinding; }
+  void setUnwinding(bool b) { unwinding = b; }
 
   AsanThreadLocalMallocStorage &malloc_storage() { return malloc_storage_; }
   AsanStats &stats() { return stats_; }
 
  private:
-  AsanThread() {}
+  AsanThread() : unwinding(false) {}
   void SetThreadStackAndTls();
   void ClearShadowForThreadStackAndTLS();
+  FakeStack *AsyncSignalSafeLazyInitFakeStack();
+
   AsanThreadContext *context_;
   thread_callback_t start_routine_;
   void *arg_;
@@ -105,6 +120,19 @@ class AsanThread {
   FakeStack *fake_stack_;
   AsanThreadLocalMallocStorage malloc_storage_;
   AsanStats stats_;
+  bool unwinding;
+};
+
+// ScopedUnwinding is a scope for stacktracing member of a context
+class ScopedUnwinding {
+ public:
+  explicit ScopedUnwinding(AsanThread *t) : thread(t) {
+    t->setUnwinding(true);
+  }
+  ~ScopedUnwinding() { thread->setUnwinding(false); }
+
+ private:
+  AsanThread *thread;
 };
 
 struct CreateThreadContextArgs {

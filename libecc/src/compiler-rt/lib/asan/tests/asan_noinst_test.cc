@@ -654,6 +654,7 @@ TEST(AddressSanitizerInterface, PoisoningStressTest) {
       }
     }
   }
+  free(arr);
 }
 
 TEST(AddressSanitizerInterface, PoisonedRegion) {
@@ -785,15 +786,6 @@ TEST(AddressSanitizerInterface, CallocReturnsZeroMem) {
       memset(x, 0x42, size);
       free(Ident(x));
       free(Ident(malloc(Ident(1 << 27))));  // Try to drain the quarantine.
-    }
-  }
-}
-
-TEST(AddressSanitizerInterface, FakeStack) {
-  for (int iter = 0; iter < 1000; iter++) {
-    for (int size = 8; size <= (1 << 14); size += 8) {
-      uptr p = __asan_stack_malloc(size, 0x12345678);
-      CHECK(p);
     }
   }
 }

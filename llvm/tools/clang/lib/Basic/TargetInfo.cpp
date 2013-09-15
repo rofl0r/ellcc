@@ -88,6 +88,7 @@ TargetInfo::TargetInfo(const llvm::Triple &T) : TargetOpts(), Triple(T) {
 
   // Default to an empty address space map.
   AddrSpaceMap = &DefaultAddrSpaceMap;
+  UseAddrSpaceMapMangling = false;
 
   // Default to an unknown platform name.
   PlatformName = "unknown";
@@ -178,7 +179,8 @@ TargetInfo::RealType TargetInfo::getRealTypeByWidth(unsigned BitWidth) const {
       return LongDouble;
     break;
   case 128:
-    if (&getLongDoubleFormat() == &llvm::APFloat::PPCDoubleDouble)
+    if (&getLongDoubleFormat() == &llvm::APFloat::PPCDoubleDouble ||
+        &getLongDoubleFormat() == &llvm::APFloat::IEEEquad)
       return LongDouble;
     break;
   }
@@ -232,6 +234,35 @@ void TargetInfo::setForcedLangOptions(LangOptions &Opts) {
     UseBitFieldTypeAlignment = false;
   if (Opts.ShortWChar)
     WCharType = UnsignedShort;
+
+  if (Opts.OpenCL) {
+    // OpenCL C requires specific widths for types, irrespective of
+    // what these normally are for the target.
+    // We also define long long and long double here, although the
+    // OpenCL standard only mentions these as "reserved".
+    IntWidth = IntAlign = 32;
+    LongWidth = LongAlign = 64;
+    LongLongWidth = LongLongAlign = 128;
+    HalfWidth = HalfAlign = 16;
+    FloatWidth = FloatAlign = 32;
+    DoubleWidth = DoubleAlign = 64;
+    LongDoubleWidth = LongDoubleAlign = 128;
+
+    assert(PointerWidth == 32 || PointerWidth == 64);
+    bool Is32BitArch = PointerWidth == 32;
+    SizeType = Is32BitArch ? UnsignedInt : UnsignedLong;
+    PtrDiffType = Is32BitArch ? SignedInt : SignedLong;
+    IntPtrType = Is32BitArch ? SignedInt : SignedLong;
+
+    IntMaxType = SignedLongLong;
+    UIntMaxType = UnsignedLongLong;
+    Int64Type = SignedLong;
+
+    HalfFormat = &llvm::APFloat::IEEEhalf;
+    FloatFormat = &llvm::APFloat::IEEEsingle;
+    DoubleFormat = &llvm::APFloat::IEEEdouble;
+    LongDoubleFormat = &llvm::APFloat::IEEEquad;
+  }
 }
 
 //===----------------------------------------------------------------------===//

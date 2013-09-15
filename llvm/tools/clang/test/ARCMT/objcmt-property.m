@@ -97,6 +97,21 @@ typedef char BOOL;
 - (id) object;
 + (double) D;
 - (void *)JSObject WEBKIT_OBJC_METHOD_ANNOTATION(AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER);
+- (BOOL)isIgnoringInteractionEvents;
+
+- (NSString *)getStringValue;
+- (BOOL)getCounterValue;
+- (void)setStringValue:(NSString *)stringValue AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER;
+- (NSDictionary *)getns_dixtionary;
+
+- (BOOL)is3bar; // watch out
+- (NSString *)get3foo; // watch out
+
+- (BOOL) getM;
+- (BOOL) getMA;
+- (BOOL) getALL;
+- (BOOL) getMANY;
+- (BOOL) getSome;
 @end
 
 

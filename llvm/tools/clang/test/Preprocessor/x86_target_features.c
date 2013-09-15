@@ -128,3 +128,27 @@
 // AVX512F2: #define __SSE_MATH__ 1
 // AVX512F2: #define __SSE__ 1
 // AVX512F2: #define __SSSE3__ 1
+
+// RUN: %clang -target i386-unknown-unknown -march=atom -msse4.2 -x c -E -dM -o - %s | FileCheck --check-prefix=SSE42POPCNT %s
+
+// SSE42POPCNT: #define __POPCNT__ 1
+
+// RUN: %clang -target i386-unknown-unknown -march=atom -mno-popcnt -msse4.2 -x c -E -dM -o - %s | FileCheck --check-prefix=SSE42NOPOPCNT %s
+
+// SSE42NOPOPCNT-NOT: #define __POPCNT__ 1
+
+// RUN: %clang -target i386-unknown-unknown -march=atom -mpopcnt -mno-sse4.2 -x c -E -dM -o - %s | FileCheck --check-prefix=NOSSE42POPCNT %s
+
+// NOSSE42POPCNT: #define __POPCNT__ 1
+
+// RUN: %clang -target i386-unknown-unknown -march=atom -msse -x c -E -dM -o - %s | FileCheck --check-prefix=SSEMMX %s
+
+// SSEMMX: #define __MMX__ 1
+
+// RUN: %clang -target i386-unknown-unknown -march=atom -msse -mno-sse -x c -E -dM -o - %s | FileCheck --check-prefix=SSENOSSEMMX %s
+
+// SSENOSSEMMX-NOT: #define __MMX__ 1
+
+// RUN: %clang -target i386-unknown-unknown -march=atom -msse -mno-mmx -x c -E -dM -o - %s | FileCheck --check-prefix=SSENOMMX %s
+
+// SSENOMMX-NOT: #define __MMX__ 1

@@ -921,8 +921,8 @@ enabled.
 C11 ``_Thread_local``
 ^^^^^^^^^^^^^^^^^^^^^
 
-Use ``__has_feature(c_thread_local)`` to determine if support for
-``_Thread_local`` variables is enabled.
+Use ``__has_feature(c_thread_local)`` or ``__has_extension(c_thread_local)``
+to determine if support for ``_Thread_local`` variables is enabled.
 
 Checks for Type Traits
 ======================
@@ -1682,6 +1682,7 @@ Clang provides overloaded builtins giving direct access to the three key ARM
 instructions for implementing atomic operations.
 
 .. code-block:: c
+
   T __builtin_arm_ldrex(const volatile T *addr);
   int __builtin_arm_strex(T val, volatile T *addr);
   void __builtin_arm_clrex(void);

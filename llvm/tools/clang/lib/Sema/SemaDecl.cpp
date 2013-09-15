@@ -1177,6 +1177,14 @@ bool Sema::mightHaveNonExternalLinkage(const DeclaratorDecl *D) {
   return !D->isExternallyVisible();
 }
 
+// FIXME: This needs to be refactored; some other isInMainFile users want
+// these semantics.
+static bool isMainFileLoc(const Sema &S, SourceLocation Loc) {
+  if (S.TUKind != TU_Complete)
+    return false;
+  return S.SourceMgr.isInMainFile(Loc);
+}
+
 bool Sema::ShouldWarnIfUnusedFileScopedDecl(const DeclaratorDecl *D) const {
   assert(D);
 
@@ -1196,12 +1204,9 @@ bool Sema::ShouldWarnIfUnusedFileScopedDecl(const DeclaratorDecl *D) const {
       if (MD->isVirtual() || IsDisallowedCopyOrAssign(MD))
         return false;
     } else {
-      // 'static inline' functions are used in headers; don't warn.
-      // Make sure we get the storage class from the canonical declaration,
-      // since otherwise we will get spurious warnings on specialized
-      // static template functions.
-      if (FD->getCanonicalDecl()->getStorageClass() == SC_Static &&
-          FD->isInlineSpecified())
+      // 'static inline' functions are defined in headers; don't warn.
+      if (FD->isInlineSpecified() &&
+          !isMainFileLoc(*this, FD->getLocation()))
         return false;
     }
 
@@ -1209,21 +1214,18 @@ bool Sema::ShouldWarnIfUnusedFileScopedDecl(const DeclaratorDecl *D) const {
         Context.DeclMustBeEmitted(FD))
       return false;
   } else if (const VarDecl *VD = dyn_cast<VarDecl>(D)) {
-    // Don't warn on variables of const-qualified or reference type, since their
-    // values can be used even if though they're not odr-used, and because const
-    // qualified variables can appear in headers in contexts where they're not
-    // intended to be used.
-    // FIXME: Use more principled rules for these exemptions.
-    if (!VD->isFileVarDecl() ||
-        VD->getType().isConstQualified() ||
-        VD->getType()->isReferenceType() ||
-        Context.DeclMustBeEmitted(VD))
+    // Constants and utility variables are defined in headers with internal
+    // linkage; don't warn.  (Unlike functions, there isn't a convenient marker
+    // like "inline".)
+    if (!isMainFileLoc(*this, VD->getLocation()))
+      return false;
+
+    if (Context.DeclMustBeEmitted(VD))
       return false;
 
     if (VD->isStaticDataMember() &&
         VD->getTemplateSpecializationKind() == TSK_ImplicitInstantiation)
       return false;
-
   } else {
     return false;
   }
@@ -3073,6 +3075,9 @@ Decl *Sema::ParsedFreeStandingDeclSpec(Scope *S, AccessSpecifier AS,
 }
 
 static void HandleTagNumbering(Sema &S, const TagDecl *Tag) {
+  if (!S.Context.getLangOpts().CPlusPlus)
+    return;
+
   if (isa<CXXRecordDecl>(Tag->getParent())) {
     // If this tag is the direct child of a class, number it if
     // it is anonymous.
@@ -5346,7 +5351,7 @@ Sema::ActOnVariableDeclarator(Scope *S, Declarator &D, DeclContext *DC,
       isIncompleteDeclExternC(*this, NewVD))
     RegisterLocallyScopedExternCDecl(NewVD, S);
 
-  if (NewVD->isStaticLocal()) {
+  if (getLangOpts().CPlusPlus && NewVD->isStaticLocal()) {
     Decl *ManglingContextDecl;
     if (MangleNumberingContext *MCtx =
             getCurrentMangleNumberContext(NewVD->getDeclContext(),

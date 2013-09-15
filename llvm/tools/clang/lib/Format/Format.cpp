@@ -529,11 +529,15 @@ private:
                E = LBrace.Children.end();
            I != E; ++I) {
         unsigned Indent =
-            ParentIndent + ((*I)->Level - Line.Level) * Style.IndentWidth;
-        if (!DryRun)
+            ParentIndent + ((*I)->Level - Line.Level - 1) * Style.IndentWidth;
+        if (!DryRun) {
+          unsigned Newlines = std::min((*I)->First->NewlinesBefore,
+                                       Style.MaxEmptyLinesToKeep + 1);
+          Newlines = std::max(1u, Newlines);
           Whitespaces->replaceWhitespace(
-              *(*I)->First, /*Newlines=*/1, /*Spaces=*/Indent,
+              *(*I)->First, Newlines, /*Spaces=*/Indent,
               /*StartOfTokenColumn=*/Indent, Line.InPPDirective);
+        }
         UnwrappedLineFormatter Formatter(Indenter, Whitespaces, Style, **I);
         Penalty += Formatter.format(Indent, DryRun);
       }
@@ -552,6 +556,9 @@ private:
                                      /*Newlines=*/0, /*Spaces=*/1,
                                      /*StartOfTokenColumn=*/State.Column,
                                      State.Line->InPPDirective);
+      UnwrappedLineFormatter Formatter(Indenter, Whitespaces, Style,
+                                       *LBrace.Children[0]);
+      Penalty += Formatter.format(State.Column + 1, DryRun);
     }
 
     State.Column += 1 + LBrace.Children[0]->Last->TotalLength;
@@ -603,7 +610,7 @@ private:
       FormatTok->WhitespaceRange =
           SourceRange(GreaterLocation, GreaterLocation);
       FormatTok->TokenText = ">";
-      FormatTok->CodePointCount = 1;
+      FormatTok->ColumnWidth = 1;
       GreaterStashed = false;
       return FormatTok;
     }
@@ -624,7 +631,9 @@ private:
           ++FormatTok->NewlinesBefore;
           // FIXME: This is technically incorrect, as it could also
           // be a literal backslash at the end of the line.
-          if (i == 0 || FormatTok->TokenText[i - 1] != '\\')
+          if (i == 0 || (FormatTok->TokenText[i - 1] != '\\' &&
+                         (FormatTok->TokenText[i - 1] != '\r' || i == 1 ||
+                          FormatTok->TokenText[i - 2] != '\\')))
             FormatTok->HasUnescapedNewline = true;
           FormatTok->LastNewlineOffset = WhitespaceLength + i + 1;
           Column = 0;
@@ -649,8 +658,6 @@ private:
     // In case the token starts with escaped newlines, we want to
     // take them into account as whitespace - this pattern is quite frequent
     // in macro definitions.
-    // FIXME: What do we want to do with other escaped spaces, and escaped
-    // spaces or newlines in the middle of tokens?
     // FIXME: Add a more explicit test.
     while (FormatTok->TokenText.size() > 1 && FormatTok->TokenText[0] == '\\' &&
            FormatTok->TokenText[1] == '\n') {
@@ -659,6 +666,10 @@ private:
       Column = 0;
       FormatTok->TokenText = FormatTok->TokenText.substr(2);
     }
+
+    FormatTok->WhitespaceRange = SourceRange(
+        WhitespaceStart, WhitespaceStart.getLocWithOffset(WhitespaceLength));
+
     FormatTok->OriginalColumn = Column;
 
     TrailingWhitespace = 0;
@@ -678,24 +689,30 @@ private:
     }
 
     // Now FormatTok is the next non-whitespace token.
-    FormatTok->CodePointCount =
-        encoding::getCodePointCount(FormatTok->TokenText, Encoding);
 
-    if (FormatTok->isOneOf(tok::string_literal, tok::comment)) {
-      StringRef Text = FormatTok->TokenText;
-      size_t FirstNewlinePos = Text.find('\n');
-      if (FirstNewlinePos != StringRef::npos) {
-        // FIXME: Handle embedded tabs.
-        FormatTok->FirstLineColumnWidth = encoding::columnWidthWithTabs(
-            Text.substr(0, FirstNewlinePos), 0, Style.TabWidth, Encoding);
-        FormatTok->LastLineColumnWidth = encoding::columnWidthWithTabs(
-            Text.substr(Text.find_last_of('\n') + 1), 0, Style.TabWidth,
-            Encoding);
-      }
+    StringRef Text = FormatTok->TokenText;
+    size_t FirstNewlinePos = Text.find('\n');
+    if (FirstNewlinePos == StringRef::npos) {
+      // FIXME: ColumnWidth actually depends on the start column, we need to
+      // take this into account when the token is moved.
+      FormatTok->ColumnWidth =
+          encoding::columnWidthWithTabs(Text, Column, Style.TabWidth, Encoding);
+      Column += FormatTok->ColumnWidth;
+    } else {
+      FormatTok->IsMultiline = true;
+      // FIXME: ColumnWidth actually depends on the start column, we need to
+      // take this into account when the token is moved.
+      FormatTok->ColumnWidth = encoding::columnWidthWithTabs(
+          Text.substr(0, FirstNewlinePos), Column, Style.TabWidth, Encoding);
+
+      // The last line of the token always starts in column 0.
+      // Thus, the length can be precomputed even in the presence of tabs.
+      FormatTok->LastLineColumnWidth = encoding::columnWidthWithTabs(
+          Text.substr(Text.find_last_of('\n') + 1), 0, Style.TabWidth,
+          Encoding);
+      Column = FormatTok->LastLineColumnWidth;
     }
-    // FIXME: Add the CodePointCount to Column.
-    FormatTok->WhitespaceRange = SourceRange(
-        WhitespaceStart, WhitespaceStart.getLocWithOffset(WhitespaceLength));
+
     return FormatTok;
   }
 
@@ -730,8 +747,8 @@ public:
   Formatter(const FormatStyle &Style, Lexer &Lex, SourceManager &SourceMgr,
             const std::vector<CharSourceRange> &Ranges)
       : Style(Style), Lex(Lex), SourceMgr(SourceMgr),
-        Whitespaces(SourceMgr, Style), Ranges(Ranges),
-        Encoding(encoding::detectEncoding(Lex.getBuffer())) {
+        Whitespaces(SourceMgr, Style, inputUsesCRLF(Lex.getBuffer())),
+        Ranges(Ranges), Encoding(encoding::detectEncoding(Lex.getBuffer())) {
     DEBUG(llvm::dbgs() << "File encoding: "
                        << (Encoding == encoding::Encoding_UTF8 ? "UTF8"
                                                                : "unknown")
@@ -868,6 +885,10 @@ public:
   }
 
 private:
+  static bool inputUsesCRLF(StringRef Text) {
+    return Text.count('\r') * 2 > Text.count('\n');
+  }
+
   void deriveLocalStyle() {
     unsigned CountBoundToVariable = 0;
     unsigned CountBoundToType = 0;

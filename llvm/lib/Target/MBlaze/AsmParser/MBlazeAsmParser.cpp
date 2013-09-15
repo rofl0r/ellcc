@@ -17,6 +17,7 @@
 #include "llvm/MC/MCParser/MCAsmParser.h"
 #include "llvm/MC/MCParser/MCParsedAsmOperand.h"
 #include "llvm/MC/MCStreamer.h"
+#include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/MC/MCTargetAsmParser.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/TargetRegistry.h"
@@ -27,6 +28,7 @@ namespace {
 struct MBlazeOperand;
 
 class MBlazeAsmParser : public MCTargetAsmParser {
+  MCSubtargetInfo &STI;
   MCAsmParser &Parser;
 
   MCAsmParser &getParser() const { return Parser; }
@@ -60,8 +62,11 @@ class MBlazeAsmParser : public MCTargetAsmParser {
   /// }
 
 public:
-  MBlazeAsmParser(MCSubtargetInfo &_STI, MCAsmParser &_Parser)
-    : MCTargetAsmParser(), Parser(_Parser) {}
+  MBlazeAsmParser(MCSubtargetInfo &_STI, MCAsmParser &_Parser,
+                  const MCInstrInfo &MII)
+    : MCTargetAsmParser(), STI(_STI), Parser(_Parser) {
+      setAvailableFeatures(ComputeAvailableFeatures(STI.getFeatureBits()));
+  }
 
   virtual bool ParseInstruction(ParseInstructionInfo &Info, StringRef Name,
                                 SMLoc NameLoc,

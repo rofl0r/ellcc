@@ -15,9 +15,6 @@ set(SANITIZER_SOURCES
   sanitizer_stackdepot.cc
   sanitizer_stacktrace.cc
   sanitizer_suppressions.cc
-  sanitizer_symbolizer_itanium.cc
-  sanitizer_symbolizer_linux.cc
-  sanitizer_symbolizer_mac.cc
   sanitizer_symbolizer_win.cc
   sanitizer_thread_registry.cc
   sanitizer_win.cc)
@@ -27,8 +24,6 @@ set(SANITIZER_LIBCDEP_SOURCES
   sanitizer_linux_libcdep.cc
   sanitizer_posix_libcdep.cc
   sanitizer_stoptheworld_linux_libcdep.cc
-  sanitizer_symbolizer_libcdep.cc
-  sanitizer_symbolizer_linux_libcdep.cc
   sanitizer_symbolizer_posix_libcdep.cc)
 
 # Explicitly list all sanitizer_common headers. Not all of these are
@@ -70,6 +65,10 @@ else()
   set(SANITIZER_CFLAGS
     ${SANITIZER_COMMON_CFLAGS}
     /GR-)
+endif()
+
+if(SUPPORTS_GLOBAL_CONSTRUCTORS_FLAG)
+  list(APPEND SANITIZER_CFLAGS -Wglobal-constructors)
 endif()
 
 set(SANITIZER_RUNTIME_LIBRARIES)

@@ -1282,12 +1282,19 @@ RValue CodeGenFunction::EmitBuiltinExpr(const FunctionDecl *FD,
   case Builtin::BIsqrt:
   case Builtin::BIsqrtf:
   case Builtin::BIsqrtl: {
-    // TODO: there is currently no set of optimizer flags
-    // sufficient for us to rewrite sqrt to @llvm.sqrt.
-    // -fmath-errno=0 is not good enough; we need finiteness.
-    // We could probably precondition the call with an ult
-    // against 0, but is that worth the complexity?
-    break;
+    // Transform a call to sqrt* into a @llvm.sqrt.* intrinsic call, but only
+    // in finite- or unsafe-math mode (the intrinsic has different semantics
+    // for handling negative numbers compared to the library function, so
+    // -fmath-errno=0 is not enough).
+    if (!FD->hasAttr<ConstAttr>())
+      break;
+    if (!(CGM.getCodeGenOpts().UnsafeFPMath ||
+          CGM.getCodeGenOpts().NoNaNsFPMath))
+      break;
+    Value *Arg0 = EmitScalarExpr(E->getArg(0));
+    llvm::Type *ArgType = Arg0->getType();
+    Value *F = CGM.getIntrinsic(Intrinsic::sqrt, ArgType);
+    return RValue::get(Builder.CreateCall(F, Arg0));
   }
 
   case Builtin::BIpow:
@@ -1841,6 +1848,22 @@ Value *CodeGenFunction::EmitAArch64BuiltinExpr(unsigned BuiltinID,
     return EmitARMBuiltinExpr(ARM::BI__builtin_neon_vqrshl_v, E);
   case AArch64::BI__builtin_neon_vqrshlq_v:
     return EmitARMBuiltinExpr(ARM::BI__builtin_neon_vqrshlq_v, E);
+  case AArch64::BI__builtin_neon_vaddhn_v:
+    return EmitARMBuiltinExpr(ARM::BI__builtin_neon_vaddhn_v, E);
+  case AArch64::BI__builtin_neon_vraddhn_v:
+    return EmitARMBuiltinExpr(ARM::BI__builtin_neon_vraddhn_v, E);
+  case AArch64::BI__builtin_neon_vsubhn_v:
+    return EmitARMBuiltinExpr(ARM::BI__builtin_neon_vsubhn_v, E);
+  case AArch64::BI__builtin_neon_vrsubhn_v:
+    return EmitARMBuiltinExpr(ARM::BI__builtin_neon_vrsubhn_v, E);
+  case AArch64::BI__builtin_neon_vmull_v:
+    return EmitARMBuiltinExpr(ARM::BI__builtin_neon_vmull_v, E);
+  case AArch64::BI__builtin_neon_vqdmull_v:
+    return EmitARMBuiltinExpr(ARM::BI__builtin_neon_vqdmull_v, E);
+  case AArch64::BI__builtin_neon_vqdmlal_v:
+    return EmitARMBuiltinExpr(ARM::BI__builtin_neon_vqdmlal_v, E);
+  case AArch64::BI__builtin_neon_vqdmlsl_v:
+    return EmitARMBuiltinExpr(ARM::BI__builtin_neon_vqdmlsl_v, E);
   case AArch64::BI__builtin_neon_vmax_v:
     return EmitARMBuiltinExpr(ARM::BI__builtin_neon_vmax_v, E);
   case AArch64::BI__builtin_neon_vmaxq_v:

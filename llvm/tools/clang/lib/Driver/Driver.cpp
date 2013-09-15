@@ -436,11 +436,11 @@ void Driver::generateCompilationDiagnostics(Compilation &C,
   std::string Cmd;
   llvm::raw_string_ostream OS(Cmd);
   if (FailingCommand)
-    C.PrintDiagnosticJob(OS, *FailingCommand);
+    FailingCommand->Print(OS, "\n", /*Quote*/ false, /*CrashReport*/ true);
   else
     // Crash triggered by FORCE_CLANG_DIAGNOSTICS_CRASH, which doesn't have an
     // associated FailingCommand, so just pass all jobs.
-    C.PrintDiagnosticJob(OS, C.getJobs());
+    C.getJobs().Print(OS, "\n", /*Quote*/ false, /*CrashReport*/ true);
   OS.flush();
 
   // Keep track of whether we produce any errors while trying to produce
@@ -573,7 +573,7 @@ int Driver::ExecuteCompilation(const Compilation &C,
     SmallVectorImpl< std::pair<int, const Command *> > &FailingCommands) const {
   // Just print if -### was present.
   if (C.getArgs().hasArg(options::OPT__HASH_HASH_HASH)) {
-    C.PrintJob(llvm::errs(), C.getJobs(), "\n", true);
+    C.getJobs().Print(llvm::errs(), "\n", true);
     return 0;
   }
 
@@ -1006,8 +1006,8 @@ void Driver::BuildInputs(const ToolChain &TC, const DerivedArgList &Args,
     Arg *Previous = *it++;
     bool ShowNote = false;
     while (it != ie) {
-      Diag(clang::diag::warn_drv_overriding_t_option) << Previous->getSpelling()
-          << (*it)->getSpelling();
+      Diag(clang::diag::warn_drv_overriding_flag_option)
+          << Previous->getSpelling() << (*it)->getSpelling();
       Previous = *it++;
       ShowNote = true;
     }
@@ -1580,9 +1580,11 @@ void Driver::BuildJobsForAction(Compilation &C,
 static const char *MakeCLOutputFilename(const ArgList &Args, StringRef ArgValue,
                                         StringRef BaseName, types::ID FileType) {
   SmallString<128> Filename = ArgValue;
-  assert(!ArgValue.empty() && "Output filename argument must not be empty.");
   
-  if (llvm::sys::path::is_separator(Filename.back())) {
+  if (ArgValue.empty()) {
+    // If the argument is empty, output to BaseName in the current dir.
+    Filename = BaseName;
+  } else if (llvm::sys::path::is_separator(Filename.back())) {
     // If the argument is a directory, output to BaseName in that dir.
     llvm::sys::path::append(Filename, BaseName);
   }
@@ -1590,6 +1592,13 @@ static const char *MakeCLOutputFilename(const ArgList &Args, StringRef ArgValue,
   if (!llvm::sys::path::has_extension(ArgValue)) {
     // If the argument didn't provide an extension, then set it.
     const char *Extension = types::getTypeTempSuffix(FileType, true);
+
+    if (FileType == types::TY_Image &&
+        Args.hasArg(options::OPT__SLASH_LD, options::OPT__SLASH_LDd)) {
+      // The output file is a dll.
+      Extension = "dll";
+    }
+
     llvm::sys::path::replace_extension(Filename, Extension);
   }
 
@@ -1651,12 +1660,11 @@ const char *Driver::GetNamedOutputPath(Compilation &C,
     StringRef Val = C.getArgs().getLastArg(options::OPT__SLASH_Fe)->getValue();
     NamedOutput = MakeCLOutputFilename(C.getArgs(), Val, BaseName,
                                        types::TY_Image);
-  } else if (JA.getType() == types::TY_Image) {    
+  } else if (JA.getType() == types::TY_Image) {
     if (IsCLMode()) {
       // clang-cl uses BaseName for the executable name.
-      SmallString<128> Filename = BaseName;
-      llvm::sys::path::replace_extension(Filename, "exe");
-      NamedOutput = C.getArgs().MakeArgString(Filename.c_str());
+      NamedOutput = MakeCLOutputFilename(C.getArgs(), "", BaseName,
+                                         types::TY_Image);
     } else if (MultipleArchs && BoundArch) {
       SmallString<128> Output(DefaultImageName.c_str());
       Output += "-";

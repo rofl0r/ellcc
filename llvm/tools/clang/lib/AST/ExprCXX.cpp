@@ -86,8 +86,8 @@ UuidAttr *CXXUuidofExpr::GetUuidAttrOfType(QualType QT,
 
       // If the template argument has a UUID, there are three cases:
       //  - This is the first UUID seen for this RecordDecl.
-      //  - This is a different UUID than previously seed for this RecordDecl.
-      //  - This is the same UUID than previously seed for this RecordDecl.
+      //  - This is a different UUID than previously seen for this RecordDecl.
+      //  - This is the same UUID than previously seen for this RecordDecl.
       if (UuidForTA) {
         if (!UuidForRD)
           UuidForRD = UuidForTA;
@@ -823,7 +823,10 @@ SourceLocation CXXTemporaryObjectExpr::getLocStart() const {
 }
 
 SourceLocation CXXTemporaryObjectExpr::getLocEnd() const {
-  return getParenOrBraceRange().getEnd();
+  SourceLocation Loc = getParenOrBraceRange().getEnd();
+  if (Loc.isInvalid() && getNumArgs())
+    Loc = getArg(getNumArgs()-1)->getLocEnd();
+  return Loc;
 }
 
 CXXConstructExpr *CXXConstructExpr::Create(const ASTContext &C, QualType T,

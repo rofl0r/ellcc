@@ -166,6 +166,11 @@ static void PrintZoneForPointer(uptr ptr, uptr zone_ptr,
   }
 }
 
+static void DescribeThread(AsanThread *t) {
+  if (t)
+    DescribeThread(t->context());
+}
+
 // ---------------------- Address Descriptions ------------------- {{{1
 
 static bool IsASCII(unsigned char c) {
@@ -175,7 +180,8 @@ static bool IsASCII(unsigned char c) {
 static const char *MaybeDemangleGlobalName(const char *name) {
   // We can spoil names of globals with C linkage, so use an heuristic
   // approach to check if the name should be demangled.
-  return (name[0] == '_' && name[1] == 'Z') ? Demangle(name) : name;
+  return (name[0] == '_' && name[1] == 'Z') ? getSymbolizer()->Demangle(name)
+                                            : name;
 }
 
 // Check if the global is a zero-terminated ASCII string. If so, print it.
@@ -377,7 +383,7 @@ bool DescribeAddressIfStack(uptr addr, uptr access_size) {
   Printf("HINT: this may be a false positive if your program uses "
              "some custom stack unwind mechanism or swapcontext\n"
              "      (longjmp and C++ exceptions *are* supported)\n");
-  DescribeThread(t->context());
+  DescribeThread(t);
   return true;
 }
 
@@ -415,13 +421,11 @@ void DescribeHeapAddress(uptr addr, uptr access_size) {
       GetThreadContextByTidLocked(chunk.AllocTid());
   StackTrace alloc_stack;
   chunk.GetAllocStack(&alloc_stack);
-  AsanThread *t = GetCurrentThread();
-  CHECK(t);
   char tname[128];
   Decorator d;
+  AsanThreadContext *free_thread = 0;
   if (chunk.FreeTid() != kInvalidTid) {
-    AsanThreadContext *free_thread =
-        GetThreadContextByTidLocked(chunk.FreeTid());
+    free_thread = GetThreadContextByTidLocked(chunk.FreeTid());
     Printf("%sfreed by thread T%d%s here:%s\n", d.Allocation(),
            free_thread->tid,
            ThreadNameWithParenthesis(free_thread, tname, sizeof(tname)),
@@ -433,19 +437,17 @@ void DescribeHeapAddress(uptr addr, uptr access_size) {
            d.Allocation(), alloc_thread->tid,
            ThreadNameWithParenthesis(alloc_thread, tname, sizeof(tname)),
            d.EndAllocation());
-    PrintStack(&alloc_stack);
-    DescribeThread(t->context());
-    DescribeThread(free_thread);
-    DescribeThread(alloc_thread);
   } else {
     Printf("%sallocated by thread T%d%s here:%s\n", d.Allocation(),
            alloc_thread->tid,
            ThreadNameWithParenthesis(alloc_thread, tname, sizeof(tname)),
            d.EndAllocation());
-    PrintStack(&alloc_stack);
-    DescribeThread(t->context());
-    DescribeThread(alloc_thread);
   }
+  PrintStack(&alloc_stack);
+  DescribeThread(GetCurrentThread());
+  if (free_thread)
+    DescribeThread(free_thread);
+  DescribeThread(alloc_thread);
 }
 
 void DescribeAddress(uptr addr, uptr access_size) {
@@ -523,22 +525,11 @@ class ScopedInErrorReport {
     reporting_thread_tid = GetCurrentTidOrInvalid();
     Printf("===================================================="
            "=============\n");
-    if (reporting_thread_tid != kInvalidTid) {
-      // We started reporting an error message. Stop using the fake stack
-      // in case we call an instrumented function from a symbolizer.
-      AsanThread *curr_thread = GetCurrentThread();
-      CHECK(curr_thread);
-      if (curr_thread->fake_stack())
-        curr_thread->fake_stack()->StopUsingFakeStack();
-    }
   }
   // Destructor is NORETURN, as functions that report errors are.
   NORETURN ~ScopedInErrorReport() {
     // Make sure the current thread is announced.
-    AsanThread *curr_thread = GetCurrentThread();
-    if (curr_thread) {
-      DescribeThread(curr_thread->context());
-    }
+    DescribeThread(GetCurrentThread());
     // Print memory stats.
     if (flags()->print_stats)
       __asan_print_accumulated_stats();
@@ -552,12 +543,12 @@ class ScopedInErrorReport {
 
 static void ReportSummary(const char *error_type, StackTrace *stack) {
   if (!stack->size) return;
-  if (IsSymbolizerAvailable()) {
+  if (getSymbolizer()->IsAvailable()) {
     AddressInfo ai;
     // Currently, we include the first stack frame into the report summary.
     // Maybe sometimes we need to choose another frame (e.g. skip memcpy/etc).
     uptr pc = StackTrace::GetPreviousInstructionPc(stack->trace[0]);
-    SymbolizeCode(pc, &ai, 1);
+    getSymbolizer()->SymbolizeCode(pc, &ai, 1);
     ReportErrorSummary(error_type,
                        StripPathPrefix(ai.file,
                                        common_flags()->strip_path_prefix),

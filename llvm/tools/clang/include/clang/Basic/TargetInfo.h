@@ -202,6 +202,10 @@ protected:
   /// zero length bitfield, regardless of the zero length bitfield type.
   unsigned ZeroLengthBitfieldBoundary;
 
+  /// \brief Specify if mangling based on address space map should be used or
+  /// not for language specific address spaces
+  bool UseAddrSpaceMapMangling;
+
 public:
   IntType getSizeType() const { return SizeType; }
   IntType getIntMaxType() const { return IntMaxType; }
@@ -354,11 +358,11 @@ public:
   unsigned getUnwindWordWidth() const { return getPointerWidth(0); }
 
   /// \brief Return the "preferred" register width on this target.
-  uint64_t getRegisterWidth() const {
+  unsigned getRegisterWidth() const {
     // Currently we assume the register width on the target matches the pointer
     // width, we can introduce a new variable for this if/when some target wants
     // it.
-    return LongWidth; 
+    return PointerWidth;
   }
 
   /// \brief Returns the default value of the __USER_LABEL_PREFIX__ macro,
@@ -429,6 +433,12 @@ public:
   /// of Objective-C message passing on this target.
   bool useObjCFP2RetForComplexLongDouble() const {
     return ComplexLongDoubleUsesFP2Ret;
+  }
+
+  /// \brief Specify if mangling based on address space map should be used or
+  /// not for language specific address spaces
+  bool useAddressSpaceMapMangling() const {
+    return UseAddrSpaceMapMangling;
   }
 
   ///===---- Other target property query methods --------------------------===//

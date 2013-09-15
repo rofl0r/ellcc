@@ -35,7 +35,9 @@ MCCodeEmitter *createMBlazeMCCodeEmitter(const MCInstrInfo &MCII,
                                          const MCSubtargetInfo &STI,
                                          MCContext &Ctx);
 
-MCAsmBackend *createMBlazeAsmBackend(const Target &T, StringRef TT,
+MCAsmBackend *createMBlazeAsmBackend(const Target &T,
+                                     const MCRegisterInfo &MRI,
+                                     StringRef TT,
                                      StringRef CPU);
 
 MCObjectWriter *createMBlazeELFObjectWriter(raw_ostream &OS, uint8_t OSABI);

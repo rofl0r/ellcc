@@ -25,6 +25,7 @@
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/ExternalASTSource.h"
 #include "clang/AST/Mangle.h"
+#include "clang/AST/MangleNumberingContext.h"
 #include "clang/AST/RecordLayout.h"
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/AST/TypeLoc.h"
@@ -694,6 +695,20 @@ static const LangAS::Map *getAddressSpaceMap(const TargetInfo &T,
   }
 }
 
+static bool isAddrSpaceMapManglingEnabled(const TargetInfo &TI,
+                                          const LangOptions &LangOpts) {
+  switch (LangOpts.getAddressSpaceMapMangling()) {
+  case LangOptions::ASMM_Target:
+    return TI.useAddressSpaceMapMangling();
+  case LangOptions::ASMM_On:
+    return true;
+  case LangOptions::ASMM_Off:
+    return false;
+  }
+  llvm_unreachable("getAddressSpaceMapMangling() doesn't cover anything.");
+  return false;
+}
+
 ASTContext::ASTContext(LangOptions& LOpts, SourceManager &SM,
                        const TargetInfo *t,
                        IdentifierTable &idents, SelectorTable &sels,
@@ -766,6 +781,12 @@ ASTContext::~ASTContext() {
                                                     AEnd = DeclAttrs.end();
        A != AEnd; ++A)
     A->second->~AttrVec();
+
+  for (llvm::DenseMap<const DeclContext *, MangleNumberingContext *>::iterator
+           I = MangleNumberingContexts.begin(),
+           E = MangleNumberingContexts.end();
+       I != E; ++I)
+    delete I->second;
 }
 
 void ASTContext::AddDeallocation(void (*Callback)(void*), void *Data) {
@@ -893,6 +914,7 @@ void ASTContext::InitBuiltinTypes(const TargetInfo &Target) {
   
   ABI.reset(createCXXABI(Target));
   AddrSpaceMap = getAddressSpaceMap(Target, LangOpts);
+  AddrSpaceMapMangling = isAddrSpaceMapManglingEnabled(Target, LangOpts);
   
   // C99 6.2.5p19.
   InitBuiltinType(VoidTy,              BuiltinType::Void);
@@ -8037,7 +8059,15 @@ unsigned ASTContext::getManglingNumber(const NamedDecl *ND) const {
 
 MangleNumberingContext &
 ASTContext::getManglingNumberContext(const DeclContext *DC) {
-  return MangleNumberingContexts[DC];
+  assert(LangOpts.CPlusPlus);  // We don't need mangling numbers for plain C.
+  MangleNumberingContext *&MCtx = MangleNumberingContexts[DC];
+  if (!MCtx)
+    MCtx = createMangleNumberingContext();
+  return *MCtx;
+}
+
+MangleNumberingContext *ASTContext::createMangleNumberingContext() const {
+  return ABI->createMangleNumberingContext();
 }
 
 void ASTContext::setParameterIndex(const ParmVarDecl *D, unsigned int index) {

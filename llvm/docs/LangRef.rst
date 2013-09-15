@@ -6310,7 +6310,7 @@ Syntax:
 
 ::
 
-      declare void %llvm.va_start(i8* <arglist>)
+      declare void @llvm.va_start(i8* <arglist>)
 
 Overview:
 """""""""
@@ -8697,7 +8697,7 @@ different, then ``llvm.stackprotectorcheck`` causes the program to abort by
 calling the ``__stack_chk_fail()`` function.
 
 '``llvm.stackprotectorcheck``' Intrinsic
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Syntax:
 """""""

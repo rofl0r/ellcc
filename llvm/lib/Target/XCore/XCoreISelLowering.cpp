@@ -79,7 +79,7 @@ XCoreTargetLowering::XCoreTargetLowering(XCoreTargetMachine &XTM)
 
   setStackPointerRegisterToSaveRestore(XCore::SP);
 
-  setSchedulingPreference(Sched::RegPressure);
+  setSchedulingPreference(Sched::Source);
 
   // Use i32 for setcc operations results (slt, sgt, ...).
   setBooleanContents(ZeroOrOneBooleanContent);
@@ -257,11 +257,6 @@ LowerGlobalAddress(SDValue Op, SelectionDAG &DAG) const
     GA = DAG.getNode(ISD::ADD, DL, MVT::i32, GA, Remaining);
   }
   return GA;
-}
-
-static inline SDValue BuildGetId(SelectionDAG &DAG, SDLoc dl) {
-  return DAG.getNode(ISD::INTRINSIC_WO_CHAIN, dl, MVT::i32,
-                     DAG.getConstant(Intrinsic::xcore_getid, MVT::i32));
 }
 
 SDValue XCoreTargetLowering::

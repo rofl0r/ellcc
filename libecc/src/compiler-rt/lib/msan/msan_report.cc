@@ -44,7 +44,8 @@ static void DescribeOrigin(u32 origin) {
   Decorator d;
   if (flags()->verbosity)
     Printf("  raw origin id: %d\n", origin);
-  if (const char *so = __msan_get_origin_descr_if_stack(origin)) {
+  uptr pc;
+  if (const char *so = GetOriginDescrIfStack(origin, &pc)) {
     char* s = internal_strdup(so);
     char* sep = internal_strchr(s, '@');
     CHECK(sep);
@@ -52,9 +53,16 @@ static void DescribeOrigin(u32 origin) {
     Printf("%s", d.Origin());
     Printf("  %sUninitialized value was created by an allocation of '%s%s%s'"
            " in the stack frame of function '%s%s%s'%s\n",
-           d.Origin(), d.Name(), s, d.Origin(), d.Name(), Demangle(sep + 1),
-           d.Origin(), d.End());
+           d.Origin(), d.Name(), s, d.Origin(), d.Name(),
+           getSymbolizer()->Demangle(sep + 1), d.Origin(), d.End());
     InternalFree(s);
+
+    if (pc) {
+      // For some reason function address in LLVM IR is 1 less then the address
+      // of the first instruction.
+      pc += 1;
+      PrintStack(&pc, 1);
+    }
   } else {
     uptr size = 0;
     const uptr *trace = StackDepotGet(origin, &size);
@@ -65,12 +73,12 @@ static void DescribeOrigin(u32 origin) {
 }
 
 static void ReportSummary(const char *error_type, StackTrace *stack) {
-  if (!stack->size || !IsSymbolizerAvailable()) return;
+  if (!stack->size || !getSymbolizer()->IsAvailable()) return;
   AddressInfo ai;
   uptr pc = StackTrace::GetPreviousInstructionPc(stack->trace[0]);
   {
     SymbolizerScope sym_scope;
-    SymbolizeCode(pc, &ai, 1);
+    getSymbolizer()->SymbolizeCode(pc, &ai, 1);
   }
   ReportErrorSummary(error_type,
                      StripPathPrefix(ai.file,

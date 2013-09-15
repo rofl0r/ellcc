@@ -2506,7 +2506,7 @@ Sema::SpecialMemberOverloadResult *Sema::LookupSpecialMember(CXXRecordDecl *RD,
   SmallVector<NamedDecl *, 8> Candidates(R.begin(), R.end());
 
   for (SmallVectorImpl<NamedDecl *>::iterator I = Candidates.begin(),
-                                         E = Candidates.end();
+                                              E = Candidates.end();
        I != E; ++I) {
     NamedDecl *Cand = *I;
 
@@ -3955,7 +3955,8 @@ TypoCorrection Sema::CorrectTypo(const DeclarationNameInfo &TypoName,
       return Correction;
   }
 
-  if (Diags.hasFatalErrorOccurred() || !getLangOpts().SpellChecking)
+  if (Diags.hasFatalErrorOccurred() || !getLangOpts().SpellChecking ||
+      DisableTypoCorrection)
     return TypoCorrection();
 
   // In Microsoft mode, don't perform typo correction in a template member

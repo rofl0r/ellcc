@@ -139,7 +139,7 @@ static void getDarwinDefines(MacroBuilder &Builder, const LangOptions &Opts,
   }
 
   // Set the appropriate OS version define.
-  if (Triple.getOS() == llvm::Triple::IOS) {
+  if (Triple.isiOS()) {
     assert(Maj < 10 && Min < 100 && Rev < 100 && "Invalid version!");
     char Str[6];
     Str[0] = '0' + Maj;
@@ -1276,6 +1276,7 @@ namespace {
       TLSSupported = false;
       LongWidth = LongAlign = 64;
       AddrSpaceMap = &NVPTXAddrSpaceMap;
+      UseAddrSpaceMapMangling = true;
       // Define available target features
       // These must be defined in sorted order!
       NoAsmVariants = true;
@@ -1434,6 +1435,7 @@ public:
       : TargetInfo(Triple), GPU(GK_R600) {
     DescriptionString = DescriptionStringR600;
     AddrSpaceMap = &R600AddrSpaceMap;
+    UseAddrSpaceMapMangling = true;
   }
 
   virtual const char * getClobbers() const {
@@ -1813,7 +1815,7 @@ class X86TargetInfo : public TargetInfo {
     /// Atom processors
     //@{
     CK_Atom,
-    CK_SLM,
+    CK_Silvermont,
     //@}
 
     /// \name Nehalem
@@ -1982,7 +1984,7 @@ public:
       .Case("core2", CK_Core2)
       .Case("penryn", CK_Penryn)
       .Case("atom", CK_Atom)
-      .Case("slm", CK_SLM)
+      .Case("slm", CK_Silvermont)
       .Case("corei7", CK_Corei7)
       .Case("corei7-avx", CK_Corei7AVX)
       .Case("core-avx-i", CK_CoreAVXi)
@@ -2058,7 +2060,7 @@ public:
     case CK_Core2:
     case CK_Penryn:
     case CK_Atom:
-    case CK_SLM:
+    case CK_Silvermont:
     case CK_Corei7:
     case CK_Corei7AVX:
     case CK_CoreAVXi:
@@ -2155,8 +2157,12 @@ void X86TargetInfo::getDefaultFeatures(llvm::StringMap<bool> &Features) const {
   case CK_Atom:
     setFeatureEnabled(Features, "ssse3", true);
     break;
+  case CK_Silvermont:
+    setFeatureEnabled(Features, "sse4.2", true);
+    setFeatureEnabled(Features, "aes", true);
+    setFeatureEnabled(Features, "pclmul", true);
+    break;
   case CK_Corei7:
-  case CK_SLM:
     setFeatureEnabled(Features, "sse4.2", true);
     break;
   case CK_Corei7AVX:
@@ -2286,7 +2292,7 @@ void X86TargetInfo::setSSELevel(llvm::StringMap<bool> &Features,
     case AVX:
       Features["avx"] = true;
     case SSE42:
-      Features["popcnt"] = Features["sse4.2"] = true;
+      Features["sse4.2"] = true;
     case SSE41:
       Features["sse4.1"] = true;
     case SSSE3:
@@ -2296,8 +2302,6 @@ void X86TargetInfo::setSSELevel(llvm::StringMap<bool> &Features,
     case SSE2:
       Features["sse2"] = true;
     case SSE1:
-      if (!Features.count("mmx"))
-        setMMXLevel(Features, MMX, Enabled);
       Features["sse"] = true;
     case NoSSE:
       break;
@@ -2319,7 +2323,7 @@ void X86TargetInfo::setSSELevel(llvm::StringMap<bool> &Features,
   case SSE41:
     Features["sse4.1"] = false;
   case SSE42:
-    Features["popcnt"] = Features["sse4.2"] = false;
+    Features["sse4.2"] = false;
   case AVX:
     Features["fma"] = Features["avx"] = false;
     setXOPLevel(Features, FMA4, false);
@@ -2559,6 +2563,15 @@ bool X86TargetInfo::HandleTargetFeatures(std::vector<std::string> &Features,
     XOPLevel = std::max(XOPLevel, XLevel);
   }
 
+  // Enable popcnt if sse4.2 is enabled and popcnt is not explicitly disabled.
+  // Can't do this earlier because we need to be able to explicitly enable
+  // popcnt and still disable sse4.2.
+  if (!HasPOPCNT && SSELevel >= SSE42 &&
+      std::find(Features.begin(), Features.end(), "-popcnt") == Features.end()){
+    HasPOPCNT = true;
+    Features.push_back("+popcnt");
+  }
+
   // LLVM doesn't have a separate switch for fpmath, so only accept it if it
   // matches the selected sse level.
   if (FPMath == FP_SSE && SSELevel < SSE1) {
@@ -2571,10 +2584,14 @@ bool X86TargetInfo::HandleTargetFeatures(std::vector<std::string> &Features,
 
   // Don't tell the backend if we're turning off mmx; it will end up disabling
   // SSE, which we don't want.
+  // Additionally, if SSE is enabled and mmx is not explicitly disabled,
+  // then enable MMX.
   std::vector<std::string>::iterator it;
   it = std::find(Features.begin(), Features.end(), "-mmx");
   if (it != Features.end())
     Features.erase(it);
+  else if (SSELevel > NoSSE)
+    MMX3DNowLevel = std::max(MMX3DNowLevel, MMX);
   return true;
 }
 
@@ -2653,7 +2670,7 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
   case CK_Atom:
     defineCPUMacros(Builder, "atom");
     break;
-  case CK_SLM:
+  case CK_Silvermont:
     defineCPUMacros(Builder, "slm");
     break;
   case CK_Corei7:
@@ -3677,7 +3694,7 @@ private:
     // the kernel which on armv6 and newer uses ldrex and strex. The net result
     // is that if we assume the kernel is at least as recent as the hardware,
     // it is safe to use atomic instructions on armv6 and newer.
-    if (T.getOS() != llvm::Triple::Linux &&
+    if (!T.isOSLinux() &&
         T.getOS() != llvm::Triple::FreeBSD &&
         T.getOS() != llvm::Triple::Bitrig)
       return false;
@@ -3803,10 +3820,12 @@ public:
   void getDefaultFeatures(llvm::StringMap<bool> &Features) const {
     if (CPU == "arm1136jf-s" || CPU == "arm1176jzf-s" || CPU == "mpcore")
       Features["vfp2"] = true;
-    else if (CPU == "cortex-a8" || CPU == "cortex-a15" ||
-             CPU == "cortex-a9" || CPU == "cortex-a9-mp")
+    else if (CPU == "cortex-a8" || CPU == "cortex-a9" ||
+             CPU == "cortex-a9-mp") {
+      Features["vfp3"] = true;
       Features["neon"] = true;
-    else if (CPU == "swift" || CPU == "cortex-a7") {
+    } else if (CPU == "swift" || CPU == "cortex-a5" ||
+        CPU == "cortex-a7" || CPU == "cortex-a15") {
       Features["vfp4"] = true;
       Features["neon"] = true;
     }
@@ -3857,8 +3876,9 @@ public:
         .Case("arm", true)
         .Case("softfloat", SoftFloat)
         .Case("thumb", IsThumb)
-        .Case("neon", FPU == NeonFPU && !SoftFloat && 
-              StringRef(getCPUDefineSuffix(CPU)).startswith("7"))    
+        .Case("neon", (FPU & NeonFPU) && !SoftFloat &&
+              (StringRef(getCPUDefineSuffix(CPU)).startswith("7") ||
+               StringRef(getCPUDefineSuffix(CPU)).startswith("8")))
         .Default(false);
   }
   // FIXME: Should we actually have some table instead of these switches?
@@ -3879,8 +3899,8 @@ public:
       .Cases("arm1136jf-s", "mpcorenovfp", "mpcore", "6K")
       .Cases("arm1156t2-s", "arm1156t2f-s", "6T2")
       .Cases("cortex-a5", "cortex-a7", "cortex-a8", "7A")
-      .Cases("cortex-a9", "cortex-a15", "7A")
-      .Case("cortex-r5", "7R")
+      .Cases("cortex-a9", "cortex-a12", "cortex-a15", "7A")
+      .Cases("cortex-r4", "cortex-r5", "7R")
       .Case("cortex-a9-mp", "7F")
       .Case("swift", "7S")
       .Cases("cortex-m3", "cortex-m4", "7M")
@@ -3890,9 +3910,10 @@ public:
   }
   static const char *getCPUProfile(StringRef Name) {
     return llvm::StringSwitch<const char*>(Name)
-      .Cases("cortex-a8", "cortex-a9", "A")
+      .Cases("cortex-a5", "cortex-a7", "cortex-a8", "A")
+      .Cases("cortex-a9", "cortex-a12", "cortex-a15", "A")
       .Cases("cortex-m3", "cortex-m4", "cortex-m0", "M")
-      .Case("cortex-r5", "R")
+      .Cases("cortex-r4", "cortex-r5", "R")
       .Default("");
   }
   virtual bool setCPU(const std::string &Name) {
@@ -4800,6 +4821,7 @@ namespace {
                           "f32:32:32-f64:32:32-v64:32:32-"
                           "v128:32:32-a0:0:32-n32";
       AddrSpaceMap = &TCEOpenCLAddrSpaceMap;
+      UseAddrSpaceMapMangling = true;
     }
 
     virtual void getTargetDefines(const LangOptions &Opts,
@@ -5362,8 +5384,6 @@ namespace {
     0     // cuda_shared
   };
   class SPIRTargetInfo : public TargetInfo {
-    static const char * const GCCRegNames[];
-    static const Builtin::Info BuiltinInfo[];
   public:
     SPIRTargetInfo(const llvm::Triple &Triple) : TargetInfo(Triple) {
       assert(getTriple().getOS() == llvm::Triple::UnknownOS &&
@@ -5374,6 +5394,7 @@ namespace {
       TLSSupported = false;
       LongWidth = LongAlign = 64;
       AddrSpaceMap = &SPIRAddrSpaceMap;
+      UseAddrSpaceMapMangling = true;
       // Define available target features
       // These must be defined in sorted order!
       NoAsmVariants = true;
