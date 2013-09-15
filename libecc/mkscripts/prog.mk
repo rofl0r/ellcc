@@ -6,8 +6,8 @@ OBJS := $(BASENAMES:%=%.o)
 DEPENDSRCS := $(basename $(filter %.c %.cxx %.y %.l, $(SRCS)))
 DEPENDFILES := $(DEPENDSRCS:%=%.d)
 
-CFLAGS += -g -Werror -MD -MP
-CXXFLAGS += -g -Werror -MD -MP
+CFLAGS += -g -MD -MP
+CXXFLAGS += -g -MD -MP
 -include $(ELLCC)/libecc/mkscripts/targets/$(TARGET)/setup.mk
 
 ifeq ($(XCC),)

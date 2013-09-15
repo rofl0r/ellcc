@@ -7,7 +7,7 @@ LIBECC := $(ELLCC)/libecc
 Configs := $(patsubst %.notyet,,$(shell cd $(LIBECC)/mkscripts/targets; echo *))
 INCLUDES := $(foreach TARGET, $(Configs), $(LIBECC)/mkscripts/targets/$(TARGET)/setup.mk)
 OS := linux
-CFLAGS := -MP -MD -g -Werror -Qunused-arguments \
+CFLAGS := -MP -MD -g -Qunused-arguments \
           -Wno-unneeded-internal-declaration -Wno-cast-align \
 	  -Wno-incompatible-pointer-types -Wno-string-plus-int \
 	  -Wno-pointer-sign -Wno-array-bounds -Wno-dangling-else \
@@ -54,7 +54,8 @@ $(Configs):
 	mkdir -p obj/$*/linux/libunwind
 	cd obj/$*/linux/libunwind ; \
 	../../../../src/libunwind/configure CC="$(ELLCC)/bin/ecc $(CFLAGS.$*) -Wno-header-guard" \
-        --enable-shared=no --enable-cxx-exceptions=yes --host=$*
+	    --enable-shared=no --enable-cxx-exceptions=yes \
+            # --host=$*
 
 clean:
 	make -C src/musl distclean
