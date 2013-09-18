@@ -78,7 +78,7 @@ class TestingConfig:
         cfg_globals['__file__'] = path
         try:
             if PY2:
-                exec("exec data in cfg_globals")
+                exec data in cfg_globals
             else:
                 exec(data, cfg_globals)
             if litConfig.debug:

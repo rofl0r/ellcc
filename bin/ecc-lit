@@ -11,6 +11,9 @@ llvm_obj_root = os.path.join(ellcc_root, "llvm-build")
 # Make sure we can find the lit package.
 sys.path.insert(0, os.path.join(llvm_source_root, 'utils', 'lit'))
 
+# Put the ELLCC bin directory at the front of the search path.
+os.environ["PATH"] =  os.path.join(ellcc_root, 'bin') + os.pathsep + os.environ["PATH"]
+
 # Set up some builtin parameters, so that by default the LLVM test suite
 # configuration file knows how to find the object tree.
 

@@ -15,7 +15,7 @@ USEDLIBS = LLVMSupport.a
 TOOL_NO_EXPORTS = 1
 
 # Don't install this utility
-NO_INSTALL = 1
+# RICH: NO_INSTALL = 1
 
 include $(LEVEL)/Makefile.common
 
