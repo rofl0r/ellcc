@@ -1,4 +1,3 @@
-// XFAIL: *
 // RUN: %ecc -o %t %s && %t | FileCheck -check-prefix=CHECK %s
 // RUN: %armecc -o %t %s && %armrun %t | FileCheck -check-prefix=CHECK %s
 // RUN: %armebecc -o %t %s && %armebrun %t | FileCheck -check-prefix=CHECK %s
