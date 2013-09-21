@@ -2459,7 +2459,7 @@ bool Sema::UseArgumentDependentLookup(const CXXScopeSpec &SS,
     // turn off ADL anyway).
     if (isa<UsingShadowDecl>(D))
       D = cast<UsingShadowDecl>(D)->getTargetDecl();
-    else if (D->getDeclContext()->isFunctionOrMethod())
+    else if (D->getLexicalDeclContext()->isFunctionOrMethod())
       return false;
 
     // C++0x [basic.lookup.argdep]p3:
@@ -2745,22 +2745,10 @@ ExprResult Sema::BuildDeclarationNameExpr(
   }
 }
 
-ExprResult Sema::ActOnPredefinedExpr(SourceLocation Loc, tok::TokenKind Kind) {
-  PredefinedExpr::IdentType IT;
-
-  switch (Kind) {
-  default: llvm_unreachable("Unknown simple primary expr!");
-  case tok::kw___func__: IT = PredefinedExpr::Func; break; // [C99 6.4.2.2]
-  case tok::kw___FUNCTION__: IT = PredefinedExpr::Function; break;
-  case tok::kw_L__FUNCTION__: IT = PredefinedExpr::LFunction; break;
-  case tok::kw___PRETTY_FUNCTION__: IT = PredefinedExpr::PrettyFunction; break;
-  }
-
-  // Pre-defined identifiers are of type char[x], where x is the length of the
-  // string.
-
-  // Pick the current block, lambda or function.
-  Decl *currentDecl;
+ExprResult Sema::BuildPredefinedExpr(SourceLocation Loc,
+                                     PredefinedExpr::IdentType IT) {
+  // Pick the current block, lambda, captured statement or function.
+  Decl *currentDecl = 0;
   if (const BlockScopeInfo *BSI = getCurBlock())
     currentDecl = BSI->TheDecl;
   else if (const LambdaScopeInfo *LSI = getCurLambda())
@@ -2776,9 +2764,11 @@ ExprResult Sema::ActOnPredefinedExpr(SourceLocation Loc, tok::TokenKind Kind) {
   }
 
   QualType ResTy;
-  if (cast<DeclContext>(currentDecl)->isDependentContext()) {
+  if (cast<DeclContext>(currentDecl)->isDependentContext())
     ResTy = Context.DependentTy;
-  } else {
+  else {
+    // Pre-defined identifiers are of type char[x], where x is the length of
+    // the string.
     unsigned Length = PredefinedExpr::ComputeName(IT, currentDecl).length();
 
     llvm::APInt LengthI(32, Length + 1);
@@ -2788,7 +2778,22 @@ ExprResult Sema::ActOnPredefinedExpr(SourceLocation Loc, tok::TokenKind Kind) {
       ResTy = Context.CharTy.withConst();
     ResTy = Context.getConstantArrayType(ResTy, LengthI, ArrayType::Normal, 0);
   }
+
   return Owned(new (Context) PredefinedExpr(Loc, ResTy, IT));
+}
+
+ExprResult Sema::ActOnPredefinedExpr(SourceLocation Loc, tok::TokenKind Kind) {
+  PredefinedExpr::IdentType IT;
+
+  switch (Kind) {
+  default: llvm_unreachable("Unknown simple primary expr!");
+  case tok::kw___func__: IT = PredefinedExpr::Func; break; // [C99 6.4.2.2]
+  case tok::kw___FUNCTION__: IT = PredefinedExpr::Function; break;
+  case tok::kw_L__FUNCTION__: IT = PredefinedExpr::LFunction; break;
+  case tok::kw___PRETTY_FUNCTION__: IT = PredefinedExpr::PrettyFunction; break;
+  }
+
+  return BuildPredefinedExpr(Loc, IT);
 }
 
 ExprResult Sema::ActOnCharacterConstant(const Token &Tok, Scope *UDLScope) {
@@ -4456,6 +4461,19 @@ ExprResult Sema::ActOnAsTypeExpr(Expr *E, ParsedType ParsedDestTy,
                      << E->getSourceRange());
   return Owned(new (Context) AsTypeExpr(E, DstTy, VK, OK, BuiltinLoc,
                RParenLoc));
+}
+
+/// ActOnConvertVectorExpr - create a new convert-vector expression from the
+/// provided arguments.
+///
+/// __builtin_convertvector( value, dst type )
+///
+ExprResult Sema::ActOnConvertVectorExpr(Expr *E, ParsedType ParsedDestTy,
+                                        SourceLocation BuiltinLoc,
+                                        SourceLocation RParenLoc) {
+  TypeSourceInfo *TInfo;
+  GetTypeFromParser(ParsedDestTy, &TInfo);
+  return SemaConvertVectorExpr(E, TInfo, BuiltinLoc, RParenLoc);
 }
 
 /// BuildResolvedCallExpr - Build a call to a resolved expression,

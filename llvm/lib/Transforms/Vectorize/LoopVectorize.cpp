@@ -909,6 +909,11 @@ struct LoopVectorize : public LoopPass {
     DT = &getAnalysis<DominatorTree>();
     TLI = getAnalysisIfAvailable<TargetLibraryInfo>();
 
+    // If the target claims to have no vector registers don't attempt
+    // vectorization.
+    if (!TTI->getNumberOfRegisters(true))
+      return false;
+
     if (DL == NULL) {
       DEBUG(dbgs() << "LV: Not vectorizing because of missing data layout");
       return false;
@@ -2866,6 +2871,12 @@ bool LoopVectorizationLegality::canVectorizeInstrs() {
 
           DEBUG(dbgs() << "LV: Found an induction variable.\n");
           Inductions[Phi] = InductionInfo(StartValue, IK);
+
+          // Until we explicitly handle the case of an induction variable with
+          // an outside loop user we have to give up vectorizing this loop.
+          if (hasOutsideLoopUser(TheLoop, it, AllowedExit))
+            return false;
+
           continue;
         }
 
@@ -2914,9 +2925,18 @@ bool LoopVectorizationLegality::canVectorizeInstrs() {
       // We still don't handle functions. However, we can ignore dbg intrinsic
       // calls and we do handle certain intrinsic and libm functions.
       CallInst *CI = dyn_cast<CallInst>(it);
-      if (CI && !getIntrinsicIDForCall(CI, TLI) && !isa<DbgInfoIntrinsic>(CI)) {
+      if (CI) {
         DEBUG(dbgs() << "LV: Found a call site.\n");
-        return false;
+
+        if (!isa<IntrinsicInst>(it)) {
+          DEBUG(dbgs() << "LV: We only vectorize intrinsics.\n");
+          return false;
+        }
+
+        if (!getIntrinsicIDForCall(CI, TLI) && !isa<DbgInfoIntrinsic>(CI)) {
+          DEBUG(dbgs() << "LV: Found an unknown intrinsic.\n");
+          return false;
+        }
       }
 
       // Check that the instruction return type is vectorizable.

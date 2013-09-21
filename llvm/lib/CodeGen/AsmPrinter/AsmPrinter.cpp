@@ -459,6 +459,10 @@ void AsmPrinter::EmitFunctionHeader() {
     OutStreamer.EmitLabel(DeadBlockSyms[i]);
   }
 
+  // Emit the prefix data.
+  if (F->hasPrefixData())
+    EmitGlobalConstant(F->getPrefixData());
+
   // Emit pre-function debug and/or EH information.
   if (DE) {
     NamedRegionTimer T(EHTimerName, DWARFGroupName, TimePassesIsEnabled);
@@ -876,6 +880,9 @@ bool AsmPrinter::doFinalization(Module &M) {
   M.getModuleFlagsMetadata(ModuleFlags);
   if (!ModuleFlags.empty())
     getObjFileLowering().emitModuleFlags(OutStreamer, ModuleFlags, Mang, TM);
+
+  // Make sure we wrote out everything we need.
+  OutStreamer.Flush();
 
   // Finalize debug and EH information.
   if (DE) {

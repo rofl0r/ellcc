@@ -12,6 +12,10 @@
 //===----------------------------------------------------------------------===//
 #include "asan_test_utils.h"
 
+#if defined(__APPLE__)
+#include <AvailabilityMacros.h>  // For MAC_OS_X_VERSION_*
+#endif
+
 // Used for string functions tests
 static char global_string[] = "global";
 static size_t global_string_length = 6;

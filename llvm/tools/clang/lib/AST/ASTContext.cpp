@@ -706,7 +706,6 @@ static bool isAddrSpaceMapManglingEnabled(const TargetInfo &TI,
     return false;
   }
   llvm_unreachable("getAddressSpaceMapMangling() doesn't cover anything.");
-  return false;
 }
 
 ASTContext::ASTContext(LangOptions& LOpts, SourceManager &SM,
@@ -5553,7 +5552,8 @@ void ASTContext::getObjCEncodingForStructureImpl(RecordDecl *RDecl,
       if (base->isEmpty())
         continue;
       uint64_t offs = toBits(layout.getVBaseClassOffset(base));
-      if (FieldOrBaseOffsets.find(offs) == FieldOrBaseOffsets.end())
+      if (offs >= uint64_t(toBits(layout.getNonVirtualSize())) &&
+          FieldOrBaseOffsets.find(offs) == FieldOrBaseOffsets.end())
         FieldOrBaseOffsets.insert(FieldOrBaseOffsets.end(),
                                   std::make_pair(offs, base));
     }

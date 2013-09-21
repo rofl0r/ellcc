@@ -54,7 +54,8 @@ enum AttributeDeclKind {
   ExpectedVariableOrField,
   ExpectedVariableFieldOrTag,
   ExpectedTypeOrNamespace,
-  ExpectedObjectiveCInterface
+  ExpectedObjectiveCInterface,
+  ExpectedMethodOrProperty
 };
 
 //===----------------------------------------------------------------------===//
@@ -1387,45 +1388,52 @@ static void handleNonNullAttr(Sema &S, Decl *D, const AttributeList &Attr) {
                          Attr.getAttributeSpellingListIndex()));
 }
 
+static const char *ownershipKindToDiagName(OwnershipAttr::OwnershipKind K) {
+  switch (K) {
+    case OwnershipAttr::Holds:    return "'ownership_holds'";
+    case OwnershipAttr::Takes:    return "'ownership_takes'";
+    case OwnershipAttr::Returns:  return "'ownership_returns'";
+  }
+  llvm_unreachable("unknown ownership");
+}
+
 static void handleOwnershipAttr(Sema &S, Decl *D, const AttributeList &AL) {
-  // This attribute must be applied to a function declaration.
-  // The first argument to the attribute must be a string,
-  // the name of the resource, for example "malloc".
-  // The following arguments must be argument indexes, the arguments must be
-  // of integer type for Returns, otherwise of pointer type.
+  // This attribute must be applied to a function declaration. The first
+  // argument to the attribute must be an identifier, the name of the resource,
+  // for example: malloc. The following arguments must be argument indexes, the
+  // arguments must be of integer type for Returns, otherwise of pointer type.
   // The difference between Holds and Takes is that a pointer may still be used
-  // after being held.  free() should be __attribute((ownership_takes)), whereas
+  // after being held. free() should be __attribute((ownership_takes)), whereas
   // a list append function may well be __attribute((ownership_holds)).
 
   if (!AL.isArgIdent(0)) {
     S.Diag(AL.getLoc(), diag::err_attribute_argument_n_type)
-      << AL.getName()->getName() << 1 << AANT_ArgumentString;
+      << AL.getName() << 1 << AANT_ArgumentIdentifier;
     return;
   }
+
   // Figure out our Kind, and check arguments while we're at it.
   OwnershipAttr::OwnershipKind K;
   switch (AL.getKind()) {
   case AttributeList::AT_ownership_takes:
     K = OwnershipAttr::Takes;
     if (AL.getNumArgs() < 2) {
-      S.Diag(AL.getLoc(), diag::err_attribute_wrong_number_arguments)
-        << AL.getName() << 2;
+      S.Diag(AL.getLoc(), diag::err_attribute_too_few_arguments) << 2;
       return;
     }
     break;
   case AttributeList::AT_ownership_holds:
     K = OwnershipAttr::Holds;
     if (AL.getNumArgs() < 2) {
-      S.Diag(AL.getLoc(), diag::err_attribute_wrong_number_arguments)
-        << AL.getName() << 2;
+      S.Diag(AL.getLoc(), diag::err_attribute_too_few_arguments) << 2;
       return;
     }
     break;
   case AttributeList::AT_ownership_returns:
     K = OwnershipAttr::Returns;
+
     if (AL.getNumArgs() > 2) {
-      S.Diag(AL.getLoc(), diag::err_attribute_wrong_number_arguments)
-        << AL.getName() << AL.getNumArgs() + 2;
+      S.Diag(AL.getLoc(), diag::err_attribute_too_many_arguments) << 1;
       return;
     }
     break;
@@ -1446,7 +1454,6 @@ static void handleOwnershipAttr(Sema &S, Decl *D, const AttributeList &AL) {
   if (Module.startswith("__") && Module.endswith("__"))
     Module = Module.substr(2, Module.size() - 4);
 
-
   SmallVector<unsigned, 8> OwnershipArgs;
   for (unsigned i = 1; i < AL.getNumArgs(); ++i) {
     Expr *Ex = AL.getArgAsExpr(i);
@@ -1455,51 +1462,35 @@ static void handleOwnershipAttr(Sema &S, Decl *D, const AttributeList &AL) {
                                             AL.getLoc(), i, Ex, Idx))
       return;
 
+    // Is the function argument a pointer type?
+    QualType T = getFunctionOrMethodArgType(D, Idx);
+    int Err = -1;  // No error
     switch (K) {
-    case OwnershipAttr::Takes:
-    case OwnershipAttr::Holds: {
-      // Is the function argument a pointer type?
-      QualType T = getFunctionOrMethodArgType(D, Idx);
-      if (!T->isAnyPointerType() && !T->isBlockPointerType()) {
-        // FIXME: Should also highlight argument in decl.
-        S.Diag(AL.getLoc(), diag::err_ownership_type)
-            << ((K==OwnershipAttr::Takes)?"ownership_takes":"ownership_holds")
-            << "pointer"
-            << Ex->getSourceRange();
-        continue;
-      }
-      break;
+      case OwnershipAttr::Takes:
+      case OwnershipAttr::Holds:
+        if (!T->isAnyPointerType() && !T->isBlockPointerType())
+          Err = 0;
+        break;
+      case OwnershipAttr::Returns:
+        if (!T->isIntegerType())
+          Err = 1;
+        break;
     }
-    case OwnershipAttr::Returns: {
-      if (AL.getNumArgs() > 2) {
-          // Is the function argument an integer type?
-          Expr *IdxExpr = AL.getArgAsExpr(1);
-          llvm::APSInt ArgNum(32);
-          if (IdxExpr->isTypeDependent() || IdxExpr->isValueDependent()
-              || !IdxExpr->isIntegerConstantExpr(ArgNum, S.Context)) {
-            S.Diag(AL.getLoc(), diag::err_ownership_type)
-                << "ownership_returns" << "integer"
-                << IdxExpr->getSourceRange();
-            return;
-          }
-      }
-      break;
+    if (-1 != Err) {
+      S.Diag(AL.getLoc(), diag::err_ownership_type) << AL.getName() << Err
+        << Ex->getSourceRange();
+      return;
     }
-    } // switch
 
     // Check we don't have a conflict with another ownership attribute.
     for (specific_attr_iterator<OwnershipAttr>
-          i = D->specific_attr_begin<OwnershipAttr>(),
-          e = D->specific_attr_end<OwnershipAttr>();
-        i != e; ++i) {
-      if ((*i)->getOwnKind() != K) {
-        for (const unsigned *I = (*i)->args_begin(), *E = (*i)->args_end();
-             I!=E; ++I) {
-          if (Idx == *I) {
-            S.Diag(AL.getLoc(), diag::err_attributes_are_not_compatible)
-                << AL.getName()->getName() << "ownership_*";
-          }
-        }
+         i = D->specific_attr_begin<OwnershipAttr>(),
+         e = D->specific_attr_end<OwnershipAttr>(); i != e; ++i) {
+      if ((*i)->getOwnKind() != K && (*i)->args_end() !=
+          std::find((*i)->args_begin(), (*i)->args_end(), Idx)) {
+        S.Diag(AL.getLoc(), diag::err_attributes_are_not_compatible)
+          << AL.getName() << ownershipKindToDiagName((*i)->getOwnKind());
+        return;
       }
     }
     OwnershipArgs.push_back(Idx);
@@ -1508,12 +1499,6 @@ static void handleOwnershipAttr(Sema &S, Decl *D, const AttributeList &AL) {
   unsigned* start = OwnershipArgs.data();
   unsigned size = OwnershipArgs.size();
   llvm::array_pod_sort(start, start + size);
-
-  if (K != OwnershipAttr::Returns && OwnershipArgs.empty()) {
-    S.Diag(AL.getLoc(), diag::err_attribute_wrong_number_arguments)
-      << AL.getName() << 2;
-    return;
-  }
 
   D->addAttr(::new (S.Context)
              OwnershipAttr(AL.getLoc(), S.Context, K, Module, start, size,
@@ -3476,77 +3461,24 @@ static void handleModeAttr(Sema &S, Decl *D, const AttributeList &Attr) {
 
   // FIXME: Sync this with InitializePredefinedMacros; we need to match int8_t
   // and friends, at least with glibc.
-  // FIXME: Make sure 32/64-bit integers don't get defined to types of the wrong
-  // width on unusual platforms.
   // FIXME: Make sure floating-point mappings are accurate
   // FIXME: Support XF and TF types
-  QualType NewTy;
-  switch (DestWidth) {
-  case 0:
+  if (!DestWidth) {
     S.Diag(Attr.getLoc(), diag::err_unknown_machine_mode) << Name;
     return;
-  default:
+  }
+
+  QualType NewTy;
+
+  if (IntegerMode)
+    NewTy = S.Context.getIntTypeForBitwidth(DestWidth,
+                                            OldTy->isSignedIntegerType());
+  else
+    NewTy = S.Context.getRealTypeForBitwidth(DestWidth);
+
+  if (NewTy.isNull()) {
     S.Diag(Attr.getLoc(), diag::err_unsupported_machine_mode) << Name;
     return;
-  case 8:
-    if (!IntegerMode) {
-      S.Diag(Attr.getLoc(), diag::err_unsupported_machine_mode) << Name;
-      return;
-    }
-    if (OldTy->isSignedIntegerType())
-      NewTy = S.Context.SignedCharTy;
-    else
-      NewTy = S.Context.UnsignedCharTy;
-    break;
-  case 16:
-    if (!IntegerMode) {
-      S.Diag(Attr.getLoc(), diag::err_unsupported_machine_mode) << Name;
-      return;
-    }
-    if (OldTy->isSignedIntegerType())
-      NewTy = S.Context.ShortTy;
-    else
-      NewTy = S.Context.UnsignedShortTy;
-    break;
-  case 32:
-    if (!IntegerMode)
-      NewTy = S.Context.FloatTy;
-    else if (OldTy->isSignedIntegerType())
-      NewTy = S.Context.IntTy;
-    else
-      NewTy = S.Context.UnsignedIntTy;
-    break;
-  case 64:
-    if (!IntegerMode)
-      NewTy = S.Context.DoubleTy;
-    else if (OldTy->isSignedIntegerType())
-      if (S.Context.getTargetInfo().getLongWidth() == 64)
-        NewTy = S.Context.LongTy;
-      else
-        NewTy = S.Context.LongLongTy;
-    else
-      if (S.Context.getTargetInfo().getLongWidth() == 64)
-        NewTy = S.Context.UnsignedLongTy;
-      else
-        NewTy = S.Context.UnsignedLongLongTy;
-    break;
-  case 96:
-    NewTy = S.Context.LongDoubleTy;
-    break;
-  case 128:
-    if (!IntegerMode && &S.Context.getTargetInfo().getLongDoubleFormat() !=
-        &llvm::APFloat::PPCDoubleDouble) {
-      S.Diag(Attr.getLoc(), diag::err_unsupported_machine_mode) << Name;
-      return;
-    }
-    if (IntegerMode) {
-      if (OldTy->isSignedIntegerType())
-        NewTy = S.Context.Int128Ty;
-      else
-        NewTy = S.Context.UnsignedInt128Ty;
-    } else
-      NewTy = S.Context.LongDoubleTy;
-    break;
   }
 
   if (ComplexMode) {
@@ -4213,30 +4145,39 @@ static void handleNSReturnsRetainedAttr(Sema &S, Decl *D,
 
 static void handleObjCReturnsInnerPointerAttr(Sema &S, Decl *D,
                                               const AttributeList &attr) {
+  const int EP_ObjCMethod = 1;
+  const int EP_ObjCProperty = 2;
+  
   SourceLocation loc = attr.getLoc();
-
+  QualType resultType;
+  
   ObjCMethodDecl *method = dyn_cast<ObjCMethodDecl>(D);
 
   if (!method) {
-    S.Diag(D->getLocStart(), diag::err_attribute_wrong_decl_type)
-      << SourceRange(loc, loc) << attr.getName() << ExpectedMethod;
-    return;
+    ObjCPropertyDecl *property = dyn_cast<ObjCPropertyDecl>(D);
+    if (!property) {
+      S.Diag(D->getLocStart(), diag::err_attribute_wrong_decl_type)
+        << SourceRange(loc, loc) << attr.getName() << ExpectedMethodOrProperty;
+      return;
+    }
+    resultType = property->getType();
   }
+  else
+    // Check that the method returns a normal pointer.
+    resultType = method->getResultType();
 
-  // Check that the method returns a normal pointer.
-  QualType resultType = method->getResultType();
-    
   if (!resultType->isReferenceType() &&
       (!resultType->isPointerType() || resultType->isObjCRetainableType())) {
-    S.Diag(method->getLocStart(), diag::warn_ns_attribute_wrong_return_type)
+    S.Diag(D->getLocStart(), diag::warn_ns_attribute_wrong_return_type)
       << SourceRange(loc)
-      << attr.getName() << /*method*/ 1 << /*non-retainable pointer*/ 2;
+    << attr.getName() << (method ? EP_ObjCMethod : EP_ObjCProperty)
+    << /*non-retainable pointer*/ 2;
 
     // Drop the attribute.
     return;
   }
 
-  method->addAttr(::new (S.Context)
+  D->addAttr(::new (S.Context)
                   ObjCReturnsInnerPointerAttr(attr.getRange(), S.Context,
                                               attr.getAttributeSpellingListIndex()));
 }

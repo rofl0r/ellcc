@@ -279,26 +279,6 @@ DerivedArgList *Driver::TranslateInputArgs(const InputArgList &Args) const {
   return DAL;
 }
 
-/// \brief Check whether there are multiple instances of OptionID in Args, and
-/// if so, issue a diagnostics about it.
-static void DiagnoseOptionOverride(const Driver &D, const DerivedArgList &Args,
-                                   unsigned OptionID) {
-  assert(Args.hasArg(OptionID));
-
-  arg_iterator it = Args.filtered_begin(OptionID);
-  arg_iterator ie = Args.filtered_end();
-  Arg *Previous = *it;
-  ++it;
-
-  while (it != ie) {
-    D.Diag(clang::diag::warn_drv_overriding_joined_option)
-        << Previous->getSpelling() << Previous->getValue()
-        << (*it)->getSpelling() << (*it)->getValue();
-    Previous = *it;
-    ++it;
-  }
-}
-
 Compilation *Driver::BuildCompilation(ArrayRef<const char *> ArgList) {
   llvm::PrettyStackTraceString CrashInfo("Compilation construction");
 
@@ -1153,7 +1133,6 @@ void Driver::BuildActions(const ToolChain &TC, DerivedArgList &Args,
 
   // Diagnose misuse of /Fo.
   if (Arg *A = Args.getLastArg(options::OPT__SLASH_Fo)) {
-    DiagnoseOptionOverride(*this, Args, options::OPT__SLASH_Fo);
     StringRef V = A->getValue();
     if (V.empty()) {
       // It has to have a value.
@@ -1169,7 +1148,6 @@ void Driver::BuildActions(const ToolChain &TC, DerivedArgList &Args,
 
   // Diagnose misuse of /Fe.
   if (Arg *A = Args.getLastArg(options::OPT__SLASH_Fe)) {
-    DiagnoseOptionOverride(*this, Args, options::OPT__SLASH_Fe);
     if (A->getValue()[0] == '\0') {
       // It has to have a value.
       Diag(clang::diag::err_drv_missing_argument) << A->getSpelling() << 1;
@@ -1263,8 +1241,13 @@ void Driver::BuildActions(const ToolChain &TC, DerivedArgList &Args,
 
   // If we are linking, claim any options which are obviously only used for
   // compilation.
-  if (FinalPhase == phases::Link && PL.size() == 1)
+  if (FinalPhase == phases::Link && PL.size() == 1) {
     Args.ClaimAllArgs(options::OPT_CompileOnly_Group);
+    Args.ClaimAllArgs(options::OPT_cl_compile_Group);
+  }
+
+  // Claim ignored clang-cl options.
+  Args.ClaimAllArgs(options::OPT_cl_ignored_Group);
 }
 
 Action *Driver::ConstructPhaseAction(const ArgList &Args, phases::ID Phase,

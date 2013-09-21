@@ -873,7 +873,7 @@ public:
   bool isLocalVarDecl() const {
     if (getKind() != Decl::Var)
       return false;
-    if (const DeclContext *DC = getDeclContext())
+    if (const DeclContext *DC = getLexicalDeclContext())
       return DC->getRedeclContext()->isFunctionOrMethod();
     return false;
   }
@@ -883,7 +883,7 @@ public:
   bool isFunctionOrMethodVarDecl() const {
     if (getKind() != Decl::Var)
       return false;
-    const DeclContext *DC = getDeclContext()->getRedeclContext();
+    const DeclContext *DC = getLexicalDeclContext()->getRedeclContext();
     return DC->isFunctionOrMethod() && DC->getDeclKind() != Decl::Block;
   }
 
@@ -959,7 +959,7 @@ public:
     if (K == ParmVar || K == ImplicitParam)
       return false;
 
-    if (getDeclContext()->getRedeclContext()->isFileContext())
+    if (getLexicalDeclContext()->getRedeclContext()->isFileContext())
       return true;
 
     if (isStaticDataMember())
@@ -1735,6 +1735,10 @@ public:
   /// entry point into an executable program.
   bool isMain() const;
 
+  /// \brief Determines whether this function is a MSVCRT user defined entry
+  /// point.
+  bool isMSVCRTEntryPoint() const;
+
   /// \brief Determines whether this operator new or delete is one
   /// of the reserved global placement operators:
   ///    void *operator new(size_t, void *);
@@ -2503,17 +2507,20 @@ private:
   // to be used for the (uncommon) case of out-of-line declarations.
   typedef QualifierInfo ExtInfo;
 
-  /// TypedefNameDeclOrQualifier - If the (out-of-line) tag declaration name
+  /// \brief If the (out-of-line) tag declaration name
   /// is qualified, it points to the qualifier info (nns and range);
   /// otherwise, if the tag declaration is anonymous and it is part of
   /// a typedef or alias, it points to the TypedefNameDecl (used for mangling);
+  /// otherwise, if the tag declaration is anonymous and it is used as a
+  /// declaration specifier for variables, it points to the first VarDecl (used
+  /// for mangling);
   /// otherwise, it is a null (TypedefNameDecl) pointer.
-  llvm::PointerUnion<TypedefNameDecl*, ExtInfo*> TypedefNameDeclOrQualifier;
+  llvm::PointerUnion<NamedDecl *, ExtInfo *> NamedDeclOrQualifier;
 
-  bool hasExtInfo() const { return TypedefNameDeclOrQualifier.is<ExtInfo*>(); }
-  ExtInfo *getExtInfo() { return TypedefNameDeclOrQualifier.get<ExtInfo*>(); }
+  bool hasExtInfo() const { return NamedDeclOrQualifier.is<ExtInfo *>(); }
+  ExtInfo *getExtInfo() { return NamedDeclOrQualifier.get<ExtInfo *>(); }
   const ExtInfo *getExtInfo() const {
-    return TypedefNameDeclOrQualifier.get<ExtInfo*>();
+    return NamedDeclOrQualifier.get<ExtInfo *>();
   }
 
 protected:
@@ -2523,7 +2530,7 @@ protected:
         IsCompleteDefinition(false), IsBeingDefined(false),
         IsEmbeddedInDeclarator(false), IsFreeStanding(false),
         IsCompleteDefinitionRequired(false),
-        TypedefNameDeclOrQualifier((TypedefNameDecl *)0) {
+        NamedDeclOrQualifier((NamedDecl *)0) {
     assert((DK != Enum || TK == TTK_Enum) &&
            "EnumDecl not matched with TTK_Enum");
     setPreviousDeclaration(PrevDecl);
@@ -2666,10 +2673,21 @@ public:
     return (getDeclName() || getTypedefNameForAnonDecl());
   }
 
-  TypedefNameDecl *getTypedefNameForAnonDecl() const {
-    return hasExtInfo() ? 0 :
-           TypedefNameDeclOrQualifier.get<TypedefNameDecl*>();
+  bool hasDeclaratorForAnonDecl() const {
+    return dyn_cast_or_null<DeclaratorDecl>(
+        NamedDeclOrQualifier.get<NamedDecl *>());
   }
+  DeclaratorDecl *getDeclaratorForAnonDecl() const {
+    return hasExtInfo() ? 0 : dyn_cast_or_null<DeclaratorDecl>(
+                                  NamedDeclOrQualifier.get<NamedDecl *>());
+  }
+
+  TypedefNameDecl *getTypedefNameForAnonDecl() const {
+    return hasExtInfo() ? 0 : dyn_cast_or_null<TypedefNameDecl>(
+                                  NamedDeclOrQualifier.get<NamedDecl *>());
+  }
+
+  void setDeclaratorForAnonDecl(DeclaratorDecl *DD) { NamedDeclOrQualifier = DD; }
 
   void setTypedefNameForAnonDecl(TypedefNameDecl *TDD);
 
@@ -3454,10 +3472,8 @@ void Redeclarable<decl_type>::setPreviousDeclaration(decl_type *PrevDecl) {
 
     // If the declaration was previously visible, a redeclaration of it remains
     // visible even if it wouldn't be visible by itself.
-    // FIXME: Once we handle local extern decls properly, this should inherit
-    // the visibility from MostRecent, not from PrevDecl.
     static_cast<decl_type*>(this)->IdentifierNamespace |=
-      PrevDecl->getIdentifierNamespace() &
+      MostRecent->getIdentifierNamespace() &
       (Decl::IDNS_Ordinary | Decl::IDNS_Tag | Decl::IDNS_Type);
   } else {
     // Make this first.

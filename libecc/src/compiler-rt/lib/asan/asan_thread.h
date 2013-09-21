@@ -62,7 +62,7 @@ class AsanThread {
 
   uptr stack_top() { return stack_top_; }
   uptr stack_bottom() { return stack_bottom_; }
-  uptr stack_size() { return stack_top_ - stack_bottom_; }
+  uptr stack_size() { return stack_size_; }
   uptr tls_begin() { return tls_begin_; }
   uptr tls_end() { return tls_end_; }
   u32 tid() { return context_->tid; }
@@ -77,7 +77,6 @@ class AsanThread {
 
   void DeleteFakeStack() {
     if (!fake_stack_) return;
-    fake_stack_->PoisonAll(0);
     FakeStack *t = fake_stack_;
     fake_stack_ = 0;
     SetTLSFakeStack(0);
@@ -89,6 +88,8 @@ class AsanThread {
   }
 
   FakeStack *fake_stack() {
+    if (!__asan_option_detect_stack_use_after_return)
+      return 0;
     if (!has_fake_stack())
       return AsyncSignalSafeLazyInitFakeStack();
     return fake_stack_;
@@ -114,6 +115,9 @@ class AsanThread {
   void *arg_;
   uptr  stack_top_;
   uptr  stack_bottom_;
+  // stack_size_ == stack_top_ - stack_bottom_;
+  // It needs to be set in a async-signal-safe manner.
+  uptr  stack_size_;
   uptr tls_begin_;
   uptr tls_end_;
 
