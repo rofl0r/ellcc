@@ -49,6 +49,9 @@ TEST_GROUP(Format)
     chk("%u", "10", 10);
     chk("%lu", "10", 10l);
     chk("%llu", "10", 10ll);
+    TEST_EXCLUDE(PPC, "http://ellcc.org/bugzilla/show_bug.cgi?id=71")
+    TEST_EXCLUDE(MIPSEL, "http://ellcc.org/bugzilla/show_bug.cgi?id=53")
+    TEST_EXCLUDE(MIPS, "http://ellcc.org/bugzilla/show_bug.cgi?id=53") {
     TEST_RESOLVED(ARMEB, "http://ellcc.org/bugzilla/show_bug.cgi?id=60")
         chk("%g", "1", 1.0);
     TEST_RESOLVED(ARMEB, "http://ellcc.org/bugzilla/show_bug.cgi?id=60") {
@@ -70,6 +73,7 @@ TEST_GROUP(Format)
         chk("%10.*g", "9.99999999", 9, 9.99999999);
         chk("%*.g", "     1e+01", 10, 9.99999999);
         chk("%g", "0.01", 0.01);
+    }
     }
     chk("%x", "a", 10);
     chk("%lx", "a", 10l);

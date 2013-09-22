@@ -17,16 +17,19 @@
  */
 #if defined(__ARMEL__)
 #define ARM 1
+#define TARGET "ARM"
 #else
 #define ARM 0
 #endif
 #if defined(__ARMEB__)
 #define ARMEB 1
+#define TARGET "ARMEB"
 #else
 #define ARMEB 0
 #endif
 #if !defined(__clang__)
 #define GCC 1
+#define TARGET "GCC"
 #else
 #define GCC 0
 #endif
@@ -37,42 +40,56 @@
 #endif
 #if defined(__i386__)
 #define I386 1
+#define TARGET "I386"
 #else
 #define I386 0
 #endif
 #if defined(__microblaze__)
 #define MICROBLAZE 1
+#define TARGET "MICROBLAZE"
 #else
 #define MICROBLAZE 0
 #endif
-#if defined(__mips__)
+#if defined(__MIPSEL__)
+#define MIPSEL 1
+#define TARGET "MIPSEL"
+#else
+#define MIPSEL 0
+#endif
+#if defined(__MIPSEB__)
 #define MIPS 1
+#define TARGET "MIPS"
 #else
 #define MIPS 0
 #endif
 #if defined(__nios2__)
 #define NIOS2 1
+#define TARGET "NIOS2"
 #else
 #define NIOS2 0
 #endif
 #if defined(__ppc64__)
 #define PPC64 1
 #define PPC 0
+#define TARGET "PPC64"
 #else
-#define PPC64 0
+  #define PPC64 0
   #if defined(__ppc__)
   #define PPC 1
+  #define TARGET "PPC"
   #else
   #define PPC 0
   #endif
 #endif
 #if defined(__sparc__)
 #define SPARC 1
+#define TARGET "SPARC"
 #else
 #define SPARC 0
 #endif
 #if defined(__x86_64__)
 #define X86_64 1
+#define TARGET "X86_64"
 #else
 #define X86_64 0
 #endif
@@ -80,7 +97,7 @@
 /** All known processors
  */
 #define ALL_PROCESSORS \
-    (ARM + ARMEB + GCC + I386 + MICROBLAZE + MIPS + \
+    (ARM + ARMEB + GCC + I386 + MICROBLAZE + MIPS + MIPSEL + \
      NIOS2 + PPC + PPC64 + SPARC + X86_64)
 
 /** Check for exactly one processor definition.
@@ -178,17 +195,20 @@ int main()                                                              \
         const char *file = strrchr(__FILE__, '/');                      \
         if (file == NULL) file = __FILE__; else ++file;                 \
         if (!(cond)) {                                                  \
-            fprintf(stdout, "FAIL: %s:%d: %s(%s): ", file, __LINE__,    \
+            fprintf(stdout, "FAIL: %s %s:%d: %s(%s): ", TARGET,         \
+            file, __LINE__,                                             \
                     __test_category, __test_group);                     \
             fprintf(stdout, __VA_ARGS__);                               \
             fprintf(stdout, "\n");                                      \
-            fprintf(stderr, "FAIL: %s:%d: %s(%s): ", file, __LINE__,    \
+            fprintf(stderr, "FAIL: %s %s:%d: %s(%s): ", TARGET,         \
+            file, __LINE__,                                             \
                     __test_category, __test_group);                     \
             fprintf(stderr, __VA_ARGS__);                               \
             fprintf(stderr, "\n");                                      \
             ++__test_failures;                                          \
         } else if (__test_verbose) {                                    \
-            fprintf(stdout, "PASS: %s:%d: %s(%s): ", file, __LINE__,    \
+            fprintf(stdout, "PASS: %s %s:%d: %s(%s): ", TARGET,         \
+            file, __LINE__,                                             \
                     __test_category, __test_group);                     \
             fprintf(stdout, __VA_ARGS__);                               \
             fprintf(stdout, "\n");                                      \
@@ -202,18 +222,21 @@ int main()                                                              \
         ++__test_count;                                                 \
         const char *file = strrchr(__FILE__, '/');                      \
         if (file == NULL) file = __FILE__; else ++file;                 \
-        if (!(cond)) {                                                   \
-            fprintf(stdout, "XFAIL: %s:%d: %s(%s): ", file, __LINE__,   \
+        if (!(cond)) {                                                  \
+            fprintf(stdout, "XFAIL: %s %s:%d: %s(%s): ", TARGET,        \
+            file, __LINE__,                                             \
                     __test_category, __test_group);                     \
             fprintf(stdout, __VA_ARGS__);                               \
             fprintf(stdout, "\n");                                      \
-            fprintf(stderr, "XFAIL: %s:%d: %s(%s): ", file, __LINE__,   \
+            fprintf(stderr, "XFAIL: %s %s:%d: %s(%s): ", TARGET,        \
+            file, __LINE__,                                             \
                     __test_category, __test_group);                     \
             fprintf(stderr, __VA_ARGS__);                               \
             fprintf(stderr, "\n");                                      \
             ++__test_expected_failures;                                 \
         } else if (__test_verbose) {                                    \
-            fprintf(stdout, "XPASS: %s:%d: %s(%s): ", file, __LINE__,   \
+            fprintf(stdout, "XPASS: %s %s:%d: %s(%s): ", TARGET,        \
+            file, __LINE__,                                             \
                     __test_category, __test_group);                     \
             ++__test_unexpected_passes;                                 \
             fprintf(stdout, __VA_ARGS__);                               \

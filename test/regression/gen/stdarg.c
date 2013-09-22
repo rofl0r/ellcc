@@ -77,6 +77,8 @@ static void vfunc3(int count, ...)
         ++j;
     }
     d = va_arg(ap, double);
+    TEST_EXCLUDE(MIPSEL, "http://ellcc.org/bugzilla/show_bug.cgi?id=53")
+    TEST_EXCLUDE(MIPS, "http://ellcc.org/bugzilla/show_bug.cgi?id=53")
     TEST_RESOLVED(ARM, "http://ellcc.org/bugzilla/show_bug.cgi?id=52")
         TEST(d == 3.1415927, "double: %g", d);
     va_end(ap);
