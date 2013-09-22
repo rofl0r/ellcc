@@ -13,6 +13,8 @@ OS := linux
 CFLAGS := -Wall -Werror -O3 -fomit-frame-pointer
 -include $(INCLUDES)
 
+CommonFunctions := GCDAProfiling $(CommonFunctions)
+
 ###
 
 FUNCTIONS.arm := $(call set_difference, $(CommonFunctions), clear_cache) \
