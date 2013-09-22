@@ -1,5 +1,4 @@
 // Compile and run for every target.
-// XFAIL: *
 // RUN: %ecc -g -o %t %s && %t
 // RUN: %armecc -g -o %t %s && %armrun %t
 // RUN: %armebecc -g -o %t %s && %armebrun %t
