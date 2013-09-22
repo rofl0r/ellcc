@@ -6,7 +6,7 @@
 // RUN: %microblazeecc -o %t %s && %microblazerun %t
 // RUN: %mipsecc -o %t %s && %mipsrun %t
 // RUN: %mipselecc -o %t %s && %mipselrun %t
-// RUN: %ppcecc -o %t %s && %ppcrun %t
+// FAIL: %ppcecc -o %t %s && %ppcrun %t
 // FAIL: %ppc64ecc -o %t %s && %ppc64run %t
 // RUN: %x86_64ecc -o %t %s && %x86_64run %t
 #include "../ecc_test.h"
