@@ -2840,8 +2840,7 @@ void DwarfDebug::emitDebugARanges() {
       // Calculate the size as being from the span start to it's end.
       // If we have no valid end symbol, then we just cover the first byte.
       // (this sucks, but I can't seem to figure out how to get the size)
-      // RICH: "Fix" the bss - COM symbol error.
-      if (0 && Span.End)
+      if (Span.End)
         Asm->EmitLabelDifference(Span.End, Span.Start, PtrSize);
       else
         Asm->OutStreamer.EmitIntValue(1, PtrSize);
