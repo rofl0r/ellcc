@@ -5532,7 +5532,7 @@ Sema::AddOverloadCandidate(FunctionDecl *Function,
 }
 
 /// \brief Add all of the function declarations in the given function set to
-/// the overload canddiate set.
+/// the overload candidate set.
 void Sema::AddFunctionCandidates(const UnresolvedSetImpl &Fns,
                                  ArrayRef<Expr *> Args,
                                  OverloadCandidateSet& CandidateSet,
@@ -5828,6 +5828,17 @@ Sema::AddConversionCandidate(CXXConversionDecl *Conversion,
       return;
     ConvType = Conversion->getConversionType().getNonReferenceType();
   }
+
+  // Per C++ [over.match.conv]p1, [over.match.ref]p1, an explicit conversion
+  // operator is only a candidate if its return type is the target type or
+  // can be converted to the target type with a qualification conversion.
+  bool ObjCLifetimeConversion;
+  QualType ToNonRefType = ToType.getNonReferenceType();
+  if (Conversion->isExplicit() &&
+      !Context.hasSameUnqualifiedType(ConvType, ToNonRefType) &&
+      !IsQualificationConversion(ConvType, ToNonRefType, /*CStyle*/false,
+                                 ObjCLifetimeConversion))
+    return;
 
   // Overload resolution is always an unevaluated context.
   EnterExpressionEvaluationContext Unevaluated(*this, Sema::Unevaluated);
@@ -8146,7 +8157,7 @@ void Sema::NoteOverloadCandidate(FunctionDecl *Fn, QualType DestType) {
   MaybeEmitInheritedConstructorNote(*this, Fn);
 }
 
-//Notes the location of all overload candidates designated through 
+// Notes the location of all overload candidates designated through
 // OverloadedExpr
 void Sema::NoteAllOverloadCandidates(Expr* OverloadedExpr, QualType DestType) {
   assert(OverloadedExpr->getType() == Context.OverloadTy);

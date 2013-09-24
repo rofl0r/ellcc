@@ -3114,7 +3114,7 @@ SDValue DAGCombiner::MatchBSwapHWord(SDNode *N, SDValue N0, SDValue N1) {
   SDValue BSwap = DAG.getNode(ISD::BSWAP, SDLoc(N), VT,
                               SDValue(Parts[0],0));
 
-  // Result of the bswap should be rotated by 16. If it's not legal, than
+  // Result of the bswap should be rotated by 16. If it's not legal, then
   // do  (x << 16) | (x >> 16).
   SDValue ShAmt = DAG.getConstant(16, getShiftAmountTy(VT));
   if (TLI.isOperationLegalOrCustom(ISD::ROTL, VT))
@@ -4325,27 +4325,6 @@ SDValue DAGCombiner::visitVSELECT(SDNode *N) {
       AddToWorkList(Add.getNode());
       return DAG.getNode(ISD::XOR, DL, VT, Add, Shift);
     }
-  }
-
-  // Treat SETCC as a mask and promote the result type based on the targets
-  // expected SETCC result type. This will ensure that SETCC and VSELECT are
-  // both split by the type legalizer. This is done to prevent the type
-  // legalizer from unrolling SETCC into scalar comparions.
-  EVT SelectVT = N->getValueType(0);
-  if (N0.getOpcode() == ISD::SETCC &&
-      N0.getValueType() != getSetCCResultType(SelectVT)) {
-    SDLoc MaskDL(N0);
-    EVT MaskVT = getSetCCResultType(SelectVT);
-
-    SDValue Mask = DAG.getNode(ISD::SETCC, MaskDL, MaskVT, N0->getOperand(0),
-                               N0->getOperand(1), N0->getOperand(2));
-
-    AddToWorkList(Mask.getNode());
-
-    SDValue LHS = N->getOperand(1);
-    SDValue RHS = N->getOperand(2);
-
-    return DAG.getNode(ISD::VSELECT, DL, SelectVT, Mask, LHS, RHS);
   }
 
   return SDValue();
