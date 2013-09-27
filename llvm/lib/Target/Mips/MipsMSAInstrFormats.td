@@ -52,20 +52,39 @@ class MSA_2R_FMT<bits<8> major, bits<2> df, bits<6> minor>: MSAInst {
 }
 
 class MSA_2RF_FMT<bits<9> major, bits<1> df, bits<6> minor>: MSAInst {
+  bits<5> ws;
+  bits<5> wd;
+
   let Inst{25-17} = major;
   let Inst{16} = df;
+  let Inst{15-11} = ws;
+  let Inst{10-6} = wd;
   let Inst{5-0} = minor;
 }
 
 class MSA_3R_FMT<bits<3> major, bits<2> df, bits<6> minor>: MSAInst {
+  bits<5> wt;
+  bits<5> ws;
+  bits<5> wd;
+
   let Inst{25-23} = major;
   let Inst{22-21} = df;
+  let Inst{20-16} = wt;
+  let Inst{15-11} = ws;
+  let Inst{10-6} = wd;
   let Inst{5-0} = minor;
 }
 
 class MSA_3RF_FMT<bits<4> major, bits<1> df, bits<6> minor>: MSAInst {
+  bits<5> wt;
+  bits<5> ws;
+  bits<5> wd;
+
   let Inst{25-22} = major;
   let Inst{21} = df;
+  let Inst{20-16} = wt;
+  let Inst{15-11} = ws;
+  let Inst{10-6} = wd;
   let Inst{5-0} = minor;
 }
 

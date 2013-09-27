@@ -606,7 +606,10 @@ private:
     }
 
     if (Current.Type == TT_Unknown) {
-      if (isStartOfName(Current)) {
+      // Line.MightBeFunctionDecl can only be true after the parentheses of a
+      // function declaration have been found. In this case, 'Current' is a
+      // trailing token of this declaration and thus cannot be a name.
+      if (isStartOfName(Current) && !Line.MightBeFunctionDecl) {
         Contexts.back().FirstStartOfName = &Current;
         Current.Type = TT_StartOfName;
         NameFound = true;
@@ -1317,6 +1320,9 @@ bool TokenAnnotator::spaceRequiredBefore(const AnnotatedLine &Line,
   }
   if (Tok.isOneOf(tok::arrowstar, tok::periodstar) ||
       Tok.Previous->isOneOf(tok::arrowstar, tok::periodstar))
+    return false;
+  if (!Style.SpaceBeforeAssignmentOperators &&
+      Tok.getPrecedence() == prec::Assignment)
     return false;
   if ((Tok.Type == TT_BinaryOperator && !Tok.Previous->is(tok::l_paren)) ||
       Tok.Previous->Type == TT_BinaryOperator)

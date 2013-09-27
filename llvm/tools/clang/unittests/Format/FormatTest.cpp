@@ -2776,6 +2776,10 @@ TEST_F(FormatTest, BreaksFunctionDeclarationsWithTrailingTokens) {
   // function-like.
   verifyFormat("void SomeFunction(aaaaaaaaaaaaaaaaaaaaaaaaaa,\n"
                "                  aaaaaaaaaaaaaaaaaaaaaaaaaa) OVERRIDE;");
+  verifyFormat("void SomeFunction(aaaaaaaaaaaaaaaaaaaaaaaaaa,\n"
+               "                  aaaaaaaaaaaaaaaaaaaaaaaaaa) OVERRIDE FINAL;");
+  verifyFormat("void SomeFunction(aaaaaaaaaaaaaaaaaaaaaaaaaa,\n"
+               "                  aaaaaaaaaaaaaaaaaaaaaaaaaa) override final;");
 
   // Breaking before function-like trailing annotations is fine to keep them
   // close to their arguments.
@@ -3499,6 +3503,9 @@ TEST_F(FormatTest, WrapsAtFunctionCallsIfNecessary) {
 
 TEST_F(FormatTest, WrapsTemplateDeclarations) {
   verifyFormat("template <typename T>\n"
+               "virtual void loooooooooooongFunction(int Param1, int Param2);");
+  verifyFormat("template <typename T>\n"
+               "// T should be one of {A, B}.\n"
                "virtual void loooooooooooongFunction(int Param1, int Param2);");
   verifyFormat(
       "template <typename T>\n"
@@ -5753,6 +5760,20 @@ TEST_F(FormatTest, ConfigurableUseOfTab) {
   Tab.IndentWidth = 8;
   Tab.UseTab = true;
   Tab.AlignEscapedNewlinesLeft = true;
+
+  EXPECT_EQ("if (aaaaaaaa && // q\n"
+            "    bb)\t\t// w\n"
+            "\t;",
+            format("if (aaaaaaaa &&// q\n"
+                   "bb)// w\n"
+                   ";",
+                   Tab));
+  EXPECT_EQ("if (aaa && bbb) // w\n"
+            "\t;",
+            format("if(aaa&&bbb)// w\n"
+                   ";",
+                   Tab));
+
   verifyFormat("class X {\n"
                "\tvoid f() {\n"
                "\t\tsomeFunction(parameter1,\n"
@@ -5836,6 +5857,7 @@ TEST_F(FormatTest, ConfigurableUseOfTab) {
                    " \t \t in multiple lines\t\n"
                    " \t  */",
                    Tab));
+
   Tab.UseTab = false;
   EXPECT_EQ("/*\n"
             "              a\t\tcomment\n"
@@ -5994,6 +6016,18 @@ TEST_F(FormatTest, ConfigurableSpacesInParentheses) {
                "default:\n"
                "  break;\n"
                "}", Spaces);
+}
+
+TEST_F(FormatTest, ConfigurableSpaceBeforeAssignmentOperators) {
+  verifyFormat("int a = 5;");
+  verifyFormat("a += 42;");
+  verifyFormat("a or_eq 8;");
+
+  FormatStyle Spaces = getLLVMStyle();
+  Spaces.SpaceBeforeAssignmentOperators = false;
+  verifyFormat("int a= 5;", Spaces);
+  verifyFormat("a+= 42;", Spaces);
+  verifyFormat("a or_eq 8;", Spaces);
 }
 
 TEST_F(FormatTest, LinuxBraceBreaking) {
@@ -6237,6 +6271,7 @@ TEST_F(FormatTest, ParsesConfiguration) {
   CHECK_PARSE_BOOL(SpaceInEmptyParentheses);
   CHECK_PARSE_BOOL(SpacesInCStyleCastParentheses);
   CHECK_PARSE_BOOL(SpaceAfterControlStatementKeyword);
+  CHECK_PARSE_BOOL(SpaceBeforeAssignmentOperators);
 
   CHECK_PARSE("AccessModifierOffset: -1234", AccessModifierOffset, -1234);
   CHECK_PARSE("ConstructorInitializerIndentWidth: 1234",

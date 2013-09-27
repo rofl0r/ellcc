@@ -3978,10 +3978,12 @@ Sema::ConvertArgumentsForCall(CallExpr *Call, Expr *Fn,
   // arguments for the remaining parameters), don't make the call.
   if (Args.size() < NumArgsInProto) {
     if (Args.size() < MinArgs) {
+      MemberExpr *ME = dyn_cast<MemberExpr>(Fn);
       TypoCorrection TC;
       if (FDecl && (TC = TryTypoCorrectionForCall(
                         *this, DeclarationNameInfo(FDecl->getDeclName(),
-                                                   Fn->getLocStart()),
+                                                   (ME ? ME->getMemberLoc()
+                                                       : Fn->getLocStart())),
                         Args))) {
         unsigned diag_id =
             MinArgs == NumArgsInProto && !Proto->isVariadic()
@@ -11008,7 +11010,8 @@ void Sema::MarkFunctionReferenced(SourceLocation Loc, FunctionDecl *Func) {
     // However, they cannot be referenced if they are deleted, and they are
     // deleted whenever the implicit definition of the special member would
     // fail.
-    if (!Func->isConstexpr() || Func->getBody())
+    if (!(Func->isConstexpr() && !getLangOpts().DelayedTemplateParsing) ||
+        Func->getBody())
       return;
     CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(Func);
     if (!Func->isImplicitlyInstantiable() && (!MD || MD->isUserProvided()))
@@ -11099,13 +11102,14 @@ void Sema::MarkFunctionReferenced(SourceLocation Loc, FunctionDecl *Func) {
       }
     }
 
-    if (!AlreadyInstantiated || Func->isConstexpr()) {
+    if (!AlreadyInstantiated ||
+        (Func->isConstexpr() && !getLangOpts().DelayedTemplateParsing)) {
       if (isa<CXXRecordDecl>(Func->getDeclContext()) &&
           cast<CXXRecordDecl>(Func->getDeclContext())->isLocalClass() &&
           ActiveTemplateInstantiations.size())
         PendingLocalImplicitInstantiations.push_back(
             std::make_pair(Func, PointOfInstantiation));
-      else if (Func->isConstexpr())
+      else if (Func->isConstexpr() && !getLangOpts().DelayedTemplateParsing)
         // Do not defer instantiations of constexpr functions, to avoid the
         // expression evaluator needing to call back into Sema if it sees a
         // call to such a function.

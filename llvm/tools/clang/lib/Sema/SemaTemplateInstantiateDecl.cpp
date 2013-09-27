@@ -923,7 +923,7 @@ Decl *TemplateDeclInstantiator::VisitClassTemplateDecl(ClassTemplateDecl *D) {
     SmallVector<ClassTemplatePartialSpecializationDecl *, 4> PartialSpecs;
     D->getPartialSpecializations(PartialSpecs);
     for (unsigned I = 0, N = PartialSpecs.size(); I != N; ++I)
-      if (PartialSpecs[I]->isOutOfLine())
+      if (PartialSpecs[I]->getFirstDeclaration()->isOutOfLine())
         OutOfLinePartialSpecs.push_back(std::make_pair(Inst, PartialSpecs[I]));
   }
 
@@ -1004,7 +1004,7 @@ Decl *TemplateDeclInstantiator::VisitVarTemplateDecl(VarTemplateDecl *D) {
     SmallVector<VarTemplatePartialSpecializationDecl *, 4> PartialSpecs;
     D->getPartialSpecializations(PartialSpecs);
     for (unsigned I = 0, N = PartialSpecs.size(); I != N; ++I)
-      if (PartialSpecs[I]->isOutOfLine())
+      if (PartialSpecs[I]->getFirstDeclaration()->isOutOfLine())
         OutOfLineVarPartialSpecs.push_back(
             std::make_pair(Inst, PartialSpecs[I]));
   }
@@ -3372,9 +3372,7 @@ void Sema::BuildVariableInstantiation(
       OldVar->isPreviousDeclInSameBlockScope());
   NewVar->setAccess(OldVar->getAccess());
 
-  // For local variables, inherit the 'used' and 'referenced' flags from the
-  // primary template.
-  if (OldVar->getLexicalDeclContext()->isFunctionOrMethod()) {
+  if (!OldVar->isStaticDataMember()) {
     NewVar->setIsUsed(OldVar->isUsed(false));
     NewVar->setReferenced(OldVar->isReferenced());
   }

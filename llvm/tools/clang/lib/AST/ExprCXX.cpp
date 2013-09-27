@@ -40,16 +40,18 @@ bool CXXTypeidExpr::isPotentiallyEvaluated() const {
   return false;
 }
 
-QualType CXXTypeidExpr::getTypeOperand() const {
+QualType CXXTypeidExpr::getTypeOperand(ASTContext &Context) const {
   assert(isTypeOperand() && "Cannot call getTypeOperand for typeid(expr)");
-  return Operand.get<TypeSourceInfo *>()->getType().getNonReferenceType()
-                                                        .getUnqualifiedType();
+  Qualifiers Quals;
+  return Context.getUnqualifiedArrayType(
+      Operand.get<TypeSourceInfo *>()->getType().getNonReferenceType(), Quals);
 }
 
-QualType CXXUuidofExpr::getTypeOperand() const {
+QualType CXXUuidofExpr::getTypeOperand(ASTContext &Context) const {
   assert(isTypeOperand() && "Cannot call getTypeOperand for __uuidof(expr)");
-  return Operand.get<TypeSourceInfo *>()->getType().getNonReferenceType()
-                                                        .getUnqualifiedType();
+  Qualifiers Quals;
+  return Context.getUnqualifiedArrayType(
+      Operand.get<TypeSourceInfo *>()->getType().getNonReferenceType(), Quals);
 }
 
 // static
@@ -60,7 +62,7 @@ UuidAttr *CXXUuidofExpr::GetUuidAttrOfType(QualType QT,
   if (QT->isPointerType() || QT->isReferenceType())
     Ty = QT->getPointeeType().getTypePtr();
   else if (QT->isArrayType())
-    Ty = cast<ArrayType>(QT)->getElementType().getTypePtr();
+    Ty = Ty->getBaseElementTypeUnsafe();
 
   // Loop all record redeclaration looking for an uuid attribute.
   CXXRecordDecl *RD = Ty->getAsCXXRecordDecl();
@@ -118,7 +120,7 @@ UuidAttr *CXXUuidofExpr::GetUuidAttrOfType(QualType QT,
 StringRef CXXUuidofExpr::getUuidAsStringRef(ASTContext &Context) const {
   StringRef Uuid;
   if (isTypeOperand())
-    Uuid = CXXUuidofExpr::GetUuidAttrOfType(getTypeOperand())->getGuid();
+    Uuid = CXXUuidofExpr::GetUuidAttrOfType(getTypeOperand(Context))->getGuid();
   else {
     // Special case: __uuidof(0) means an all-zero GUID.
     Expr *Op = getExprOperand();
@@ -1076,13 +1078,13 @@ CXXRecordDecl *LambdaExpr::getLambdaClass() const {
 
 CXXMethodDecl *LambdaExpr::getCallOperator() const {
   CXXRecordDecl *Record = getLambdaClass();
-  DeclarationName Name
-    = Record->getASTContext().DeclarationNames.getCXXOperatorName(OO_Call);
-  DeclContext::lookup_result Calls = Record->lookup(Name);
-  assert(!Calls.empty() && "Missing lambda call operator!");
-  assert(Calls.size() == 1 && "More than one lambda call operator!");
-  CXXMethodDecl *Result = cast<CXXMethodDecl>(Calls.front());
-  return Result;
+  return Record->getLambdaCallOperator();  
+}
+
+TemplateParameterList *LambdaExpr::getTemplateParameterList() const {
+  CXXRecordDecl *Record = getLambdaClass();
+  return Record->getGenericLambdaTemplateParameterList();
+
 }
 
 CompoundStmt *LambdaExpr::getBody() const {

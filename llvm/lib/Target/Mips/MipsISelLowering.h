@@ -153,16 +153,34 @@ namespace llvm {
       SELECT_CC_DSP,
 
       // Vector comparisons.
+      // These take a vector and return a boolean.
       VALL_ZERO,
       VANY_ZERO,
       VALL_NONZERO,
       VANY_NONZERO,
 
-      // Special case of BUILD_VECTOR where all elements are the same.
-      VSPLAT,
-      // Special case of VSPLAT where the result is v2i64, the operand is
-      // constant, and the operand fits in a signed 10-bits value.
-      VSPLATD,
+      // These take a vector and return a vector bitmask.
+      VCEQ,
+      VCLE_S,
+      VCLE_U,
+      VCLT_S,
+      VCLT_U,
+
+      // Element-wise vector max/min.
+      VSMAX,
+      VSMIN,
+      VUMAX,
+      VUMIN,
+
+      // Vector Shuffle with mask as an operand
+      VSHF,  // Generic shuffle
+      SHF,   // 4-element set shuffle.
+      ILVEV, // Interleave even elements
+      ILVOD, // Interleave odd elements
+      ILVL,  // Interleave left elements
+      ILVR,  // Interleave right elements
+      PCKEV, // Pack even elements
+      PCKOD, // Pack odd elements
 
       // Combined (XOR (OR $a, $b), -1)
       VNOR,

@@ -566,7 +566,7 @@ public:
 
   /// \brief Retrieves the type operand of this typeid() expression after
   /// various required adjustments (removing reference types, cv-qualifiers).
-  QualType getTypeOperand() const;
+  QualType getTypeOperand(ASTContext &Context) const;
 
   /// \brief Retrieve source information for the type operand.
   TypeSourceInfo *getTypeOperandSourceInfo() const {
@@ -701,7 +701,7 @@ public:
 
   /// \brief Retrieves the type operand of this __uuidof() expression after
   /// various required adjustments (removing reference types, cv-qualifiers).
-  QualType getTypeOperand() const;
+  QualType getTypeOperand(ASTContext &Context) const;
 
   /// \brief Retrieve source information for the type operand.
   TypeSourceInfo *getTypeOperandSourceInfo() const {
@@ -1605,6 +1605,13 @@ public:
   /// \brief Retrieve the function call operator associated with this
   /// lambda expression. 
   CXXMethodDecl *getCallOperator() const;
+
+  /// \brief If this is a generic lambda expression, retrieve the template 
+  /// parameter list associated with it, or else return null. 
+  TemplateParameterList *getTemplateParameterList() const;
+
+  /// \brief Whether this is a generic lambda.
+  bool isGenericLambda() const { return getTemplateParameterList(); }
 
   /// \brief Retrieve the body of the lambda.
   CompoundStmt *getBody() const;

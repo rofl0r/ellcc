@@ -49,6 +49,7 @@
 #include <pwd.h>
 #include <sys/socket.h>
 #include <netdb.h>
+#include <wordexp.h>
 
 #if defined(__i386__) || defined(__x86_64__)
 # include <emmintrin.h>
@@ -1641,6 +1642,39 @@ TEST(MemorySanitizer, sigaction) {
 
 } // namespace
 
+
+TEST(MemorySanitizer, sigemptyset) {
+  sigset_t s;
+  EXPECT_POISONED(s);
+  int res = sigemptyset(&s);
+  ASSERT_EQ(0, res);
+  EXPECT_NOT_POISONED(s);
+}
+
+TEST(MemorySanitizer, sigfillset) {
+  sigset_t s;
+  EXPECT_POISONED(s);
+  int res = sigfillset(&s);
+  ASSERT_EQ(0, res);
+  EXPECT_NOT_POISONED(s);
+}
+
+TEST(MemorySanitizer, sigpending) {
+  sigset_t s;
+  EXPECT_POISONED(s);
+  int res = sigpending(&s);
+  ASSERT_EQ(0, res);
+  EXPECT_NOT_POISONED(s);
+}
+
+TEST(MemorySanitizer, sigprocmask) {
+  sigset_t s;
+  EXPECT_POISONED(s);
+  int res = sigprocmask(SIG_BLOCK, 0, &s);
+  ASSERT_EQ(0, res);
+  EXPECT_NOT_POISONED(s);
+}
+
 struct StructWithDtor {
   ~StructWithDtor();
 };
@@ -2398,6 +2432,16 @@ TEST(MemorySanitizer, getgroups) {
   ASSERT_EQ(n, res);
   for (int i = 0; i < n; ++i)
     EXPECT_NOT_POISONED(gids[i]);
+}
+
+TEST(MemorySanitizer, wordexp) {
+  wordexp_t w;
+  int res = wordexp("a b c", &w, 0);
+  ASSERT_EQ(0, res);
+  ASSERT_EQ(3, w.we_wordc);
+  ASSERT_STREQ("a", w.we_wordv[0]);
+  ASSERT_STREQ("b", w.we_wordv[1]);
+  ASSERT_STREQ("c", w.we_wordv[2]);
 }
 
 template<class T>

@@ -537,9 +537,9 @@ VSCANF_INTERCEPTOR_IMPL(__isoc99_vfscanf, false, stream, format, ap)
 #define SCANF_INTERCEPTOR_IMPL(name, vname, ...)                               \
   {                                                                            \
     void *ctx;                                                                 \
-    COMMON_INTERCEPTOR_ENTER(ctx, name, __VA_ARGS__);                          \
     va_list ap;                                                                \
     va_start(ap, format);                                                      \
+    COMMON_INTERCEPTOR_ENTER(ctx, vname, __VA_ARGS__, ap);                     \
     int res = vname(__VA_ARGS__, ap);                                          \
     va_end(ap);                                                                \
     return res;                                                                \
@@ -1995,6 +1995,125 @@ INTERCEPTOR(int, ppoll, __sanitizer_pollfd *fds, __sanitizer_nfds_t nfds,
 #define INIT_PPOLL
 #endif
 
+#if SANITIZER_INTERCEPT_WORDEXP
+INTERCEPTOR(int, wordexp, char *s, __sanitizer_wordexp_t *p, int flags) {
+  void *ctx;
+  COMMON_INTERCEPTOR_ENTER(ctx, wordexp, s, p, flags);
+  if (s) COMMON_INTERCEPTOR_READ_RANGE(ctx, s, REAL(strlen)(s) + 1);
+  int res = REAL(wordexp)(s, p, flags);
+  if (!res && p) {
+    COMMON_INTERCEPTOR_WRITE_RANGE(ctx, p, sizeof(*p));
+    if (p->we_wordc)
+      COMMON_INTERCEPTOR_WRITE_RANGE(ctx, p->we_wordv,
+                                     sizeof(*p->we_wordv) * p->we_wordc);
+    for (uptr i = 0; i < p->we_wordc; ++i) {
+      char *w = p->we_wordv[i];
+      if (w) COMMON_INTERCEPTOR_WRITE_RANGE(ctx, w, REAL(strlen)(w) + 1);
+    }
+  }
+  return res;
+}
+#define INIT_WORDEXP INTERCEPT_FUNCTION(wordexp);
+#else
+#define INIT_WORDEXP
+#endif
+
+#if SANITIZER_INTERCEPT_SIGWAIT
+INTERCEPTOR(int, sigwait, __sanitizer_sigset_t *set, int *sig) {
+  void *ctx;
+  COMMON_INTERCEPTOR_ENTER(ctx, sigwait, set, sig);
+  // FIXME: read sigset_t when all of sigemptyset, etc are intercepted
+  int res = REAL(sigwait)(set, sig);
+  if (!res && sig) COMMON_INTERCEPTOR_WRITE_RANGE(ctx, sig, sizeof(*sig));
+  return res;
+}
+#define INIT_SIGWAIT INTERCEPT_FUNCTION(sigwait);
+#else
+#define INIT_SIGWAIT
+#endif
+
+#if SANITIZER_INTERCEPT_SIGWAITINFO
+INTERCEPTOR(int, sigwaitinfo, __sanitizer_sigset_t *set, void *info) {
+  void *ctx;
+  COMMON_INTERCEPTOR_ENTER(ctx, sigwaitinfo, set, info);
+  // FIXME: read sigset_t when all of sigemptyset, etc are intercepted
+  int res = REAL(sigwaitinfo)(set, info);
+  if (res > 0 && info) COMMON_INTERCEPTOR_WRITE_RANGE(ctx, info, siginfo_t_sz);
+  return res;
+}
+#define INIT_SIGWAITINFO INTERCEPT_FUNCTION(sigwaitinfo);
+#else
+#define INIT_SIGWAITINFO
+#endif
+
+#if SANITIZER_INTERCEPT_SIGTIMEDWAIT
+INTERCEPTOR(int, sigtimedwait, __sanitizer_sigset_t *set, void *info,
+            void *timeout) {
+  void *ctx;
+  COMMON_INTERCEPTOR_ENTER(ctx, sigtimedwait, set, info, timeout);
+  if (timeout) COMMON_INTERCEPTOR_READ_RANGE(ctx, timeout, struct_timespec_sz);
+  // FIXME: read sigset_t when all of sigemptyset, etc are intercepted
+  int res = REAL(sigtimedwait)(set, info, timeout);
+  if (res > 0 && info) COMMON_INTERCEPTOR_WRITE_RANGE(ctx, info, siginfo_t_sz);
+  return res;
+}
+#define INIT_SIGTIMEDWAIT INTERCEPT_FUNCTION(sigtimedwait);
+#else
+#define INIT_SIGTIMEDWAIT
+#endif
+
+#if SANITIZER_INTERCEPT_SIGSETOPS
+INTERCEPTOR(int, sigemptyset, __sanitizer_sigset_t *set) {
+  void *ctx;
+  COMMON_INTERCEPTOR_ENTER(ctx, sigemptyset, set);
+  int res = REAL(sigemptyset)(set);
+  if (!res && set) COMMON_INTERCEPTOR_WRITE_RANGE(ctx, set, sizeof(*set));
+  return res;
+}
+
+INTERCEPTOR(int, sigfillset, __sanitizer_sigset_t *set) {
+  void *ctx;
+  COMMON_INTERCEPTOR_ENTER(ctx, sigfillset, set);
+  int res = REAL(sigfillset)(set);
+  if (!res && set) COMMON_INTERCEPTOR_WRITE_RANGE(ctx, set, sizeof(*set));
+  return res;
+}
+#define INIT_SIGSETOPS             \
+  INTERCEPT_FUNCTION(sigemptyset); \
+  INTERCEPT_FUNCTION(sigfillset);
+#else
+#define INIT_SIGSETOPS
+#endif
+
+#if SANITIZER_INTERCEPT_SIGPENDING
+INTERCEPTOR(int, sigpending, __sanitizer_sigset_t *set) {
+  void *ctx;
+  COMMON_INTERCEPTOR_ENTER(ctx, sigpending, set);
+  int res = REAL(sigpending)(set);
+  if (!res && set) COMMON_INTERCEPTOR_WRITE_RANGE(ctx, set, sizeof(*set));
+  return res;
+}
+#define INIT_SIGPENDING INTERCEPT_FUNCTION(sigpending);
+#else
+#define INIT_SIGPENDING
+#endif
+
+#if SANITIZER_INTERCEPT_SIGPROCMASK
+INTERCEPTOR(int, sigprocmask, int how, __sanitizer_sigset_t *set,
+            __sanitizer_sigset_t *oldset) {
+  void *ctx;
+  COMMON_INTERCEPTOR_ENTER(ctx, sigprocmask, how, set, oldset);
+  // FIXME: read sigset_t when all of sigemptyset, etc are intercepted
+  int res = REAL(sigprocmask)(how, set, oldset);
+  if (!res && oldset)
+    COMMON_INTERCEPTOR_WRITE_RANGE(ctx, oldset, sizeof(*oldset));
+  return res;
+}
+#define INIT_SIGPROCMASK INTERCEPT_FUNCTION(sigprocmask);
+#else
+#define INIT_SIGPROCMASK
+#endif
+
 #define SANITIZER_COMMON_INTERCEPTORS_INIT \
   INIT_STRCMP;                             \
   INIT_STRNCMP;                            \
@@ -2063,4 +2182,11 @@ INTERCEPTOR(int, ppoll, __sanitizer_pollfd *fds, __sanitizer_nfds_t nfds,
   INIT_SCANDIR64;                          \
   INIT_GETGROUPS;                          \
   INIT_POLL;                               \
-  INIT_PPOLL;
+  INIT_PPOLL;                              \
+  INIT_WORDEXP;                            \
+  INIT_SIGWAIT;                            \
+  INIT_SIGWAITINFO;                        \
+  INIT_SIGTIMEDWAIT;                       \
+  INIT_SIGSETOPS;                          \
+  INIT_SIGPENDING;                         \
+  INIT_SIGPROCMASK;

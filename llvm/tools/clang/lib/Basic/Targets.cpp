@@ -1739,6 +1739,7 @@ class X86TargetInfo : public TargetInfo {
   bool HasRTM;
   bool HasPRFCHW;
   bool HasRDSEED;
+  bool HasTBM;
   bool HasFMA;
   bool HasF16C;
   bool HasAVX512CD, HasAVX512ER, HasAVX512PF;
@@ -1901,8 +1902,8 @@ public:
       : TargetInfo(Triple), SSELevel(NoSSE), MMX3DNowLevel(NoMMX3DNow),
         XOPLevel(NoXOP), HasAES(false), HasPCLMUL(false), HasLZCNT(false),
         HasRDRND(false), HasBMI(false), HasBMI2(false), HasPOPCNT(false),
-        HasRTM(false), HasPRFCHW(false), HasRDSEED(false), HasFMA(false),
-        HasF16C(false), HasAVX512CD(false), HasAVX512ER(false),
+        HasRTM(false), HasPRFCHW(false), HasRDSEED(false), HasTBM(false),
+        HasFMA(false), HasF16C(false), HasAVX512CD(false), HasAVX512ER(false),
         HasAVX512PF(false), HasSHA(false), CPU(CK_Generic), FPMath(FP_Default) {
     BigEndian = false;
     LongDoubleFormat = &llvm::APFloat::x87DoubleExtended;
@@ -2280,6 +2281,7 @@ void X86TargetInfo::getDefaultFeatures(llvm::StringMap<bool> &Features) const {
     setFeatureEnabledImpl(Features, "bmi", true);
     setFeatureEnabledImpl(Features, "fma", true);
     setFeatureEnabledImpl(Features, "f16c", true);
+    setFeatureEnabledImpl(Features, "tbm", true);
     break;
   case CK_C3_2:
     setFeatureEnabledImpl(Features, "sse", true);
@@ -2517,6 +2519,11 @@ bool X86TargetInfo::HandleTargetFeatures(std::vector<std::string> &Features,
 
     if (Feature == "rdseed") {
       HasRDSEED = true;
+      continue;
+    }
+
+    if (Feature == "tbm") {
+      HasTBM = true;
       continue;
     }
 
@@ -2795,6 +2802,9 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
   if (HasRDSEED)
     Builder.defineMacro("__RDSEED__");
 
+  if (HasTBM)
+    Builder.defineMacro("__TBM__");
+
   switch (XOPLevel) {
   case XOP:
     Builder.defineMacro("__XOP__");
@@ -2902,6 +2912,7 @@ bool X86TargetInfo::hasFeature(StringRef Feature) const {
       .Case("bmi2", HasBMI2)
       .Case("fma", HasFMA)
       .Case("fma4", XOPLevel >= FMA4)
+      .Case("tbm", HasTBM)
       .Case("lzcnt", HasLZCNT)
       .Case("rdrnd", HasRDRND)
       .Case("mm3dnow", MMX3DNowLevel >= AMD3DNow)
@@ -4881,6 +4892,7 @@ class MipsTargetInfoBase : public TargetInfo {
   std::string CPU;
   bool IsMips16;
   bool IsMicromips;
+  bool IsNan2008;
   bool IsSingleFloat;
   enum MipsFloatABI {
     HardFloat, SoftFloat
@@ -4897,8 +4909,8 @@ public:
   MipsTargetInfoBase(const llvm::Triple &Triple, const std::string &ABIStr,
                      const std::string &CPUStr)
       : TargetInfo(Triple), CPU(CPUStr), IsMips16(false), IsMicromips(false),
-        IsSingleFloat(false), FloatABI(HardFloat), DspRev(NoDSP),
-        HasMSA(false), ABI(ABIStr) {}
+        IsNan2008(false), IsSingleFloat(false), FloatABI(HardFloat),
+        DspRev(NoDSP), HasMSA(false), ABI(ABIStr) {}
 
   virtual const char *getABI() const { return ABI.c_str(); }
   virtual bool setABI(const std::string &Name) = 0;
@@ -4934,6 +4946,9 @@ public:
 
     if (IsMicromips)
       Builder.defineMacro("__mips_micromips", Twine(1));
+
+    if (IsNan2008)
+      Builder.defineMacro("__mips_nan2008", Twine(1));
 
     switch (DspRev) {
     default:
@@ -5032,6 +5047,7 @@ public:
                                     DiagnosticsEngine &Diags) {
     IsMips16 = false;
     IsMicromips = false;
+    IsNan2008 = false;
     IsSingleFloat = false;
     FloatABI = HardFloat;
     DspRev = NoDSP;
@@ -5052,11 +5068,16 @@ public:
         DspRev = std::max(DspRev, DSP2);
       else if (*it == "+msa")
         HasMSA = true;
+      else if (*it == "+nan2008")
+        IsNan2008 = true;
     }
 
-    // Remove front-end specific option.
+    // Remove front-end specific options.
     std::vector<std::string>::iterator it =
       std::find(Features.begin(), Features.end(), "+soft-float");
+    if (it != Features.end())
+      Features.erase(it);
+    it = std::find(Features.begin(), Features.end(), "+nan2008");
     if (it != Features.end())
       Features.erase(it);
 

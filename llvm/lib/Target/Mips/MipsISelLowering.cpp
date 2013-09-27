@@ -212,11 +212,26 @@ const char *MipsTargetLowering::getTargetNodeName(unsigned Opcode) const {
   case MipsISD::VANY_ZERO:         return "MipsISD::VANY_ZERO";
   case MipsISD::VALL_NONZERO:      return "MipsISD::VALL_NONZERO";
   case MipsISD::VANY_NONZERO:      return "MipsISD::VANY_NONZERO";
-  case MipsISD::VSPLAT:            return "MipsISD::VSPLAT";
-  case MipsISD::VSPLATD:           return "MipsISD::VSPLATD";
+  case MipsISD::VCEQ:              return "MipsISD::VCEQ";
+  case MipsISD::VCLE_S:            return "MipsISD::VCLE_S";
+  case MipsISD::VCLE_U:            return "MipsISD::VCLE_U";
+  case MipsISD::VCLT_S:            return "MipsISD::VCLT_S";
+  case MipsISD::VCLT_U:            return "MipsISD::VCLT_U";
+  case MipsISD::VSMAX:             return "MipsISD::VSMAX";
+  case MipsISD::VSMIN:             return "MipsISD::VSMIN";
+  case MipsISD::VUMAX:             return "MipsISD::VUMAX";
+  case MipsISD::VUMIN:             return "MipsISD::VUMIN";
   case MipsISD::VEXTRACT_SEXT_ELT: return "MipsISD::VEXTRACT_SEXT_ELT";
   case MipsISD::VEXTRACT_ZEXT_ELT: return "MipsISD::VEXTRACT_ZEXT_ELT";
   case MipsISD::VNOR:              return "MipsISD::VNOR";
+  case MipsISD::VSHF:              return "MipsISD::VSHF";
+  case MipsISD::SHF:               return "MipsISD::SHF";
+  case MipsISD::ILVEV:             return "MipsISD::ILVEV";
+  case MipsISD::ILVOD:             return "MipsISD::ILVOD";
+  case MipsISD::ILVL:              return "MipsISD::ILVL";
+  case MipsISD::ILVR:              return "MipsISD::ILVR";
+  case MipsISD::PCKEV:             return "MipsISD::PCKEV";
+  case MipsISD::PCKOD:             return "MipsISD::PCKOD";
   default:                         return NULL;
   }
 }
