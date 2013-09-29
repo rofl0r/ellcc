@@ -24,6 +24,7 @@ extern "C" {
 #define __NEED_off_t
 #define __NEED_pid_t
 #define __NEED_intptr_t
+#define __NEED_useconds_t
 
 #ifdef _BSD_SOURCE
 #define __NEED_mode_t
@@ -185,6 +186,8 @@ int getresuid(uid_t *, uid_t *, uid_t *);
 int getresgid(gid_t *, gid_t *, gid_t *);
 char *get_current_dir_name(void);
 void syncfs(int);
+int euidaccess(const char *, int);
+int eaccess(const char *, int);
 #endif
 
 #if defined(_LARGEFILE64_SOURCE) || defined(_GNU_SOURCE)
@@ -204,6 +207,7 @@ void syncfs(int);
 #define _POSIX_VERSION          200809L
 #define _POSIX2_VERSION         _POSIX_VERSION
 
+#define _POSIX_ADVISORY_INFO    _POSIX_VERSION
 #define _POSIX_CHOWN_RESTRICTED 1
 #define _POSIX_IPV6             _POSIX_VERSION
 #define _POSIX_JOB_CONTROL      1
@@ -211,6 +215,7 @@ void syncfs(int);
 #define _POSIX_MEMLOCK          _POSIX_VERSION
 #define _POSIX_MEMLOCK_RANGE    _POSIX_VERSION
 #define _POSIX_MEMORY_PROTECTION _POSIX_VERSION
+#define _POSIX_MESSAGE_PASSING  _POSIX_VERSION
 #define _POSIX_FSYNC            _POSIX_VERSION
 #define _POSIX_NO_TRUNC         1
 #define _POSIX_RAW_SOCKETS      _POSIX_VERSION
@@ -218,6 +223,7 @@ void syncfs(int);
 #define _POSIX_REGEXP           1
 #define _POSIX_SAVED_IDS        1
 #define _POSIX_SHELL            1
+#define _POSIX_SPAWN            _POSIX_VERSION
 #define _POSIX_VDISABLE         0
 
 #define _POSIX_THREADS          _POSIX_VERSION
@@ -226,6 +232,7 @@ void syncfs(int);
 #define _POSIX_THREAD_ATTR_STACKADDR _POSIX_VERSION
 #define _POSIX_THREAD_ATTR_STACKSIZE _POSIX_VERSION
 #define _POSIX_THREAD_PRIORITY_SCHEDULING _POSIX_VERSION
+#define _POSIX_THREAD_CPUTIME   _POSIX_VERSION
 #define _POSIX_TIMERS           _POSIX_VERSION
 #define _POSIX_TIMEOUTS         _POSIX_VERSION
 #define _POSIX_MONOTONIC_CLOCK  _POSIX_VERSION
@@ -236,6 +243,7 @@ void syncfs(int);
 #define _POSIX_READER_WRITER_LOCKS _POSIX_VERSION
 #define _POSIX_ASYNCHRONOUS_IO  _POSIX_VERSION
 #define _POSIX_SEMAPHORES       _POSIX_VERSION
+#define _POSIX_SHARED_MEMORY_OBJECTS _POSIX_VERSION
 
 #define _POSIX2_C_BIND          _POSIX_VERSION
 

@@ -897,6 +897,7 @@ void PPCTargetInfo::getTargetDefines(const LangOptions &Opts,
     Builder.defineMacro("__powerpc64__");
     Builder.defineMacro("__ppc64__");
     Builder.defineMacro("__PPC64__");
+    Builder.defineMacro("__PPC64");
   }
 
   // Target properties.
@@ -1179,7 +1180,8 @@ public:
       break;
     }
 
-    if (getTriple().getOS() == llvm::Triple::FreeBSD) {
+    if (getTriple().getOS() == llvm::Triple::FreeBSD ||
+        getTriple().getVendor() == llvm::Triple::ELLCC) {
       LongDoubleWidth = LongDoubleAlign = 64;
       LongDoubleFormat = &llvm::APFloat::IEEEdouble;
     }
@@ -1206,7 +1208,8 @@ public:
     UIntMaxType = UnsignedLong;
     Int64Type = SignedLong;
 
-    if (getTriple().getOS() == llvm::Triple::FreeBSD) {
+    if (getTriple().getOS() == llvm::Triple::FreeBSD ||
+        getTriple().getVendor() == llvm::Triple::ELLCC) {
       LongDoubleWidth = LongDoubleAlign = 64;
       LongDoubleFormat = &llvm::APFloat::IEEEdouble;
       DescriptionString = "E-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"

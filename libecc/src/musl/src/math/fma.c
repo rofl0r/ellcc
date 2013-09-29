@@ -2,16 +2,6 @@
 #include "libm.h"
 
 #if LDBL_MANT_DIG==64 && LDBL_MAX_EXP==16384
-union ld80 {
-	long double x;
-	struct {
-		uint64_t m;
-		uint16_t e : 15;
-		uint16_t s : 1;
-		uint16_t pad;
-	} bits;
-};
-
 /* exact add, assumes exponent_x >= exponent_y */
 static void add(long double *hi, long double *lo, long double x, long double y)
 {
@@ -45,25 +35,25 @@ return an adjusted hi so that rounding it to double (or less) precision is corre
 */
 static long double adjust(long double hi, long double lo)
 {
-	union ld80 uhi, ulo;
+	union ldshape uhi, ulo;
 
 	if (lo == 0)
 		return hi;
-	uhi.x = hi;
-	if (uhi.bits.m & 0x3ff)
+	uhi.f = hi;
+	if (uhi.i.m & 0x3ff)
 		return hi;
-	ulo.x = lo;
-	if (uhi.bits.s == ulo.bits.s)
-		uhi.bits.m++;
+	ulo.f = lo;
+	if ((uhi.i.se & 0x8000) == (ulo.i.se & 0x8000))
+		uhi.i.m++;
 	else {
-		uhi.bits.m--;
 		/* handle underflow and take care of ld80 implicit msb */
-		if (uhi.bits.m == (uint64_t)-1/2) {
-			uhi.bits.m *= 2;
-			uhi.bits.e--;
+		if (uhi.i.m << 1 == 0) {
+			uhi.i.m = 0;
+			uhi.i.se--;
 		}
+		uhi.i.m--;
 	}
-	return uhi.x;
+	return uhi.f;
 }
 
 /* adjusted add so the result is correct when rounded to double (or less) precision */
@@ -82,9 +72,9 @@ static long double dmul(long double x, long double y)
 
 static int getexp(long double x)
 {
-	union ld80 u;
-	u.x = x;
-	return u.bits.e;
+	union ldshape u;
+	u.f = x;
+	return u.i.se & 0x7fff;
 }
 
 double fma(double x, double y, double z)
@@ -119,9 +109,17 @@ double fma(double x, double y, double z)
 	} else if (ez > exy - 12) {
 		add(&hi, &lo2, xy, z);
 		if (hi == 0) {
+			/*
+			xy + z is 0, but it should be calculated with the
+			original rounding mode so the sign is correct, if the
+			compiler does not support FENV_ACCESS ON it does not
+			know about the changed rounding mode and eliminates
+			the xy + z below without the volatile memory access
+			*/
+			volatile double z_;
 			fesetround(round);
-			/* make sure that the sign of 0 is correct */
-			return (xy + z) + lo1;
+			z_ = z;
+			return (xy + z_) + lo1;
 		}
 	} else {
 		/*
@@ -135,10 +133,36 @@ double fma(double x, double y, double z)
 		hi = xy;
 		lo2 = z;
 	}
+	/*
+	the result is stored before return for correct precision and exceptions
+
+	one corner case is when the underflow flag should be raised because
+	the precise result is an inexact subnormal double, but the calculated
+	long double result is an exact subnormal double
+	(so rounding to double does not raise exceptions)
+
+	in nearest rounding mode dadd takes care of this: the last bit of the
+	result is adjusted so rounding sees an inexact value when it should
+
+	in non-nearest rounding mode fenv is used for the workaround
+	*/
 	fesetround(round);
 	if (round == FE_TONEAREST)
-		return dadd(hi, dadd(lo1, lo2));
-	return hi + (lo1 + lo2);
+		z = dadd(hi, dadd(lo1, lo2));
+	else {
+#if defined(FE_INEXACT) && defined(FE_UNDERFLOW)
+		int e = fetestexcept(FE_INEXACT);
+		feclearexcept(FE_INEXACT);
+#endif
+		z = hi + (lo1 + lo2);
+#if defined(FE_INEXACT) && defined(FE_UNDERFLOW)
+		if (getexp(z) < 0x3fff-1022 && fetestexcept(FE_INEXACT))
+			feraiseexcept(FE_UNDERFLOW);
+		else if (e)
+			feraiseexcept(FE_INEXACT);
+#endif
+	}
+	return z;
 }
 #else
 /* origin: FreeBSD /usr/src/lib/msun/src/s_fma.c */
@@ -208,16 +232,16 @@ static inline struct dd dd_add(double a, double b)
 static inline double add_adjusted(double a, double b)
 {
 	struct dd sum;
-	uint64_t hibits, lobits;
+	union {double f; uint64_t i;} uhi, ulo;
 
 	sum = dd_add(a, b);
 	if (sum.lo != 0) {
-		EXTRACT_WORD64(hibits, sum.hi);
-		if ((hibits & 1) == 0) {
+		uhi.f = sum.hi;
+		if ((uhi.i & 1) == 0) {
 			/* hibits += (int)copysign(1.0, sum.hi * sum.lo) */
-			EXTRACT_WORD64(lobits, sum.lo);
-			hibits += 1 - ((hibits ^ lobits) >> 62);
-			INSERT_WORD64(sum.hi, hibits);
+			ulo.f = sum.lo;
+			uhi.i += 1 - ((uhi.i ^ ulo.i) >> 62);
+			sum.hi = uhi.f;
 		}
 	}
 	return (sum.hi);
@@ -231,7 +255,7 @@ static inline double add_adjusted(double a, double b)
 static inline double add_and_denormalize(double a, double b, int scale)
 {
 	struct dd sum;
-	uint64_t hibits, lobits;
+	union {double f; uint64_t i;} uhi, ulo;
 	int bits_lost;
 
 	sum = dd_add(a, b);
@@ -247,13 +271,13 @@ static inline double add_and_denormalize(double a, double b, int scale)
 	 * break the ties manually.
 	 */
 	if (sum.lo != 0) {
-		EXTRACT_WORD64(hibits, sum.hi);
-		bits_lost = -((int)(hibits >> 52) & 0x7ff) - scale + 1;
-		if (bits_lost != 1 ^ (int)(hibits & 1)) {
+		uhi.f = sum.hi;
+		bits_lost = -((int)(uhi.i >> 52) & 0x7ff) - scale + 1;
+		if (bits_lost != 1 ^ (int)(uhi.i & 1)) {
 			/* hibits += (int)copysign(1.0, sum.hi * sum.lo) */
-			EXTRACT_WORD64(lobits, sum.lo);
-			hibits += 1 - (((hibits ^ lobits) >> 62) & 2);
-			INSERT_WORD64(sum.hi, hibits);
+			ulo.f = sum.lo;
+			uhi.i += 1 - (((uhi.i ^ ulo.i) >> 62) & 2);
+			sum.hi = uhi.f;
 		}
 	}
 	return scalbn(sum.hi, scale);
@@ -407,6 +431,8 @@ double fma(double x, double y, double z)
 		/*
 		 * There is no need to worry about double rounding in directed
 		 * rounding modes.
+		 * TODO: underflow is not raised properly, example in downward rounding:
+		 * fma(0x1.000000001p-1000, 0x1.000000001p-30, -0x1p-1066)
 		 */
 		fesetround(oround);
 		adj = r.lo + xy.lo;

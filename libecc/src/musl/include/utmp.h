@@ -19,9 +19,7 @@ struct lastlog {
 
 #define ut_time ut_tv.tv_sec
 #define ut_name ut_user
-#define ut_exit __ut_exit
-#define e_termination __e_termination
-#define e_exit __e_exit
+#define ut_addr ut_addr_v6[0]
 #define utmp utmpx
 #define utmpname(x) (-1)
 
@@ -34,8 +32,13 @@ void         setutent(void);
 
 void updwtmp(const char *, const struct utmp *);
 
-#define _PATH_UTMP "/dev/null"
-#define _PATH_WTMP "/dev/null"
+#define _PATH_UTMP "/dev/null/utmp"
+#define _PATH_WTMP "/dev/null/wtmp"
+
+#define UTMP_FILE _PATH_UTMP
+#define WTMP_FILE _PATH_WTMP
+#define UTMP_FILENAME _PATH_UTMP
+#define WTMP_FILENAME _PATH_WTMP
 
 #ifdef __cplusplus
 }

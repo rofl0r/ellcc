@@ -23,6 +23,8 @@ struct pthread {
 	int detached;
 	unsigned char *map_base;
 	size_t map_size;
+	void *stack;
+	size_t stack_size;
 	void *start_arg;
 	void *(*start)(void *);
 	void *result;
@@ -36,12 +38,12 @@ struct pthread {
 		void *pending;
 	} robust_list;
 	int unblock_cancel;
-	int delete_timer;
+	int timer_id;
 	locale_t locale;
 	int killlock[2];
 	int exitlock[2];
 	int startlock[2];
-	unsigned long sigmask[__SYSCALL_SSLEN/sizeof(long)];
+	unsigned long sigmask[_NSIG/8/sizeof(long)];
 };
 
 struct __timer {
@@ -89,10 +91,10 @@ struct __timer {
 
 #define SIGALL_SET ((sigset_t *)(const unsigned long long [2]){ -1,-1 })
 #define SIGPT_SET \
-	((sigset_t *)(const unsigned long [__SYSCALL_SSLEN/sizeof(long)]){ \
+	((sigset_t *)(const unsigned long [_NSIG/8/sizeof(long)]){ \
 	[sizeof(long)==4] = 3UL<<(32*(sizeof(long)>4)) })
 #define SIGTIMER_SET \
-	((sigset_t *)(const unsigned long [__SYSCALL_SSLEN/sizeof(long)]){ \
+	((sigset_t *)(const unsigned long [_NSIG/8/sizeof(long)]){ \
 	 0x80000000 })
 
 pthread_t __pthread_self_init(void);
@@ -106,11 +108,16 @@ void __unmapself(void *, size_t);
 
 int __timedwait(volatile int *, int, clockid_t, const struct timespec *, void (*)(void *), void *, int);
 void __wait(volatile int *, volatile int *, int, int);
-void __wake(volatile int *, int, int);
+#define __wake(addr, cnt, priv) \
+	__syscall(SYS_futex, addr, FUTEX_WAKE, (cnt)<0?INT_MAX:(cnt))
 
 void __acquire_ptc();
 void __release_ptc();
 void __inhibit_ptc();
+
+void __block_all_sigs(void *);
+void __block_app_sigs(void *);
+void __restore_sigs(void *);
 
 #define DEFAULT_STACK_SIZE 81920
 #define DEFAULT_GUARD_SIZE PAGE_SIZE

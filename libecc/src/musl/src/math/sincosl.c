@@ -9,33 +9,28 @@ void sincosl(long double x, long double *sin, long double *cos)
 #elif (LDBL_MANT_DIG == 64 || LDBL_MANT_DIG == 113) && LDBL_MAX_EXP == 16384
 void sincosl(long double x, long double *sin, long double *cos)
 {
-	union IEEEl2bits u;
-	int n;
+	union ldshape u = {x};
+	unsigned n;
 	long double y[2], s, c;
 
-	u.e = x;
-	u.bits.sign = 0;
-
-	/* x = +-0 or subnormal */
-	if (!u.bits.exp) {
-		*sin = x;
-		*cos = 1.0;
-		return;
-	}
-
-	/* x = nan or inf */
-	if (u.bits.exp == 0x7fff) {
+	u.i.se &= 0x7fff;
+	if (u.i.se == 0x7fff) {
 		*sin = *cos = x - x;
 		return;
 	}
-
-	/* |x| < pi/4 */
-	if (u.e < M_PI_4) {
+	if (u.f < M_PI_4) {
+		if (u.i.se < 0x3fff - LDBL_MANT_DIG) {
+			/* raise underflow if subnormal */
+			if (u.i.se == 0) FORCE_EVAL(x*0x1p-120f);
+			*sin = x;
+			/* raise inexact if x!=0 */
+			*cos = 1.0 + x;
+			return;
+		}
 		*sin = __sinl(x, 0, 0);
 		*cos = __cosl(x, 0);
 		return;
 	}
-
 	n = __rem_pio2l(x, y);
 	s = __sinl(y[0], y[1], 1);
 	c = __cosl(y[0], y[1]);

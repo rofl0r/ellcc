@@ -1,7 +1,7 @@
 #include <string.h>
 #include <elf.h>
 
-#define ETC_LDSO_PATH "/etc/ld-musl-powerpc.path"
+#define LDSO_ARCH "powerpc"
 
 #define IS_COPY(x) ((x)==R_PPC_COPY)
 #define IS_PLT(x) ((x)==R_PPC_JMP_SLOT)
@@ -46,7 +46,7 @@ void __reloc_self(int c, size_t *a, size_t *dynv)
 	for (a+=c+1; *a; a++);
 	for (a++; *a; a+=2) if (*a<20) t[*a] = a[1];
 	base = (char *)t[AT_BASE];
-	if (!base) base = (char *)(t[AT_PHDR] & -4096);
+	if (!base) base = (char *)(t[AT_PHDR] & -t[AT_PAGESZ]);
 	for (a=dynv; *a; a+=2) if (*a<20) t[*a] = a[1];
 	n = t[DT_RELASZ];
 	for (a=(void *)(base+t[DT_RELA]); n; a+=3, n-=12)

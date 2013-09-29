@@ -1,4 +1,3 @@
-// XFAIL: *
 // RUN: %ppcecc -o %t %s && %ppcrun %t
 #include "../ecc_test.h"
 #include <stdio.h>

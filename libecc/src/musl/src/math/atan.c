@@ -62,7 +62,7 @@ static const double aT[] = {
 
 double atan(double x)
 {
-	double w,s1,s2,z;
+	double_t w,s1,s2,z;
 	uint32_t ix,sign;
 	int id;
 
@@ -77,8 +77,9 @@ double atan(double x)
 	}
 	if (ix < 0x3fdc0000) {    /* |x| < 0.4375 */
 		if (ix < 0x3e400000) {  /* |x| < 2^-27 */
-			/* raise inexact if x!=0 */
-			FORCE_EVAL(x + 0x1p120f);
+			if (ix < 0x00100000)
+				/* raise underflow for subnormal x */
+				FORCE_EVAL((float)x);
 			return x;
 		}
 		id = -1;

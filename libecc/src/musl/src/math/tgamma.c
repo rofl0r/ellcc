@@ -89,7 +89,7 @@ static const double fact[] = {
 /* S(x) rational function for positive x */
 static double S(double x)
 {
-	double num = 0, den = 0;
+	double_t num = 0, den = 0;
 	int i;
 
 	/* to avoid overflow handle large x differently */
@@ -137,6 +137,7 @@ double tgamma(double x)
 	/* x =< -184: tgamma(x)=+-0 with underflow */
 	if (absx >= 184) {
 		if (x < 0) {
+			FORCE_EVAL((float)(0x1p-126/x));
 			if (floor(x) * 0.5 == floor(x * 0.5))
 				return 0;
 			return -0.0;

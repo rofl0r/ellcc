@@ -104,9 +104,12 @@ double log1p(double x)
 			return (x-x)/(x-x);         /* log1p(x<-1)=NaN */
 		}
 		if (ax < 0x3e200000) {   /* |x| < 2**-29 */
-			/* raise inexact */
-			if (two54 + x > 0.0 && ax < 0x3c900000)  /* |x| < 2**-54 */
+			/* if 0x1p-1022 <= |x| < 0x1p-54, avoid raising underflow */
+			if (ax < 0x3c900000 && ax >= 0x00100000)
 				return x;
+#if FLT_EVAL_METHOD != 0
+			FORCE_EVAL((float)x);
+#endif
 			return x - x*x*0.5;
 		}
 		if (hx > 0 || hx <= (int32_t)0xbfd2bec4) {  /* sqrt(2)/2- <= 1+x < sqrt(2)+ */
@@ -119,7 +122,7 @@ double log1p(double x)
 		return x+x;
 	if (k != 0) {
 		if (hx < 0x43400000) {
-			STRICT_ASSIGN(double, u, 1.0 + x);
+			u = 1 + x;
 			GET_HIGH_WORD(hu, u);
 			k = (hu>>20) - 1023;
 			c = k > 0 ? 1.0-(u-x) : x-(u-1.0); /* correction term */

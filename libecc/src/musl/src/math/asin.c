@@ -58,7 +58,7 @@ qS4 =  7.70381505559019352791e-02; /* 0x3FB3B8C5, 0xB12E9282 */
 
 static double R(double z)
 {
-	double p, q;
+	double_t p, q;
 	p = z*(pS0+z*(pS1+z*(pS2+z*(pS3+z*(pS4+z*pS5)))));
 	q = 1.0+z*(qS1+z*(qS2+z*(qS3+z*qS4)));
 	return p/q;
@@ -82,11 +82,9 @@ double asin(double x)
 	}
 	/* |x| < 0.5 */
 	if (ix < 0x3fe00000) {
-		if (ix < 0x3e500000) {
-			/* |x|<0x1p-26, return x with inexact if x!=0*/
-			FORCE_EVAL(x + 0x1p120f);
+		/* if 0x1p-1022 <= |x| < 0x1p-26, avoid raising underflow */
+		if (ix < 0x3e500000 && ix >= 0x00100000)
 			return x;
-		}
 		return x + x*R(x*x);
 	}
 	/* 1 > |x| >= 0.5 */

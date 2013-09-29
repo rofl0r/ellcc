@@ -2,7 +2,9 @@
 #include <limits.h>
 #include <errno.h>
 #include <sys/resource.h>
+#include <signal.h>
 #include "syscall.h"
+#include "libc.h"
 
 #define VER (-2)
 #define OFLOW (-3)
@@ -27,23 +29,23 @@ long sysconf(int name)
 		[_SC_ASYNCHRONOUS_IO] = VER,
 		[_SC_PRIORITIZED_IO] = -1,
 		[_SC_SYNCHRONIZED_IO] = -1,
-		[_SC_FSYNC] = -1,
+		[_SC_FSYNC] = VER,
 		[_SC_MAPPED_FILES] = VER,
 		[_SC_MEMLOCK] = VER,
 		[_SC_MEMLOCK_RANGE] = VER,
 		[_SC_MEMORY_PROTECTION] = VER,
-		[_SC_MESSAGE_PASSING] = -1,
+		[_SC_MESSAGE_PASSING] = VER,
 		[_SC_SEMAPHORES] = VER,
-		[_SC_SHARED_MEMORY_OBJECTS] = -1,
+		[_SC_SHARED_MEMORY_OBJECTS] = VER,
 		[_SC_AIO_LISTIO_MAX] = -1,
 		[_SC_AIO_MAX] = -1,
 		[_SC_AIO_PRIO_DELTA_MAX] = 0, /* ?? */
 		[_SC_DELAYTIMER_MAX] = _POSIX_DELAYTIMER_MAX,
 		[_SC_MQ_OPEN_MAX] = -1,
-		[_SC_MQ_PRIO_MAX] = MQ_PRIO_MAX,
+		[_SC_MQ_PRIO_MAX] = OFLOW,
 		[_SC_VERSION] = VER,
-		[_SC_PAGE_SIZE] = PAGE_SIZE,
-		[_SC_RTSIG_MAX] = 63, /* ?? */
+		[_SC_PAGE_SIZE] = OFLOW,
+		[_SC_RTSIG_MAX] = _NSIG - 1 - 31 - 3,
 		[_SC_SEM_NSEMS_MAX] = SEM_NSEMS_MAX,
 		[_SC_SEM_VALUE_MAX] = OFLOW,
 		[_SC_SIGQUEUE_MAX] = -1,
@@ -85,7 +87,7 @@ long sysconf(int name)
 		[_SC_GETPW_R_SIZE_MAX] = -1,
 		[_SC_LOGIN_NAME_MAX] = 256,
 		[_SC_TTY_NAME_MAX] = TTY_NAME_MAX,
-		[_SC_THREAD_DESTRUCTOR_ITERATIONS] = _POSIX_THREAD_DESTRUCTOR_ITERATIONS,
+		[_SC_THREAD_DESTRUCTOR_ITERATIONS] = PTHREAD_DESTRUCTOR_ITERATIONS,
 		[_SC_THREAD_KEYS_MAX] = PTHREAD_KEYS_MAX,
 		[_SC_THREAD_STACK_MIN] = PTHREAD_STACK_MIN,
 		[_SC_THREAD_THREADS_MAX] = -1,
@@ -103,7 +105,7 @@ long sysconf(int name)
 		[_SC_PASS_MAX] = -1,
 		[_SC_XOPEN_VERSION] = _XOPEN_VERSION,
 		[_SC_XOPEN_XCU_VERSION] = _XOPEN_VERSION,
-		[_SC_XOPEN_UNIX] = -1,
+		[_SC_XOPEN_UNIX] = 1,
 		[_SC_XOPEN_CRYPT] = -1,
 		[_SC_XOPEN_ENH_I18N] = 1,
 		[_SC_XOPEN_SHM] = 1,
@@ -140,18 +142,18 @@ long sysconf(int name)
 		[_SC_XBS5_ILP32_OFF32] = -1,
 		[_SC_XBS5_ILP32_OFFBIG] = 2*(sizeof(long)==4)-1,
 		[_SC_XBS5_LP64_OFF64] = 2*(sizeof(long)==8)-1,
-		[_SC_XBS5_LPBIG_OFFBIG] = 2*(sizeof(long)>=8)-1,
+		[_SC_XBS5_LPBIG_OFFBIG] = -1,
 		[_SC_XOPEN_LEGACY] = -1,
 		[_SC_XOPEN_REALTIME] = -1,
 		[_SC_XOPEN_REALTIME_THREADS] = -1,
-		[_SC_ADVISORY_INFO] = -1,
+		[_SC_ADVISORY_INFO] = VER,
 		[_SC_BARRIERS] = VER,
 		[_SC_BASE] = -1,
 		[_SC_C_LANG_SUPPORT] = -1,
 		[_SC_C_LANG_SUPPORT_R] = -1,
 		[_SC_CLOCK_SELECTION] = VER,
 		[_SC_CPUTIME] = VER,
-		[_SC_THREAD_CPUTIME] = -1,
+		[_SC_THREAD_CPUTIME] = VER,
 		[_SC_DEVICE_IO] = -1,
 		[_SC_DEVICE_SPECIFIC] = -1,
 		[_SC_DEVICE_SPECIFIC_R] = -1,
@@ -171,7 +173,7 @@ long sysconf(int name)
 		[_SC_REGEX_VERSION] = -1,
 		[_SC_SHELL] = 1,
 		[_SC_SIGNALS] = -1,
-		[_SC_SPAWN] = -1,
+		[_SC_SPAWN] = VER,
 		[_SC_SPORADIC_SERVER] = -1,
 		[_SC_THREAD_SPORADIC_SERVER] = -1,
 		[_SC_SYSTEM_DATABASE] = -1,
@@ -191,7 +193,7 @@ long sysconf(int name)
 		[_SC_V6_ILP32_OFF32] = -1,
 		[_SC_V6_ILP32_OFFBIG] = 2*(sizeof(long)==4)-1,
 		[_SC_V6_LP64_OFF64] = 2*(sizeof(long)==8)-1,
-		[_SC_V6_LPBIG_OFFBIG] = 2*(sizeof(long)>=8)-1,
+		[_SC_V6_LPBIG_OFFBIG] = -1,
 		[_SC_HOST_NAME_MAX] = HOST_NAME_MAX,
 		[_SC_TRACE] = -1,
 		[_SC_TRACE_EVENT_FILTER] = -1,
@@ -203,7 +205,7 @@ long sysconf(int name)
 		[_SC_V7_ILP32_OFF32] = -1,
 		[_SC_V7_ILP32_OFFBIG] = 2*(sizeof(long)==4)-1,
 		[_SC_V7_LP64_OFF64] = 2*(sizeof(long)==8)-1,
-		[_SC_V7_LPBIG_OFFBIG] = 2*(sizeof(long)>=8)-1,
+		[_SC_V7_LPBIG_OFFBIG] = -1,
 		[_SC_SS_REPL_MAX] = -1,
 		[_SC_TRACE_EVENT_NAME_MAX] = -1,
 		[_SC_TRACE_NAME_MAX] = -1,
@@ -221,6 +223,9 @@ long sysconf(int name)
 	} else if (values[name] == OFLOW) {
 		if (name == _SC_ARG_MAX) return ARG_MAX;
 		if (name == _SC_SEM_VALUE_MAX) return SEM_VALUE_MAX;
+		if (name == _SC_MQ_PRIO_MAX) return MQ_PRIO_MAX;
+		/* name == _SC_PAGE_SIZE */
+		return PAGE_SIZE;
 	} else if (values[name] == CPUCNT) {
 		unsigned char set[128] = {1};
 		int i, cnt;

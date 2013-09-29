@@ -9,9 +9,6 @@ extern "C" {
 
 #define __NEED_float_t
 #define __NEED_double_t
-#define __NEED___uint16_t
-#define __NEED___uint32_t
-#define __NEED___uint64_t
 #include <bits/alltypes.h>
 
 #if 100*__GNUC__+__GNUC_MINOR__ >= 303
@@ -43,11 +40,16 @@ int __fpclassify(double);
 int __fpclassifyf(float);
 int __fpclassifyl(long double);
 
-union __float_repr { float __f; __uint32_t __i; };
-union __double_repr { double __f; __uint64_t __i; };
-
-#define __FLOAT_BITS(f) (((union __float_repr){ (float)(f) }).__i)
-#define __DOUBLE_BITS(f) (((union __double_repr){ (double)(f) }).__i)
+static __inline unsigned __FLOAT_BITS(float __f)
+{
+	union {float __f; unsigned __i;} __u = {__f};
+	return __u.__i;
+}
+static __inline unsigned long long __DOUBLE_BITS(double __f)
+{
+	union {double __f; unsigned long long __i;} __u = {__f};
+	return __u.__i;
+}
 
 #define fpclassify(x) ( \
 	sizeof(x) == sizeof(float) ? __fpclassifyf(x) : \
@@ -56,22 +58,22 @@ union __double_repr { double __f; __uint64_t __i; };
 
 #define isinf(x) ( \
 	sizeof(x) == sizeof(float) ? (__FLOAT_BITS(x) & 0x7fffffff) == 0x7f800000 : \
-	sizeof(x) == sizeof(double) ? (__DOUBLE_BITS(x) & (__uint64_t)-1>>1) == (__uint64_t)0x7ff<<52 : \
+	sizeof(x) == sizeof(double) ? (__DOUBLE_BITS(x) & -1ULL>>1) == 0x7ffULL<<52 : \
 	__fpclassifyl(x) == FP_INFINITE)
 
 #define isnan(x) ( \
 	sizeof(x) == sizeof(float) ? (__FLOAT_BITS(x) & 0x7fffffff) > 0x7f800000 : \
-	sizeof(x) == sizeof(double) ? (__DOUBLE_BITS(x) & (__uint64_t)-1>>1) > (__uint64_t)0x7ff<<52 : \
+	sizeof(x) == sizeof(double) ? (__DOUBLE_BITS(x) & -1ULL>>1) > 0x7ffULL<<52 : \
 	__fpclassifyl(x) == FP_NAN)
 
 #define isnormal(x) ( \
 	sizeof(x) == sizeof(float) ? ((__FLOAT_BITS(x)+0x00800000) & 0x7fffffff) >= 0x01000000 : \
-	sizeof(x) == sizeof(double) ? ((__DOUBLE_BITS(x)+((__uint64_t)1<<52)) & (__uint64_t)-1>>1) >= (__uint64_t)1<<53 : \
+	sizeof(x) == sizeof(double) ? ((__DOUBLE_BITS(x)+(1ULL<<52)) & -1ULL>>1) >= 1ULL<<53 : \
 	__fpclassifyl(x) == FP_NORMAL)
 
 #define isfinite(x) ( \
 	sizeof(x) == sizeof(float) ? (__FLOAT_BITS(x) & 0x7fffffff) < 0x7f800000 : \
-	sizeof(x) == sizeof(double) ? (__DOUBLE_BITS(x) & (__uint64_t)-1>>1) < (__uint64_t)0x7ff<<52 : \
+	sizeof(x) == sizeof(double) ? (__DOUBLE_BITS(x) & -1ULL>>1) < 0x7ffULL<<52 : \
 	__fpclassifyl(x) > FP_INFINITE)
 
 int __signbit(double);

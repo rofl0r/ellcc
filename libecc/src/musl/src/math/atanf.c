@@ -40,7 +40,7 @@ static const float aT[] = {
 
 float atanf(float x)
 {
-	float w,s1,s2,z;
+	float_t w,s1,s2,z;
 	uint32_t ix,sign;
 	int id;
 
@@ -55,8 +55,9 @@ float atanf(float x)
 	}
 	if (ix < 0x3ee00000) {   /* |x| < 0.4375 */
 		if (ix < 0x39800000) {  /* |x| < 2**-12 */
-			/* raise inexact if x!=0 */
-			FORCE_EVAL(x + 0x1p120f);
+			if (ix < 0x00800000)
+				/* raise underflow for subnormal x */
+				FORCE_EVAL(x*x);
 			return x;
 		}
 		id = -1;

@@ -1,0 +1,18 @@
+#! /bin/sh
+# $1 = CFLAGS, $2 = TARGET, $3 = ELLCC
+cd src/musl
+echo $@ >musl.new
+cmp musl.new musl.last && exit 0
+make clean
+export CC=$3/bin/ecc
+export CROSS_COMPILE=$3/bin/ecc-
+export CFLAGS=$1
+export LIBCC=-lcompiler-rt
+./configure --prefix=$3/libecc/musl-build/$2 \
+  --target=$2 \
+  --syslibdir=$3/libecc/musl-build/$2 \
+  --exec-prefix=$3/libecc/musl-build/$2 \
+  --enable-warnings \
+  --enable-debug \
+  --disable-shared || exit 1
+mv musl.new musl.last

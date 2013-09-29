@@ -7,7 +7,7 @@ LIBECC := $(ELLCC)/libecc
 Configs := $(patsubst %.notyet,,$(shell cd $(LIBECC)/mkscripts/targets; echo *))
 INCLUDES := $(foreach TARGET, $(Configs), $(LIBECC)/mkscripts/targets/$(TARGET)/setup.mk)
 OS := linux
-CFLAGS := -MP -MD -g -Qunused-arguments \
+CFLAGS := -g -Qunused-arguments \
           -Wno-unneeded-internal-declaration -Wno-cast-align \
 	  -Wno-incompatible-pointer-types -Wno-string-plus-int \
 	  -Wno-pointer-sign -Wno-array-bounds -Wno-dangling-else \
@@ -28,22 +28,8 @@ all:
 $(Configs):
 	@echo Making libecc for $@ in musl-build/$@
 	mkdir -p $(OBJ)/$@
-	cd src/musl ; \
-	echo $@ >musl.new ; \
-	(cmp musl.new musl.last || (make clean ; \
-	  export CC="$(ELLCC)/bin/ecc" ; \
-	    ./configure --prefix=$(OBJ)/$@ \
-	      --build=$@ \
-	      --syslibdir=$(OBJ)/$@ \
-	      --exec-prefix=$(OBJ)/$@ \
-	      --enable-warnings \
-	      --enable-debug \
-              --disable-shared \
-	      CFLAGS="$(CFLAGS.$@)" \
-	      || exit 1)) ; \
-	  mv musl.new musl.last ; \
-	  cd ../..
-	make CROSS_COMPILE=$(ELLCC)/bin/ecc- -C src/musl || exit 1
+	./config.musl "$(CFLAGS.$@)" $@ $(ELLCC) || exit 1
+	make -C src/musl || exit 1
 	make -C src/musl install || exit 1
 	make $@.musl.install
 	@echo Making libcompiler-rt for $@ in src/compiler-rt

@@ -819,6 +819,12 @@ template <class _CharT, class _InputIterator>
 locale::id
 num_get<_CharT, _InputIterator>::id;
 
+#if defined(__ELLCC__)
+// RICH: Where did they expect to find these?
+#define strtoll_l(a,b,c,d) ((d),strtoll(a,b,c))
+#define strtoull_l(a,b,c,d) ((d),strtoull(a,b,c))
+#endif
+
 template <class _Tp>
 _Tp
 __num_get_signed_integral(const char* __a, const char* __a_end,

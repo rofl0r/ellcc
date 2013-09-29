@@ -4,8 +4,8 @@
 // RUN: %armebecc -o %t %s -lm && %armebrun %t
 // RUN: %i386ecc -o %t %s -lm && %i386run %t
 // RUN: %microblazeecc -o %t %s -lm && %microblazerun %t
-// RUN: %mipsecc -o %t %s -lm && %mipsrun %t
-// RUN: %mipselecc -o %t %s -lm && %mipselrun %t
+// FAIL: %mipsecc -o %t %s -lm && %mipsrun %t
+// FAIL: %mipselecc -o %t %s -lm && %mipselrun %t
 // RUN: %ppcecc -o %t %s -lm && %ppcrun %t
 // FAIL: %ppc64ecc -o %t %s -lm && %ppc64run %t
 // RUN: %x86_64ecc -o %t %s -lm && %x86_64run %t

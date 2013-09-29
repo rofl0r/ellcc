@@ -21,11 +21,6 @@
 #include <locale.h>
 #if defined(_LIBCPP_MSVCRT) || defined(__MINGW32__)
 # include <support/win32/locale_win32.h>
-#elif (__ELLCC__)
-#define strtol_l(a,b,c,d) ((d),strtol(a,b,c))
-#define strtoll_l(a,b,c,d) ((d),strtoll(a,b,c))
-#define strtoull_l(a,b,c,d) ((d),strtoull(a,b,c))
-#define strtold_l(a,b,c) ((c),strtold(a,b))
 #elif (defined(__GLIBC__) || defined(__APPLE__) || defined(__FreeBSD__) || defined(__sun__)) || defined(EMSCRIPTEN)
 #elif _AIX
 # include <support/ibm/xlocale.h>

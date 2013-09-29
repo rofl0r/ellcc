@@ -6,10 +6,9 @@ extern "C" {
 #endif
 
 #include <features.h>
+#include <sys/time.h>
 
 #define __NEED_id_t
-#define __NEED_time_t
-#define __NEED_struct_timeval
 
 #ifdef _GNU_SOURCE
 #define __NEED_pid_t
@@ -59,6 +58,9 @@ int setpriority (int, id_t, int);
 int prlimit(pid_t, int, const struct rlimit *, struct rlimit *);
 #define prlimit64 prlimit
 #endif
+
+#define PRIO_MIN (-20)
+#define PRIO_MAX 20
 
 #define PRIO_PROCESS 0
 #define PRIO_PGRP    1

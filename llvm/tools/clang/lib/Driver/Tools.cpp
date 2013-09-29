@@ -6793,14 +6793,14 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
       CmdArgs.push_back(Args.MakeArgString(D.Dir + "/../libecc/lib/"
         + ArchName + "/"
         + Triple.getOSTypeName(Triple.getOS()) + "/crt1.o"));
-      CmdArgs.push_back(Args.MakeArgString(D.Dir + "/../libecc/lib/"
-        + ArchName + "/"
-        + Triple.getOSTypeName(Triple.getOS()) + "/crtbegin.o"));
     } else {
       CmdArgs.push_back(Args.MakeArgString(D.Dir + "/../libecc/lib/"
         + ArchName + "/"
-        + Triple.getOSTypeName(Triple.getOS()) + "/crtbeginS.o"));
+        + Triple.getOSTypeName(Triple.getOS()) + "/Scrt1.o"));
     }
+    CmdArgs.push_back(Args.MakeArgString(D.Dir + "/../libecc/lib/"
+      + ArchName + "/"
+      + Triple.getOSTypeName(Triple.getOS()) + "/crti.o"));
   }
 
   // Find the relative path to the libraries and linker scripts:
@@ -6856,14 +6856,9 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
 
   if (!Args.hasArg(options::OPT_nostdlib) &&
       !Args.hasArg(options::OPT_nostartfiles)) {
-    if (!Args.hasArg(options::OPT_shared))
-      CmdArgs.push_back(Args.MakeArgString(D.Dir + "/../libecc/lib/"
-        + ArchName + "/"
-        + Triple.getOSTypeName(Triple.getOS()) + "/crtend.o"));
-    else
-      CmdArgs.push_back(Args.MakeArgString(D.Dir + "/../libecc/lib/"
-        + ArchName + "/"
-        + Triple.getOSTypeName(Triple.getOS()) + "/crtendS.o"));
+    CmdArgs.push_back(Args.MakeArgString(D.Dir + "/../libecc/lib/"
+      + ArchName + "/"
+      + Triple.getOSTypeName(Triple.getOS()) + "/crtn.o"));
   }
 
   const char *Exec =
